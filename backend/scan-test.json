@@ -1,0 +1,7 @@
+﻿{
+  "targetUrl": "https://0aa000e8049b83d7813f52ae0039002d.web-security-academy.net/",
+  "scanSelection": {
+    "recon": ["securityHeaders"],
+    "security": []
+  }
+}

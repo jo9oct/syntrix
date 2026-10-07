@@ -1,0 +1,36 @@
+{
+  "name": "web-security-assessment-platform",
+  "version": "1.0.0",
+  "description": "Professional authorized web security assessment platform backend built with Express.js.",
+  "private": true,
+  "type": "module",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js",
+    "start:worker": "node worker.js",
+    "dev": "nodemon server.js",
+    "dev:worker": "node --watch worker.js",
+    "lint": "eslint .",
+    "format": "prettier --write .",
+    "format:check": "prettier --check ."
+  },
+  "engines": {
+    "node": ">=20.0.0"
+  },
+  "dependencies": {
+    "axios": "^1.12.2",
+    "bullmq": "^5.58.5",
+    "cloudinary": "^2.7.0",
+    "dotenv": "^17.2.2",
+    "express": "^5.1.0",
+    "joi": "^18.0.1",
+    "mongoose": "^8.18.1",
+    "nodemon": "^3.1.14",
+    "puppeteer-core": "^25.12.0",
+    "redis": "^5.8.2"
+  },
+  "devDependencies": {
+    "eslint": "^9.35.0",
+    "prettier": "^3.6.2"
+  }
+}

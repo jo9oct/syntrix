@@ -1,0 +1,119 @@
+# STATUS: UPDATED
+
+services:
+
+  api:
+    build:
+      context: .
+      dockerfile: Dockerfile
+
+    container_name: web-security-assessment-api
+
+    command: node server.js
+
+    restart: unless-stopped
+
+    env_file:
+      - .env
+
+    ports:
+      - "5001:5000"
+
+    depends_on:
+      mongodb:
+        condition: service_healthy
+
+      redis:
+        condition: service_healthy
+
+    networks:
+      - assessment-network
+
+  worker:
+    build:
+      context: .
+      dockerfile: Dockerfile
+
+    container_name: web-security-assessment-worker
+
+    command: node worker.js
+
+    restart: unless-stopped
+
+    env_file:
+      - .env
+
+    depends_on:
+      mongodb:
+        condition: service_healthy
+
+      redis:
+        condition: service_healthy
+
+    networks:
+      - assessment-network
+
+  mongodb:
+    image: mongo:8
+
+    container_name: web-security-assessment-mongodb
+
+    restart: unless-stopped
+
+    volumes:
+      - mongodb-data:/data/db
+
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "mongosh",
+          "--quiet",
+          "--eval",
+          "db.adminCommand({ ping: 1 }).ok"
+        ]
+
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+    networks:
+      - assessment-network
+
+  redis:
+    image: redis:8-alpine
+
+    container_name: web-security-assessment-redis
+
+    restart: unless-stopped
+
+    command: redis-server --appendonly yes
+
+    volumes:
+      - redis-data:/data
+
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "redis-cli",
+          "ping"
+        ]
+
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+    networks:
+      - assessment-network
+
+volumes:
+
+  mongodb-data:
+
+  redis-data:
+
+networks:
+
+  assessment-network:
+    driver: bridge
