@@ -27,6 +27,7 @@ import findingRoutes from "./src/routes/finding.routes.js";
 import evidenceRoutes from "./src/routes/evidence.routes.js";
 import reportRoutes from "./src/routes/report.routes.js";
 import companyRuleRoutes from "./src/routes/companyRule.routes.js";
+import crawlRoutes from "./src/routes/crawl.routes.js";
 
 const app =
   express();
@@ -210,6 +211,11 @@ app.use(
 app.use(
   "/api/v1/company-rules",
   companyRuleRoutes
+);
+
+app.use(
+  "/api/v1/crawls",
+  crawlRoutes
 );
 
 app.use(

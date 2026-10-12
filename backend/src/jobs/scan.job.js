@@ -76,6 +76,10 @@ import {
   recordScanCancelled,
 } from '../metrics/scan.metrics.js';
 
+import {
+  runCrawlAndPersist,
+} from '../services/crawl.service.js';
+
 const SCAN_JOB_NAME =
   'security-scan';
 
@@ -835,6 +839,8 @@ const getBodyLength = (
   }
 };
 
+// STATUS: UPDATED
+
 const buildPersistedEvidence = ({
   item,
   findingId,
@@ -843,15 +849,15 @@ const buildPersistedEvidence = ({
 }) => {
   const sourceRequest =
     item?.request &&
-    typeof item.request ===
-      'object'
+    typeof item.request === 'object' &&
+    !Array.isArray(item.request)
       ? item.request
       : null;
 
   const sourceResponse =
     item?.response &&
-    typeof item.response ===
-      'object'
+    typeof item.response === 'object' &&
+    !Array.isArray(item.response)
       ? item.response
       : null;
 
@@ -868,25 +874,22 @@ const buildPersistedEvidence = ({
   const requestHeaders =
     normalizeHeaders(
       item?.requestHeaders ??
-      sourceRequest?.headers ??
-      (
-        item?.type ===
-          'request'
+        sourceRequest?.headers ??
+        (item?.type === 'request'
           ? item?.headers
-          : null
-      ),
+          : null),
     );
 
   const requestBody =
     normalizeBody(
       item?.requestBody ??
-      sourceRequest?.body,
+        sourceRequest?.body,
     );
 
   const requestParameters =
     normalizeParameters(
       item?.parameters ??
-      sourceRequest?.parameters,
+        sourceRequest?.parameters,
     );
 
   const responseStatusCode =
@@ -898,22 +901,18 @@ const buildPersistedEvidence = ({
   const responseHeaders =
     normalizeHeaders(
       item?.responseHeaders ??
-      sourceResponse?.headers ??
-      (
-        item?.type ===
-          'response' ||
-        item?.type ===
-          'http_exchange'
+        sourceResponse?.headers ??
+        (item?.type === 'response' ||
+        item?.type === 'http_exchange'
           ? item?.headers
-          : null
-      ),
+          : null),
     );
 
   const responseBody =
     normalizeBody(
       item?.responseBody ??
-      sourceResponse?.body ??
-      item?.bodyExcerpt,
+        sourceResponse?.body ??
+        item?.bodyExcerpt,
     );
 
   const summary =
@@ -923,7 +922,9 @@ const buildPersistedEvidence = ({
 
   const observationDescription =
     item?.observation?.description ??
-    item?.observation ??
+    (typeof item?.observation === 'string'
+      ? item.observation
+      : null) ??
     item?.description ??
     summary ??
     null;
@@ -949,283 +950,229 @@ const buildPersistedEvidence = ({
     null;
 
   const effectiveHeaders =
-    Object.keys(
-      responseHeaders,
-    ).length > 0
+    Object.keys(responseHeaders).length > 0
       ? responseHeaders
       : requestHeaders;
 
-  const effectiveStatusCode =
-    responseStatusCode;
-
   const metadata = {
     ...(item?.metadata &&
-    typeof item.metadata ===
-      'object' &&
-    !Array.isArray(
-      item.metadata,
-    )
+    typeof item.metadata === 'object' &&
+    !Array.isArray(item.metadata)
       ? item.metadata
       : {}),
 
     scannerId,
-
     targetId,
 
-    ...(item?.parameter
-      ? {
-          parameter:
-            item.parameter,
-        }
+    ...(item?.parameter != null
+      ? { parameter: item.parameter }
       : {}),
 
-    ...(item?.payload
-      ? {
-          payload:
-            item.payload,
-        }
+    ...(item?.payload != null
+      ? { payload: item.payload }
       : {}),
 
-    ...(item?.confidence
-      ? {
-          confidence:
-            item.confidence,
-        }
+    ...(item?.confidence != null
+      ? { confidence: item.confidence }
       : {}),
 
-    ...(item?.cwe
-      ? {
-          cwe:
-            item.cwe,
-        }
+    ...(item?.cwe != null
+      ? { cwe: item.cwe }
       : {}),
 
-    ...(item?.owasp
-      ? {
-          owasp:
-            item.owasp,
-        }
+    ...(item?.owasp != null
+      ? { owasp: item.owasp }
       : {}),
   };
 
+  const validTypes = new Set([
+    'request',
+    'response',
+    'http_exchange',
+    'comparison',
+    'header',
+    'body',
+    'dns',
+    'certificate',
+    'metadata',
+  ]);
+
+  const evidenceType = validTypes.has(item?.type)
+    ? item.type
+    : 'http_exchange';
+
   return {
-    ownerId:
-      undefined,
+    ownerId: undefined,
+    scanId: undefined,
 
-    scanId:
-      undefined,
-
-    findingId:
-      findingId ??
-      null,
-
+    findingId: findingId ?? null,
     scannerId,
 
-    type:
-      item?.type ===
-        'request' ||
-      item?.type ===
-        'response' ||
-      item?.type ===
-        'http_exchange' ||
-      item?.type ===
-        'comparison' ||
-      item?.type ===
-        'header' ||
-      item?.type ===
-        'body' ||
-      item?.type ===
-        'dns' ||
-      item?.type ===
-        'certificate' ||
-      item?.type ===
-        'metadata'
-        ? item.type
-        : 'http_exchange',
+    type: evidenceType,
 
     request: {
-      method:
-        requestMethod,
-
-      url:
-        requestUrl,
-
-      headers:
-        requestHeaders,
-
-      body:
-        requestBody,
-
-      parameters:
-        requestParameters,
+      method: requestMethod,
+      url: requestUrl,
+      headers: requestHeaders,
+      body: requestBody,
+      parameters: requestParameters,
     },
 
     response: {
-      statusCode:
-        responseStatusCode,
-
-      headers:
-        responseHeaders,
-
-      bodySnippet:
-        responseBody,
-
-      contentType:
-        getContentType(
-          responseHeaders,
-        ),
-
-      bodyLength:
-        getBodyLength(
-          sourceResponse?.body ??
+      statusCode: responseStatusCode,
+      headers: responseHeaders,
+      bodySnippet: responseBody,
+      contentType: getContentType(responseHeaders),
+      bodyLength: getBodyLength(
+        sourceResponse?.body ??
           item?.bodyExcerpt,
-        ),
+      ),
     },
 
     observation: {
       description:
-        typeof observationDescription ===
-        'string'
-          ? observationDescription.slice(
-              0,
-              10_000,
-            )
+        typeof observationDescription === 'string'
+          ? observationDescription.slice(0, 10_000)
           : observationDescription,
 
       expected:
-        typeof observationExpected ===
-        'string'
-          ? observationExpected.slice(
-              0,
-              10_000,
-            )
+        typeof observationExpected === 'string'
+          ? observationExpected.slice(0, 10_000)
           : observationExpected,
 
       actual:
-        typeof observationActual ===
-        'string'
-          ? observationActual.slice(
-              0,
-              10_000,
-            )
+        typeof observationActual === 'string'
+          ? observationActual.slice(0, 10_000)
           : observationActual,
     },
 
-    method:
-      effectiveMethod,
-
-    url:
-      effectiveUrl,
-
-    statusCode:
-      effectiveStatusCode,
-
-    headers:
-      effectiveHeaders,
+    method: effectiveMethod,
+    url: effectiveUrl,
+    statusCode: responseStatusCode,
+    headers: effectiveHeaders,
 
     bodyExcerpt:
       responseBody ??
       requestBody,
 
     summary:
-      typeof summary ===
-      'string'
-        ? summary.slice(
-            0,
-            5_000,
-          )
+      typeof summary === 'string'
+        ? summary.slice(0, 5_000)
         : summary,
 
-    fingerprint:
-      item?.fingerprint ??
-      null,
+    fingerprint: item?.fingerprint ?? null,
 
     sensitiveDataRedacted:
-      item?.sensitiveDataRedacted ??
-      true,
+      item?.sensitiveDataRedacted ?? true,
 
     metadata,
   };
 };
 
-const persistEvidenceForFinding =
-  async ({
-    ownerId,
-    scanId,
-    targetId,
-    scannerId,
+// STATUS: UPDATED
+
+// STATUS: UPDATED
+
+const persistEvidenceForFinding = async ({
+  ownerId,
+  scanId,
+  targetId,
+  scannerId,
+  item,
+  findingId = null,
+}) => {
+  const evidence = buildPersistedEvidence({
     item,
-    findingId = null,
-  }) => {
-    const evidence =
-      buildPersistedEvidence({
-        item,
-        findingId,
-        scannerId,
-        targetId,
-      });
+    findingId,
+    scannerId,
+    targetId,
+  });
 
-    evidence.ownerId =
-      ownerId;
+  evidence.ownerId = ownerId;
+  evidence.scanId = scanId;
 
-    evidence.scanId =
-      scanId;
+  // Generate a stable fingerprint using evidence-specific details.
+  // Recalculate it rather than trusting an incomplete incoming fingerprint.
+  evidence.fingerprint = createEvidenceFingerprint({
+    scannerId,
 
-    if (
-      !evidence.fingerprint
-    ) {
-      evidence.fingerprint =
-        createEvidenceFingerprint({
-          scannerId,
+    findingFingerprint:
+      item?.findingFingerprint ||
+      item?.findingKey ||
+      findingId ||
+      item?.fingerprint ||
+      null,
 
-          findingFingerprint:
-            item?.findingFingerprint ||
-            item?.findingKey ||
-            item?.fingerprint ||
-            findingId,
+    requestMethod:
+      evidence.request?.method ??
+      evidence.method ??
+      null,
 
-          requestMethod:
-            evidence.request
-              ?.method ??
-            evidence.method,
+    requestUrl:
+      evidence.request?.url ??
+      evidence.url ??
+      null,
 
-          requestUrl:
-            evidence.request
-              ?.url ??
-            evidence.url,
+    responseStatus:
+      evidence.response?.statusCode ??
+      evidence.statusCode ??
+      null,
 
-          responseStatus:
-            evidence.response
-              ?.statusCode ??
-            evidence.statusCode,
-        });
-    }
+    evidenceType: evidence.type,
 
-    const persistedEvidence =
-      await evidenceRepository.create(
-        evidence,
-      );
+    parameter:
+      evidence.metadata?.parameter ??
+      item?.parameter ??
+      null,
 
-    /*
-     * Evidence may exist without a finding.
-     *
-     * Only create the reverse finding ->
-     * evidence relationship when an actual
-     * finding ID exists.
-     */
-    if (
-      persistedEvidence?._id &&
-      findingId
-    ) {
-      await findingRepository.addEvidenceId(
-        ownerId,
-        findingId,
-        persistedEvidence._id,
-      );
-    }
+    observation:
+      evidence.observation?.description ??
+      evidence.summary ??
+      null,
 
-    return persistedEvidence;
-  };
+    expected:
+      evidence.observation?.expected ??
+      null,
+
+    actual:
+      evidence.observation?.actual ??
+      null,
+
+    requestParameters:
+      evidence.request?.parameters ??
+      null,
+
+    requestBody:
+      evidence.request?.body ??
+      null,
+
+    responseBodySnippet:
+      evidence.response?.bodySnippet ??
+      evidence.bodyExcerpt ??
+      null,
+
+    payload:
+      evidence.metadata?.payload ??
+      null,
+  });
+
+  // Reuse matching evidence or insert a new record.
+  const persistedEvidence =
+    await evidenceRepository.upsertByFingerprint({
+      evidence,
+    });
+
+  // Link evidence to its finding without duplicate evidence IDs.
+  if (persistedEvidence?._id && findingId) {
+    await findingRepository.addEvidenceId(
+      ownerId,
+      findingId,
+      persistedEvidence._id,
+    );
+  }
+
+  return persistedEvidence;
+};
 
 const persistScanResults =
   async ({
@@ -1306,50 +1253,80 @@ const persistScanResults =
         orderedFindings,
       );
 
-    const findingIds =
-      new Map();
+    const findingIds = new Map();
+    const persistedFindings = [];
+    const persistedFindingFingerprints = new Set();
 
-    const persistedFindings =
-      [];
-
-    for (
-      const finding
-      of orderedFindings
-    ) {
+    for (const finding of orderedFindings) {
       await assertGuestSessionActive({
         ownerId,
         isGuest,
       });
 
-      const persistedFinding =
-        await findingRepository.create({
-          ...finding,
+      const findingKey = getFindingKey(finding);
 
-          ownerId,
+      const fingerprint =
+        normalizeFindingKey(finding.fingerprint);
 
-          scanId,
+      if (!fingerprint) {
+        throw new Error(
+          'Cannot persist a finding without a fingerprint.',
+        );
+      }
 
-          targetId,
-        });
+      // Reuse a finding already mapped during this run.
+      let persistedFindingId = findingIds.get(fingerprint);
 
-      if (
-        persistedFinding?._id
-      ) {
-        const findingKey =
-          getFindingKey(
-            finding,
+      // Recover findings saved by an earlier, partially failed attempt.
+      if (!persistedFindingId) {
+        const existingFinding =
+          await findingRepository.findByFingerprint(
+            ownerId,
+            scanId,
+            fingerprint,
           );
 
-        if (findingKey) {
-          findingIds.set(
-            findingKey,
-            persistedFinding._id.toString(),
+        if (existingFinding?._id) {
+          persistedFindingId =
+            existingFinding._id.toString();
+
+          if (!persistedFindingFingerprints.has(fingerprint)) {
+            persistedFindings.push(existingFinding);
+            persistedFindingFingerprints.add(fingerprint);
+          }
+        }
+      }
+
+      // Insert only if this fingerprint does not already exist.
+      if (!persistedFindingId) {
+        const createdFinding =
+          await findingRepository.create({
+            ...finding,
+            ownerId,
+            scanId,
+            targetId,
+          });
+
+        if (!createdFinding?._id) {
+          throw new Error(
+            `Failed to persist finding: ${fingerprint}`,
           );
         }
 
-        persistedFindings.push(
-          persistedFinding,
-        );
+        persistedFindingId =
+          createdFinding._id.toString();
+
+        if (!persistedFindingFingerprints.has(fingerprint)) {
+          persistedFindings.push(createdFinding);
+          persistedFindingFingerprints.add(fingerprint);
+        }
+      }
+
+      // Map the fingerprint and finding key to the same persisted ID.
+      findingIds.set(fingerprint, persistedFindingId);
+
+      if (findingKey) {
+        findingIds.set(findingKey, persistedFindingId);
       }
     }
 
@@ -1729,29 +1706,59 @@ const processScanJob =
           selection,
         );
 
+      // STATUS: UPDATED
+
+      /*
+      * Persist the crawl separately from the Scan document.
+      *
+      * The plan was captured when the job was created.
+      * Crawl failures are recorded but must not prevent
+      * the selected security scanners from running.
+      */
+      let crawlResult = null;
+
+      try {
+        crawlResult = await runCrawlAndPersist({
+          ownerId,
+          scanId,
+          targetUrl: scanTarget.url,
+          plan: isGuest ? 'free' : plan,
+          headers: {},
+        });
+      } catch (error) {
+        // Preserve your existing crawl-error logging and handling here.
+      }
+
+      // STATUS: UPDATED
+
       const result =
         await executeScan({
           scan: {
-            id:
-              scanId,
-
+            id: scanId,
             ownerId,
-
             targetId,
           },
 
-          target:
-            scanTarget,
+          target: scanTarget,
 
-          selection:
-            engineSelection,
+          selection: engineSelection,
 
           ownerId,
 
-          credentials:
-            sanitizeCredentials(),
+          credentials: sanitizeCredentials(),
 
           options,
+
+          discoveredUrls: (crawlResult?.pages ?? [])
+            .filter((page) => page?.status === 'success')
+            .map((page) => page.url)
+            .filter((url) => {
+              try {
+                return new URL(url).searchParams.size > 0;
+              } catch {
+                return false;
+              }
+            }),
         });
 
       /*

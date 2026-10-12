@@ -17,6 +17,7 @@ const SENSITIVE_HEADERS = new Set([
 
 const MAX_BODY_LENGTH = 10000;
 const MAX_PAYLOAD_LENGTH = 4000;
+const REDACTED = '[REDACTED]';
 
 const calculateConfidence = ({
   confirmed = false,
@@ -27,65 +28,77 @@ const calculateConfidence = ({
     return CONFIDENCE.HIGH;
   }
 
-  if (
-    confirmed ||
-    differential ||
-    repeated
-  ) {
+  if (confirmed || differential || repeated) {
     return CONFIDENCE.MEDIUM;
   }
 
   return CONFIDENCE.LOW;
 };
 
-const truncateValue = (
-  value,
-  maxLength = MAX_BODY_LENGTH,
-) => {
-  if (
-    value === null ||
-    value === undefined
-  ) {
+const truncateValue = (value, maxLength = MAX_BODY_LENGTH) => {
+  if (value === null || value === undefined) {
     return value;
   }
 
-  const normalized =
-    typeof value === 'string'
-      ? value
-      : JSON.stringify(value);
+  let normalized;
 
-  if (
-    normalized.length <=
-    maxLength
-  ) {
+  try {
+    normalized =
+      typeof value === 'string'
+        ? value
+        : JSON.stringify(value);
+  } catch {
+    normalized = '[UNSERIALIZABLE]';
+  }
+
+  if (typeof normalized !== 'string') {
+    normalized = String(normalized);
+  }
+
+  if (normalized.length <= maxLength) {
     return normalized;
   }
 
-  return `${normalized.slice(
-    0,
-    maxLength,
-  )}\n[TRUNCATED]`;
+  return `${normalized.slice(0, maxLength)}\n[TRUNCATED]`;
 };
 
-const redactHeaders = (
-  headers = {},
-) => {
+/**
+ * Remove credentials and query values before an URL is persisted.
+ * Query parameter names remain available for debugging.
+ */
+const sanitizeUrl = (value) => {
+  if (typeof value !== 'string' || !value.trim()) {
+    return null;
+  }
+
+  try {
+    const url = new URL(value);
+
+    if (!['http:', 'https:'].includes(url.protocol)) {
+      return '[REDACTED_URL]';
+    }
+
+    url.username = '';
+    url.password = '';
+
+    for (const key of new Set(url.searchParams.keys())) {
+      url.searchParams.set(key, '');
+    }
+
+    url.hash = '';
+
+    return url.toString();
+  } catch {
+    return '[REDACTED_URL]';
+  }
+};
+
+const redactHeaders = (headers = {}) => {
   const sanitized = {};
 
-  for (
-    const [
-      name,
-      value,
-    ] of Object.entries(headers)
-  ) {
-    if (
-      SENSITIVE_HEADERS.has(
-        name.toLowerCase(),
-      )
-    ) {
-      sanitized[name] =
-        '[REDACTED]';
-
+  for (const [name, value] of Object.entries(headers)) {
+    if (SENSITIVE_HEADERS.has(name.toLowerCase())) {
+      sanitized[name] = REDACTED;
       continue;
     }
 
@@ -95,64 +108,77 @@ const redactHeaders = (
   return sanitized;
 };
 
-const sanitizeRequest = (
-  request = {},
-) => {
-  return {
-    method:
-      request.method ||
-      null,
+const sanitizeRequest = (request = {}) => ({
+  method: request.method || null,
+  url: sanitizeUrl(request.url),
+  headers: redactHeaders(request.headers || {}),
+  body: request.body === null || request.body === undefined
+    ? request.body
+    : REDACTED,
+});
 
-    url:
-      request.url ||
-      null,
+const sanitizeResponse = (response = {}) => ({
+  status: response.status ?? response.statusCode ?? null,
+  statusCode: response.statusCode ?? response.status ?? null,
+  headers: redactHeaders(response.headers || {}),
+  body: response.body !== undefined || response.data !== undefined
+    ? REDACTED
+    : null,
+  contentType:
+    response.contentType ||
+    response.headers?.['content-type'] ||
+    null,
+});
 
-    headers:
-      redactHeaders(
-        request.headers ||
-          {},
-      ),
+const sanitizeMetadata = (metadata = {}) => {
+  if (!metadata || typeof metadata !== 'object' || Array.isArray(metadata)) {
+    return {};
+  }
 
-    body:
-      truncateValue(
-        request.body,
-      ),
-  };
-};
+  const sanitized = {};
 
-const sanitizeResponse = (
-  response = {},
-) => {
-  return {
-    status:
-      response.status ??
-      response.statusCode ??
-      null,
+  for (const [key, value] of Object.entries(metadata)) {
+    const normalizedKey = key.toLowerCase();
 
-    statusCode:
-      response.statusCode ??
-      response.status ??
-      null,
+    if (
+      normalizedKey.includes('url') ||
+      normalizedKey.includes('payload') ||
+      normalizedKey.includes('password') ||
+      normalizedKey.includes('secret') ||
+      normalizedKey.includes('token') ||
+      normalizedKey.includes('authorization') ||
+      normalizedKey.includes('cookie') ||
+      normalizedKey.includes('requestbody') ||
+      normalizedKey.includes('responsebody') ||
+      normalizedKey.includes('rawrequest') ||
+      normalizedKey.includes('rawresponse')
+    ) {
+      sanitized[key] = REDACTED;
+      continue;
+    }
 
-    headers:
-      redactHeaders(
-        response.headers ||
-          {},
-      ),
+    if (
+      value &&
+      typeof value === 'object' &&
+      !Array.isArray(value)
+    ) {
+      sanitized[key] = sanitizeMetadata(value);
+      continue;
+    }
 
-    body:
-      truncateValue(
-        response.body ??
-          response.data,
-      ),
+    if (Array.isArray(value)) {
+      sanitized[key] = value.map((item) =>
+        item && typeof item === 'object'
+          ? sanitizeMetadata(item)
+          : item
+      );
+      continue;
+    }
 
-    contentType:
-      response.contentType ||
-      response.headers?.[
-        'content-type'
-      ] ||
-      null,
-  };
+    sanitized[key] = value;
+  }
+
+  return sanitized;
 };
 
 const createSecurityEvidence = ({
@@ -169,155 +195,70 @@ const createSecurityEvidence = ({
   fingerprint = null,
   type = 'http_exchange',
 } = {}) => {
-  const sanitizedRequest =
-    request
-      ? sanitizeRequest(
-          request,
-        )
-      : null;
+  const sanitizedRequest = request
+    ? sanitizeRequest(request)
+    : null;
 
-  const sanitizedResponse =
-    response
-      ? sanitizeResponse(
-          response,
-        )
-      : null;
+  const sanitizedResponse = response
+    ? sanitizeResponse(response)
+    : null;
 
-  const requestHeaders =
-    sanitizedRequest?.headers ||
-    {};
-
-  const responseHeaders =
-    sanitizedResponse?.headers ||
-    {};
-
-  const method =
-    sanitizedRequest?.method ||
-    null;
-
-  const url =
-    sanitizedRequest?.url ||
-    null;
+  const method = sanitizedRequest?.method || null;
+  const url = sanitizedRequest?.url || null;
 
   const statusCode =
-    sanitizedResponse?.statusCode ??
-    null;
+    sanitizedResponse?.statusCode ?? null;
 
-  const bodyExcerpt =
-    sanitizedResponse?.body ??
-    sanitizedRequest?.body ??
-    null;
-
-  const summary =
-    description ||
-    (
-      parameter ||
-      payload ||
-      confidence
-    )
-      ? [
-          description,
-          parameter
-            ? `Parameter: ${parameter}`
-            : null,
-          payload
-            ? `Payload: ${truncateValue(
-                payload,
-                MAX_PAYLOAD_LENGTH,
-              )}`
-            : null,
-          confidence
-            ? `Confidence: ${confidence}`
-            : null,
-        ]
-          .filter(Boolean)
-          .join('\n')
-      : null;
+  const summary = [
+    description,
+    parameter ? `Parameter: ${parameter}` : null,
+    payload ? 'Payload: [REDACTED]' : null,
+    confidence ? `Confidence: ${confidence}` : null,
+  ]
+    .filter(Boolean)
+    .join('\n') || null;
 
   return {
     type,
-
     findingId,
-
     findingFingerprint,
-
     findingKey,
-
     fingerprint,
 
-    request:
-      sanitizedRequest,
-
-    response:
-      sanitizedResponse,
+    request: sanitizedRequest,
+    response: sanitizedResponse,
 
     method,
-
     url,
-
     statusCode,
 
     headers: {
-      ...requestHeaders,
-      ...responseHeaders,
+      ...(sanitizedRequest?.headers || {}),
+      ...(sanitizedResponse?.headers || {}),
     },
 
-    bodyExcerpt,
+    bodyExcerpt: '[REDACTED]',
 
     summary,
 
-    sensitiveDataRedacted:
-      true,
+    sensitiveDataRedacted: true,
 
     metadata: {
-      ...metadata,
+      ...sanitizeMetadata(metadata),
 
-      ...(parameter
-        ? {
-            parameter,
-          }
-        : {}),
-
-      ...(payload
-        ? {
-            payload:
-              truncateValue(
-                payload,
-                MAX_PAYLOAD_LENGTH,
-              ),
-          }
-        : {}),
-
-      ...(confidence
-        ? {
-            confidence,
-          }
-        : {}),
-
-      ...(description
-        ? {
-            description,
-          }
-        : {}),
+      ...(parameter ? { parameter } : {}),
+      ...(payload ? { payload: REDACTED } : {}),
+      ...(confidence ? { confidence } : {}),
+      ...(description ? { description } : {}),
     },
   };
 };
 
-const buildEvidence = (
-  input = {},
-) => {
-  return createSecurityEvidence(
-    input,
-  );
-};
+const buildEvidence = (input = {}) =>
+  createSecurityEvidence(input);
 
-const createEvidence = (
-  input = {},
-) => {
-  return createSecurityEvidence(
-    input,
-  );
-};
+const createEvidence = (input = {}) =>
+  createSecurityEvidence(input);
 
 export {
   CONFIDENCE,
@@ -325,6 +266,7 @@ export {
   createSecurityEvidence,
   buildEvidence,
   createEvidence,
+  sanitizeUrl,
   sanitizeRequest,
   sanitizeResponse,
   redactHeaders,

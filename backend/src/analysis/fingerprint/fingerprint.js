@@ -1,16 +1,39 @@
-import crypto from "node:crypto";
+// STATUS: UPDATED
+
+import crypto from 'node:crypto';
 
 const normalizeValue = (value) =>
-  String(value ?? "")
+  String(value ?? '')
     .trim()
     .toLowerCase()
-    .replace(/\s+/g, " ");
+    .replace(/\s+/g, ' ');
+
+const stableSerialize = (value) => {
+  if (value === null || value === undefined) {
+    return null;
+  }
+
+  if (typeof value !== 'object') {
+    return value;
+  }
+
+  if (Array.isArray(value)) {
+    return value.map(stableSerialize);
+  }
+
+  return Object.keys(value)
+    .sort()
+    .reduce((result, key) => {
+      result[key] = stableSerialize(value[key]);
+      return result;
+    }, {});
+};
 
 const createHash = (value) =>
   crypto
-    .createHash("sha256")
+    .createHash('sha256')
     .update(value)
-    .digest("hex");
+    .digest('hex');
 
 const createFindingFingerprint = ({
   scannerId,
@@ -19,7 +42,7 @@ const createFindingFingerprint = ({
   target,
   parameter = null,
   location = null,
-  evidenceType = null
+  evidenceType = null,
 }) => {
   const normalized = [
     normalizeValue(scannerId),
@@ -28,20 +51,20 @@ const createFindingFingerprint = ({
     normalizeValue(target),
     normalizeValue(parameter),
     normalizeValue(location),
-    normalizeValue(evidenceType)
-  ].join("|");
+    normalizeValue(evidenceType),
+  ].join('|');
 
   return createHash(normalized);
 };
 
 const createTargetFingerprint = ({
   normalizedUrl,
-  hostname
+  hostname,
 }) => {
   const normalized = [
     normalizeValue(normalizedUrl),
-    normalizeValue(hostname)
-  ].join("|");
+    normalizeValue(hostname),
+  ].join('|');
 
   return createHash(normalized);
 };
@@ -51,21 +74,39 @@ const createEvidenceFingerprint = ({
   findingFingerprint,
   requestMethod = null,
   requestUrl = null,
-  responseStatus = null
+  responseStatus = null,
+  evidenceType = null,
+  parameter = null,
+  observation = null,
+  expected = null,
+  actual = null,
+  requestParameters = null,
+  requestBody = null,
+  responseBodySnippet = null,
+  payload = null,
 }) => {
-  const normalized = [
-    normalizeValue(scannerId),
-    normalizeValue(findingFingerprint),
-    normalizeValue(requestMethod),
-    normalizeValue(requestUrl),
-    normalizeValue(responseStatus)
-  ].join("|");
+  const identity = {
+    scannerId: normalizeValue(scannerId),
+    findingFingerprint: normalizeValue(findingFingerprint),
+    requestMethod: normalizeValue(requestMethod),
+    requestUrl: normalizeValue(requestUrl),
+    responseStatus: normalizeValue(responseStatus),
+    evidenceType: normalizeValue(evidenceType),
+    parameter: stableSerialize(parameter),
+    observation: stableSerialize(observation),
+    expected: stableSerialize(expected),
+    actual: stableSerialize(actual),
+    requestParameters: stableSerialize(requestParameters),
+    requestBody: stableSerialize(requestBody),
+    responseBodySnippet: stableSerialize(responseBodySnippet),
+    payload: stableSerialize(payload),
+  };
 
-  return createHash(normalized);
+  return createHash(JSON.stringify(identity));
 };
 
 const attachFindingFingerprint = (finding) => {
-  if (!finding || typeof finding !== "object") {
+  if (!finding || typeof finding !== 'object') {
     return finding;
   }
 
@@ -83,7 +124,7 @@ const attachFindingFingerprint = (finding) => {
         finding.target ||
         finding.url ||
         finding.metadata?.url ||
-        "",
+        '',
       parameter:
         finding.parameter ||
         finding.metadata?.parameter ||
@@ -95,8 +136,8 @@ const attachFindingFingerprint = (finding) => {
       evidenceType:
         finding.evidenceType ||
         finding.metadata?.evidenceType ||
-        null
-    })
+        null,
+    }),
   };
 };
 
@@ -117,7 +158,7 @@ const correlateFindings = (findings = []) => {
           finding.target ||
           finding.url ||
           finding.metadata?.url ||
-          "",
+          '',
         parameter:
           finding.parameter ||
           finding.metadata?.parameter ||
@@ -129,7 +170,7 @@ const correlateFindings = (findings = []) => {
         evidenceType:
           finding.evidenceType ||
           finding.metadata?.evidenceType ||
-          null
+          null,
       });
 
     if (!groups.has(fingerprint)) {
@@ -138,7 +179,7 @@ const correlateFindings = (findings = []) => {
 
     groups.get(fingerprint).push({
       ...finding,
-      fingerprint
+      fingerprint,
     });
   }
 
@@ -147,8 +188,8 @@ const correlateFindings = (findings = []) => {
       fingerprint,
       count: items.length,
       primary: items[0],
-      occurrences: items
-    })
+      occurrences: items,
+    }),
   );
 };
 
@@ -158,5 +199,5 @@ export {
   createEvidenceFingerprint,
   attachFindingFingerprint,
   attachFindingFingerprints,
-  correlateFindings
+  correlateFindings,
 };

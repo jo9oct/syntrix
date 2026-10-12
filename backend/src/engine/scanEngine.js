@@ -1,11 +1,7 @@
-import {
-  createScanContext,
-} from './scanContext.js';
+// STATUS: UPDATED
 
-import {
-  resolveSelectedScanners,
-} from './scannerRegistry.js';
-
+import { createScanContext } from './scanContext.js';
+import { resolveSelectedScanners } from './scannerRegistry.js';
 import {
   mergeResults,
   processScannerResult,
@@ -19,14 +15,10 @@ const SCAN_STATUS = Object.freeze({
   CANCELLED: 'cancelled',
 });
 
-const assertSelection = (
-  selection,
-) => {
+const assertSelection = (selection) => {
   if (
     !selection ||
-    !Array.isArray(
-      selection.selectedScannerIds,
-    ) ||
+    !Array.isArray(selection.selectedScannerIds) ||
     selection.selectedScannerIds.length === 0
   ) {
     throw new Error(
@@ -44,18 +36,17 @@ const executeScan = async ({
   ownerId,
   credentials = null,
   options = {},
+  discoveredUrls = [],
   signal,
   onScannerStart,
   onScannerComplete,
   onScannerError,
 }) => {
-  const normalizedSelection =
-    assertSelection(selection);
+  const normalizedSelection = assertSelection(selection);
 
-  const scanners =
-    resolveSelectedScanners(
-      normalizedSelection.selectedScannerIds,
-    );
+  const scanners = resolveSelectedScanners(
+    normalizedSelection.selectedScannerIds,
+  );
 
   const context = createScanContext({
     scan,
@@ -65,210 +56,119 @@ const executeScan = async ({
     ownerId,
     credentials,
     options,
+    discoveredUrls,
   });
 
   const results = [];
 
-  context.logger.info(
-    'Scan execution started.',
-    {
-      selectedScannerCount:
-        scanners.length,
-
-      selectedScannerIds:
-        scanners.map(
-          (scanner) => scanner.id,
-        ),
-    },
-  );
+  context.logger.info('Scan execution started.', {
+    selectedScannerCount: scanners.length,
+    selectedScannerIds: scanners.map((scanner) => scanner.id),
+    discoveredQueryTargetCount: context.discoveredUrls.length,
+  });
 
   for (const scanner of scanners) {
     if (signal?.aborted) {
-      context.logger.warn(
-        'Scan execution cancelled.',
-        {
-          scannerId: scanner.id,
-        },
-      );
+      context.logger.warn('Scan execution cancelled.', {
+        scannerId: scanner.id,
+      });
 
       break;
     }
 
-    context.progress.start(
-      scanner.id,
-    );
+    context.progress.start(scanner.id);
 
-    if (
-      typeof onScannerStart ===
-      'function'
-    ) {
-      await onScannerStart({
-        scanner,
-        context,
-      });
+    if (typeof onScannerStart === 'function') {
+      await onScannerStart({ scanner, context });
     }
 
     try {
       await context.rateLimiter.wait();
 
-      const scannerResult =
-        await scanner.run(context);
+      const scannerResult = await scanner.run(context);
 
-      const processedResult =
-        processScannerResult({
-          scanner,
-          result: scannerResult,
-        });
+      const processedResult = processScannerResult({
+        scanner,
+        result: scannerResult,
+      });
 
-      results.push(
-        processedResult,
-      );
+      results.push(processedResult);
+      context.progress.complete(scanner.id);
 
-      context.progress.complete(
-        scanner.id,
-      );
-
-      if (
-        typeof onScannerComplete ===
-        'function'
-      ) {
+      if (typeof onScannerComplete === 'function') {
         await onScannerComplete({
           scanner,
           context,
-          result:
-            processedResult,
+          result: processedResult,
         });
       }
 
-      context.logger.info(
-        'Scanner completed.',
-        {
-          scannerId: scanner.id,
-
-          findingCount:
-            processedResult
-              .findings.length,
-        },
-      );
+      context.logger.info('Scanner completed.', {
+        scannerId: scanner.id,
+        findingCount: processedResult.findings.length,
+      });
     } catch (error) {
-      context.progress.fail(
-        scanner.id,
-      );
+      context.progress.fail(scanner.id);
 
-      context.logger.error(
-        'Scanner failed.',
-        {
-          scannerId: scanner.id,
-
-          error: {
-            name:
-              error?.name,
-
-            message:
-              error?.message,
-
-            code:
-              error?.code,
-          },
+      context.logger.error('Scanner failed.', {
+        scannerId: scanner.id,
+        error: {
+          name: error?.name,
+          message: error?.message,
+          code: error?.code,
         },
-      );
+      });
 
-      if (
-        typeof onScannerError ===
-        'function'
-      ) {
-        await onScannerError({
-          scanner,
-          context,
-          error,
-        });
+      if (typeof onScannerError === 'function') {
+        await onScannerError({ scanner, context, error });
       }
 
       results.push({
-        scannerId:
-          scanner.id,
-
-        category:
-          scanner.category,
-
-        status:
-          'failed',
-
+        scannerId: scanner.id,
+        category: scanner.category,
+        status: 'failed',
         data: {},
-
         findings: [],
-
         evidence: [],
-
         fingerprints: [],
-
-        verificationRecords:
-          [],
-
+        verificationRecords: [],
         metadata: {
           error: {
-            name:
-              error?.name,
-
-            message:
-              error?.message,
-
-            code:
-              error?.code,
+            name: error?.name,
+            message: error?.message,
+            code: error?.code,
           },
         },
       });
     }
   }
 
-  const merged =
-    mergeResults(results);
+  const merged = mergeResults(results);
 
-  const hasFailedScanner =
-    results.some(
-      (result) =>
-        result.status ===
-        'failed',
-    );
-
-  const status =
-    signal?.aborted
-      ? SCAN_STATUS.CANCELLED
-      : hasFailedScanner
-        ? SCAN_STATUS.FAILED
-        : SCAN_STATUS.COMPLETED;
-
-  context.logger.info(
-    'Scan execution completed.',
-    {
-      status,
-
-      scannerCount:
-        results.length,
-
-      findingCount:
-        merged.findings.length,
-    },
+  const hasFailedScanner = results.some(
+    (result) => result.status === 'failed',
   );
 
-  return {
-    scanId:
-      scan.id,
+  const status = signal?.aborted
+    ? SCAN_STATUS.CANCELLED
+    : hasFailedScanner
+      ? SCAN_STATUS.FAILED
+      : SCAN_STATUS.COMPLETED;
 
-    ownerId,
-
-    targetId:
-      target.id,
-
+  context.logger.info('Scan execution completed.', {
     status,
+    scannerCount: results.length,
+    findingCount: merged.findings.length,
+  });
 
-    selection:
-      normalizedSelection,
-
+  return {
+    scanId: scan.id,
+    ownerId,
+    targetId: target.id,
+    status,
+    selection: normalizedSelection,
     ...merged,
-
-    progress:
-      context.progress.getState(),
+    progress: context.progress.getState(),
   };
 };
 

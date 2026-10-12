@@ -22,8 +22,7 @@ const requestSchema =
       },
 
       headers: {
-        type:
-          Schema.Types.Mixed,
+        type: Schema.Types.Mixed,
         default: {},
       },
 
@@ -34,8 +33,7 @@ const requestSchema =
       },
 
       parameters: {
-        type:
-          Schema.Types.Mixed,
+        type: Schema.Types.Mixed,
         default: {},
       },
     },
@@ -55,8 +53,7 @@ const responseSchema =
       },
 
       headers: {
-        type:
-          Schema.Types.Mixed,
+        type: Schema.Types.Mixed,
         default: {},
       },
 
@@ -115,23 +112,20 @@ const evidenceSchema =
   new Schema(
     {
       ownerId: {
-        type:
-          Schema.Types.ObjectId,
+        type: Schema.Types.ObjectId,
         required: true,
         index: true,
       },
 
       scanId: {
-        type:
-          Schema.Types.ObjectId,
+        type: Schema.Types.ObjectId,
         ref: 'Scan',
         required: true,
         index: true,
       },
 
       findingId: {
-        type:
-          Schema.Types.ObjectId,
+        type: Schema.Types.ObjectId,
         ref: 'Finding',
         default: null,
         index: true,
@@ -175,12 +169,7 @@ const evidenceSchema =
         default: null,
       },
 
-      /*
-       * Backward-compatible fields.
-       * These remain available while the
-       * structured request/response model
-       * becomes the primary representation.
-       */
+      // Backward-compatible fields.
       method: {
         type: String,
         uppercase: true,
@@ -199,8 +188,7 @@ const evidenceSchema =
       },
 
       headers: {
-        type:
-          Schema.Types.Mixed,
+        type: Schema.Types.Mixed,
         default: {},
       },
 
@@ -227,8 +215,7 @@ const evidenceSchema =
       },
 
       metadata: {
-        type:
-          Schema.Types.Mixed,
+        type: Schema.Types.Mixed,
         default: {},
       },
     },
@@ -238,6 +225,7 @@ const evidenceSchema =
     },
   );
 
+// Existing query indexes.
 evidenceSchema.index({
   ownerId: 1,
   findingId: 1,
@@ -253,6 +241,25 @@ evidenceSchema.index({
   ownerId: 1,
   scannerId: 1,
 });
+
+// Prevent duplicate evidence identities.
+evidenceSchema.index(
+  {
+    ownerId: 1,
+    scanId: 1,
+    findingId: 1,
+    fingerprint: 1,
+  },
+  {
+    name: 'unique_evidence_identity',
+    unique: true,
+    partialFilterExpression: {
+      fingerprint: {
+        $type: 'string',
+      },
+    },
+  },
+);
 
 const Evidence =
   model(

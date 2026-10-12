@@ -2,9 +2,7 @@
 
 import Evidence from '../models/evidence.model.js';
 
-const create = async (
-  data,
-) =>
+const create = async (data) =>
   Evidence.create(data);
 
 const createMany = async (
@@ -34,6 +32,78 @@ const findById = async (
     ownerId,
   }).lean();
 
+const findByFingerprint = async ({
+  ownerId,
+  scanId,
+  findingId,
+  fingerprint,
+}) =>
+  Evidence.findOne({
+    ownerId,
+    scanId,
+    findingId,
+    fingerprint,
+  }).lean();
+
+/**
+ * Atomically reuse an existing evidence record or create it.
+ *
+ * The fingerprint must be stable and specific to the evidence
+ * observation. The filter also scopes the record to its owner,
+ * scan, and finding.
+ */
+const upsertByFingerprint = async ({
+  evidence,
+}) => {
+  if (
+    !evidence?.ownerId ||
+    !evidence?.scanId ||
+    typeof evidence?.fingerprint !== 'string' ||
+    !evidence.fingerprint.trim()
+  ) {
+    throw new TypeError(
+      'Evidence ownerId, scanId, and fingerprint are required.',
+    );
+  }
+
+  const filter = {
+    ownerId: evidence.ownerId,
+    scanId: evidence.scanId,
+    findingId: evidence.findingId ?? null,
+    fingerprint: evidence.fingerprint,
+  };
+
+  try {
+    return await Evidence.findOneAndUpdate(
+      filter,
+      {
+        $setOnInsert: evidence,
+      },
+      {
+        upsert: true,
+        new: true,
+        setDefaultsOnInsert: true,
+        runValidators: true,
+      },
+    ).lean();
+  } catch (error) {
+    // A concurrent operation may have inserted the same record.
+    // Recover only from a duplicate-key error, then return that record.
+    if (error?.code !== 11000) {
+      throw error;
+    }
+
+    const existingEvidence =
+      await Evidence.findOne(filter).lean();
+
+    if (existingEvidence) {
+      return existingEvidence;
+    }
+
+    throw error;
+  }
+};
+
 const listByFinding = async (
   ownerId,
   findingId,
@@ -56,13 +126,10 @@ const listByFinding = async (
   }
 
   if (scannerId) {
-    filter.scannerId =
-      scannerId;
+    filter.scannerId = scannerId;
   }
 
-  return Evidence.find(
-    filter,
-  )
+  return Evidence.find(filter)
     .sort({
       createdAt: -1,
     })
@@ -94,18 +161,14 @@ const listByScan = async (
   }
 
   if (scannerId) {
-    filter.scannerId =
-      scannerId;
+    filter.scannerId = scannerId;
   }
 
   if (findingId) {
-    filter.findingId =
-      findingId;
+    filter.findingId = findingId;
   }
 
-  return Evidence.find(
-    filter,
-  )
+  return Evidence.find(filter)
     .sort({
       createdAt: -1,
     })
@@ -125,6 +188,8 @@ export {
   create,
   createMany,
   findById,
+  findByFingerprint,
+  upsertByFingerprint,
   listByFinding,
   listByScan,
   deleteByOwnerId,
