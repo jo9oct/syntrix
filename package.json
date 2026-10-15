@@ -1,0 +1,23 @@
+{
+  "name": "sentrix-platform",
+  "version": "1.0.0",
+  "private": true,
+  "workspaces": [
+    "frontend",
+    "backend"
+  ],
+  "scripts": {
+    "dev": "npm run dev --workspaces --if-present",
+    "build": "npm run build --workspaces --if-present",
+    "docker:build": "cmd /c \"tar --exclude=node_modules --exclude=.git -cf - -C backend . | docker build -t sentrix-api -\" && cmd /c \"tar --exclude=node_modules --exclude=.git -cf - -C frontend . | docker build -t sentrix-web -\"",
+    "docker:up": "docker compose up -d",
+    "docker:down": "docker compose down",
+    "docker:seed": "docker compose exec api npm run seed"
+  },
+  "description": "Monorepo for the Sentrix platform.",
+  "main": "index.js",
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "type": "commonjs"
+}

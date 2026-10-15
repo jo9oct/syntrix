@@ -1,0 +1,52 @@
+services:
+  mongodb:
+    image: mongo:latest
+    container_name: sentrix-mongo
+    restart: unless-stopped
+    ports:
+      - "27017:27017"
+    volumes:
+      - mongodb_data:/data/db
+
+  api:
+    image: sentrix-api:latest
+    container_name: sentrix-api
+    restart: unless-stopped
+    ports:
+      - "3001:3001"
+    environment:
+      - PORT=3001
+      - MONGODB_URI=mongodb://mongodb:27017/sentrix
+      - JWT_SECRET=super-secret-development-key-change-in-production
+      - NODE_ENV=development
+      - CHAPA_SECRET_KEY=CHAPA_TEST_PRIV_Y_E5QaFeS-kuM_j64hccd-5RQ5IuTaiGQU8_uNJC
+      - CHAPA_PUBLIC_KEY=CHAPA_TEST_PUB_RGZaLprTEfS8H-13PnxA85jgJqzTFp3p2iUyDiG6
+      - CHAPA_BASE_URL=https://api.chapa.global/v1
+    depends_on:
+      - mongodb
+
+  web:
+    image: sentrix-web:latest
+    container_name: sentrix-web
+    restart: unless-stopped
+    ports:
+      - "5173:5173"
+    environment:
+      - VITE_API_URL=http://localhost:3001/api
+    depends_on:
+      - api
+
+  mongo-express:
+    image: mongo-express:latest
+    container_name: sentrix-mongo-express
+    restart: unless-stopped
+    ports:
+      - "8081:8081"
+    environment:
+      - ME_CONFIG_MONGODB_URL=mongodb://sentrix-mongo:27017/sentrix
+      - ME_CONFIG_BASICAUTH=false
+    depends_on:
+      - mongodb
+
+volumes:
+  mongodb_data:
