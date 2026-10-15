@@ -1,138 +1,81 @@
 // STATUS: UPDATED
 
-import mongoose from 'mongoose';
+import mongoose from "mongoose";
 
-import * as companyRuleRepository
-  from '../../database/repositories/companyRule.repository.js';
+import * as companyRuleRepository from "../../database/repositories/companyRule.repository.js";
 
-import {
-  evaluateRule,
-} from './ruleHandlers.js';
+import { evaluateRule } from "./ruleHandlers.js";
 
-import {
-  normalizeFinding,
-} from '../../engine/finding.js';
+import { normalizeFinding } from "../../engine/finding.js";
 
-const assertOwnerId = (
-  ownerId,
-) => {
-  if (
-    !mongoose.isValidObjectId(
-      ownerId,
-    )
-  ) {
-    const error =
-      new Error(
-        'Owner ID must be a valid ObjectId.',
-      );
+const assertOwnerId = (ownerId) => {
+  if (!mongoose.isValidObjectId(ownerId)) {
+    const error = new Error("Owner ID must be a valid ObjectId.");
 
     error.statusCode = 400;
-    error.code =
-      'INVALID_OWNER_ID';
+    error.code = "INVALID_OWNER_ID";
 
     throw error;
   }
 
-  return new mongoose.Types.ObjectId(
-    ownerId,
-  );
+  return new mongoose.Types.ObjectId(ownerId);
 };
 
-const normalizeRuleIds = (
-  ruleIds,
-) => {
-  if (
-    !Array.isArray(
-      ruleIds,
-    )
-  ) {
+const normalizeRuleIds = (ruleIds) => {
+  if (!Array.isArray(ruleIds)) {
     return [];
   }
 
-  return [
-    ...new Set(
-      ruleIds.map(
-        (ruleId) =>
-          ruleId.toString(),
-      ),
-    ),
-  ].map(
-    (ruleId) =>
-      new mongoose.Types.ObjectId(
-        ruleId,
-      ),
+  return [...new Set(ruleIds.map((ruleId) => ruleId.toString()))].map(
+    (ruleId) => new mongoose.Types.ObjectId(ruleId),
   );
 };
 
-const buildCompanyRuleFinding = ({
-  rule,
-  evaluation,
-}) => {
+const buildCompanyRuleFinding = ({ rule, evaluation }) => {
   return normalizeFinding({
-    scannerId:
-      'company-rule',
+    scannerId: "company-rule",
 
-    category:
-      rule.category,
+    category: rule.category,
 
-    title:
-      rule.name,
+    title: rule.name,
 
-    description:
-      rule.description,
+    description: rule.description,
 
-    impact:
-      `Company security policy "${rule.name}" was violated.`,
+    impact: `Company security policy "${rule.name}" was violated.`,
 
-    severity:
-      rule.severity,
+    severity: rule.severity,
 
-    confidence:
-      'high',
+    confidence: "high",
 
-    status:
-      'detected',
+    status: "detected",
 
-    verificationStatus:
-      'pending',
+    verificationStatus: "pending",
 
     remediation:
       rule.rule?.remediation ??
       `Review and comply with the company security rule "${rule.name}".`,
 
-    tags: [
-      'company-rule',
-      rule.category,
-    ],
+    tags: ["company-rule", rule.category],
 
     metadata: {
-      companyRuleId:
-        rule._id?.toString(),
+      companyRuleId: rule._id?.toString(),
 
-      companyRuleName:
-        rule.name,
+      companyRuleName: rule.name,
 
-      companyRuleCategory:
-        rule.category,
+      companyRuleCategory: rule.category,
 
-      ruleDefinition:
-        rule.rule,
+      ruleDefinition: rule.rule,
 
       evaluation: {
-        actual:
-          evaluation.actual,
+        actual: evaluation.actual,
 
-        expected:
-          evaluation.expected,
+        expected: evaluation.expected,
 
-        operator:
-          evaluation.operator,
+        operator: evaluation.operator,
 
-        scannerId:
-          evaluation.scannerId,
+        scannerId: evaluation.scannerId,
 
-        source:
-          evaluation.source,
+        source: evaluation.source,
       },
     },
   });
@@ -143,29 +86,15 @@ const evaluateCompanyRules = async ({
   companyRuleIds = [],
   scannerResults = [],
 }) => {
-  const normalizedOwnerId =
-    assertOwnerId(
-      ownerId,
-    );
+  const normalizedOwnerId = assertOwnerId(ownerId);
 
-  if (
-    !Array.isArray(
-      scannerResults,
-    )
-  ) {
-    throw new TypeError(
-      'Scanner results must be an array.',
-    );
+  if (!Array.isArray(scannerResults)) {
+    throw new TypeError("Scanner results must be an array.");
   }
 
-  const normalizedRuleIds =
-    normalizeRuleIds(
-      companyRuleIds,
-    );
+  const normalizedRuleIds = normalizeRuleIds(companyRuleIds);
 
-  if (
-    normalizedRuleIds.length === 0
-  ) {
+  if (normalizedRuleIds.length === 0) {
     return {
       rulesEvaluated: 0,
 
@@ -177,25 +106,18 @@ const evaluateCompanyRules = async ({
     };
   }
 
-  const rules =
-    await companyRuleRepository
-      .findByIds(
-        normalizedOwnerId,
-        normalizedRuleIds,
-      );
+  const rules = await companyRuleRepository.findByIds(
+    normalizedOwnerId,
+    normalizedRuleIds,
+  );
 
-  if (
-    rules.length !==
-    normalizedRuleIds.length
-  ) {
-    const error =
-      new Error(
-        'One or more selected company security rules were not found or are disabled.',
-      );
+  if (rules.length !== normalizedRuleIds.length) {
+    const error = new Error(
+      "One or more selected company security rules were not found or are disabled.",
+    );
 
     error.statusCode = 400;
-    error.code =
-      'COMPANY_RULE_SELECTION_INVALID';
+    error.code = "COMPANY_RULE_SELECTION_INVALID";
 
     throw error;
   }
@@ -203,50 +125,35 @@ const evaluateCompanyRules = async ({
   const findings = [];
   const evaluations = [];
 
-  for (
-    const rule of rules
-  ) {
+  for (const rule of rules) {
     try {
-      const evaluation =
-        evaluateRule({
-          rule,
+      const evaluation = evaluateRule({
+        rule,
 
-          scannerResults,
-        });
-
-      evaluations.push({
-        ruleId:
-          rule._id?.toString(),
-
-        ruleName:
-          rule.name,
-
-        supported:
-          evaluation.supported,
-
-        violated:
-          evaluation.violated,
-
-        actual:
-          evaluation.actual,
-
-        expected:
-          evaluation.expected,
-
-        operator:
-          evaluation.operator,
-
-        scannerId:
-          evaluation.scannerId,
-
-        source:
-          evaluation.source,
+        scannerResults,
       });
 
-      if (
-        evaluation.supported &&
-        evaluation.violated
-      ) {
+      evaluations.push({
+        ruleId: rule._id?.toString(),
+
+        ruleName: rule.name,
+
+        supported: evaluation.supported,
+
+        violated: evaluation.violated,
+
+        actual: evaluation.actual,
+
+        expected: evaluation.expected,
+
+        operator: evaluation.operator,
+
+        scannerId: evaluation.scannerId,
+
+        source: evaluation.source,
+      });
+
+      if (evaluation.supported && evaluation.violated) {
         findings.push(
           buildCompanyRuleFinding({
             rule,
@@ -257,37 +164,27 @@ const evaluateCompanyRules = async ({
       }
     } catch (error) {
       evaluations.push({
-        ruleId:
-          rule._id?.toString(),
+        ruleId: rule._id?.toString(),
 
-        ruleName:
-          rule.name,
+        ruleName: rule.name,
 
-        supported:
-          false,
+        supported: false,
 
-        violated:
-          false,
+        violated: false,
 
         error: {
-          code:
-            error?.code ??
-            'COMPANY_RULE_EVALUATION_ERROR',
+          code: error?.code ?? "COMPANY_RULE_EVALUATION_ERROR",
 
-          message:
-            error?.message ??
-            'Company rule evaluation failed.',
+          message: error?.message ?? "Company rule evaluation failed.",
         },
       });
     }
   }
 
   return {
-    rulesEvaluated:
-      rules.length,
+    rulesEvaluated: rules.length,
 
-    violatedRules:
-      findings.length,
+    violatedRules: findings.length,
 
     findings,
 
@@ -295,6 +192,4 @@ const evaluateCompanyRules = async ({
   };
 };
 
-export {
-  evaluateCompanyRules,
-};
+export { evaluateCompanyRules };

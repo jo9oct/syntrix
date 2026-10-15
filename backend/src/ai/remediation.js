@@ -31,7 +31,7 @@ const normalizeRemediation = (value) => {
     return {
       summary: null,
       actions: [],
-      references: []
+      references: [],
     };
   }
 
@@ -39,30 +39,19 @@ const normalizeRemediation = (value) => {
     return {
       summary: normalizeText(value),
       actions: [],
-      references: []
+      references: [],
     };
   }
 
   return {
-    summary: normalizeText(
-      value.summary ||
-        value.description
-    ),
-    actions: normalizeList(
-      value.actions ||
-        value.steps
-    ),
-    references: normalizeList(
-      value.references
-    )
+    summary: normalizeText(value.summary || value.description),
+    actions: normalizeList(value.actions || value.steps),
+    references: normalizeList(value.references),
   };
 };
 
 const buildDefaultRemediation = (finding) => {
-  const category =
-    String(
-      finding?.category || "security"
-    ).trim();
+  const category = String(finding?.category || "security").trim();
 
   return {
     summary:
@@ -72,18 +61,14 @@ const buildDefaultRemediation = (finding) => {
       "Confirm the finding against the supplied evidence.",
       "Identify and correct the underlying application behavior.",
       "Add a regression test covering the affected security control.",
-      "Re-run the relevant security scanner after remediation."
+      "Re-run the relevant security scanner after remediation.",
     ],
-    references: []
+    references: [],
   };
 };
 
-const ensureRemediation = (
-  remediation,
-  finding
-) => {
-  const normalized =
-    normalizeRemediation(remediation);
+const ensureRemediation = (remediation, finding) => {
+  const normalized = normalizeRemediation(remediation);
 
   if (
     normalized.summary ||
@@ -96,8 +81,4 @@ const ensureRemediation = (
   return buildDefaultRemediation(finding);
 };
 
-export {
-  normalizeRemediation,
-  buildDefaultRemediation,
-  ensureRemediation
-};
+export { normalizeRemediation, buildDefaultRemediation, ensureRemediation };

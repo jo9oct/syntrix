@@ -32,3 +32,4 @@ Scanning Engine
 Workers / Redis
        ↓
 MongoDB / Cloudinary
+```

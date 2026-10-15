@@ -1,6 +1,4 @@
-import {
-  auditLog
-} from "./audit.service.js";
+import { auditLog } from "./audit.service.js";
 
 const resolveOwnerId = (request) =>
   request.user?.ownerId ||
@@ -13,32 +11,25 @@ const resolveOwnerId = (request) =>
 const createAuditMiddleware = ({
   action,
   resourceType = null,
-  resolveResourceId = null
+  resolveResourceId = null,
 } = {}) => {
   if (!action) {
-    throw new Error(
-      "Audit action is required."
-    );
+    throw new Error("Audit action is required.");
   }
 
   return (request, response, next) => {
-    const ownerId =
-      resolveOwnerId(request);
+    const ownerId = resolveOwnerId(request);
 
     if (!ownerId) {
       return next();
     }
 
     const resourceId =
-      typeof resolveResourceId ===
-      "function"
-        ? resolveResourceId(
-            request
-          )
+      typeof resolveResourceId === "function"
+        ? resolveResourceId(request)
         : null;
 
-    const originalEnd =
-      response.end;
+    const originalEnd = response.end;
 
     response.end = function (...args) {
       response.end = originalEnd;
@@ -47,33 +38,22 @@ const createAuditMiddleware = ({
         ownerId,
         action,
         actorType: "user",
-        actorId:
-          request.user?.id ||
-          request.auth?.userId ||
-          null,
+        actorId: request.user?.id || request.auth?.userId || null,
         resourceType,
         resourceId,
-        requestId:
-          request.id || null,
+        requestId: request.id || null,
         metadata: {
-          method:
-            request.method,
-          path:
-            request.originalUrl,
-          statusCode:
-            response.statusCode
-        }
+          method: request.method,
+          path: request.originalUrl,
+          statusCode: response.statusCode,
+        },
       });
 
-      return response.end(
-        ...args
-      );
+      return response.end(...args);
     };
 
     return next();
   };
 };
 
-export {
-  createAuditMiddleware
-};
+export { createAuditMiddleware };

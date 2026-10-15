@@ -1,29 +1,28 @@
 // STATUS: UPDATED
 
-import mongoose from 'mongoose';
+import mongoose from "mongoose";
 
 const { Schema, model } = mongoose;
 
-const guestSessionSchema =
-  new Schema(
-    {
-      guestOwnerId: {
-        type: Schema.Types.ObjectId,
-        required: true,
-        unique: true,
-        index: true,
-      },
+const guestSessionSchema = new Schema(
+  {
+    guestOwnerId: {
+      type: Schema.Types.ObjectId,
+      required: true,
+      unique: true,
+      index: true,
+    },
 
-      expiresAt: {
-        type: Date,
-        required: true,
-      },
+    expiresAt: {
+      type: Date,
+      required: true,
     },
-    {
-      timestamps: true,
-      versionKey: false,
-    },
-  );
+  },
+  {
+    timestamps: true,
+    versionKey: false,
+  },
+);
 
 guestSessionSchema.index(
   {
@@ -34,10 +33,6 @@ guestSessionSchema.index(
   },
 );
 
-const GuestSession =
-  model(
-    'GuestSession',
-    guestSessionSchema,
-  );
+const GuestSession = model("GuestSession", guestSessionSchema);
 
 export default GuestSession;

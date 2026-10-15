@@ -1,186 +1,132 @@
 import {
   createReconScanner,
   getTargetHostname,
-} from '../shared/reconContract.js';
+} from "../shared/reconContract.js";
 
-import {
-  resolveDnsRecords,
-} from '../shared/resolver.js';
+import { resolveDnsRecords } from "../shared/resolver.js";
 
-import {
-  createFingerprint,
-} from '../shared/fingerprint.js';
+import { createFingerprint } from "../shared/fingerprint.js";
 
-const RECORD_TYPES = Object.freeze([
-  'A',
-  'AAAA',
-  'CNAME',
-  'MX',
-  'NS',
-  'TXT',
-]);
+const RECORD_TYPES = Object.freeze(["A", "AAAA", "CNAME", "MX", "NS", "TXT"]);
 
-const normalizeRecordValues = (
-  values,
-) => {
-  if (
-    values === undefined ||
-    values === null
-  ) {
+const normalizeRecordValues = (values) => {
+  if (values === undefined || values === null) {
     return [];
   }
 
-  return Array.isArray(values)
-    ? values
-    : [values];
+  return Array.isArray(values) ? values : [values];
 };
 
-const scanner =
-  createReconScanner({
-    id:
-      'recon.dns',
+const scanner = createReconScanner({
+  id: "recon.dns",
 
-    name:
-      'DNS Reconnaissance',
+  name: "DNS Reconnaissance",
 
-    description:
-      'Collects common DNS records for the authorized target hostname.',
+  description:
+    "Collects common DNS records for the authorized target hostname.",
 
-    async run(context) {
-      const hostname =
-        getTargetHostname(
-          context,
-        );
+  async run(context) {
+    const hostname = getTargetHostname(context);
 
-      if (
-        context?.signal?.aborted
-      ) {
-        return {
-          data: {
-            hostname,
-            records: null,
-          },
-
-          evidence: [],
-
-          fingerprints: [],
-
-          verificationRecords:
-            [],
-
-          metadata: {
-            cancelled:
-              true,
-
-            recordTypes:
-              RECORD_TYPES,
-          },
-        };
-      }
-
-      const records =
-        await resolveDnsRecords(
+    if (context?.signal?.aborted) {
+      return {
+        data: {
           hostname,
-        );
+          records: null,
+        },
 
-      if (
-        context?.signal?.aborted
-      ) {
-        return {
-          data: {
-            hostname,
-            records,
-          },
+        evidence: [],
 
-          evidence: [],
+        fingerprints: [],
 
-          fingerprints: [],
+        verificationRecords: [],
 
-          verificationRecords:
-            [],
+        metadata: {
+          cancelled: true,
 
-          metadata: {
-            cancelled:
-              true,
+          recordTypes: RECORD_TYPES,
+        },
+      };
+    }
 
-            recordTypes:
-              RECORD_TYPES,
-          },
-        };
-      }
+    const records = await resolveDnsRecords(hostname);
 
-      const evidence = [];
-      const fingerprints = [];
-
-      for (
-        const recordType of RECORD_TYPES
-      ) {
-        const values =
-          normalizeRecordValues(
-            records?.[
-              recordType
-            ],
-          );
-
-        for (
-          const value of values
-        ) {
-          evidence.push({
-            type:
-              'dns',
-
-            hostname,
-
-            recordType,
-
-            value,
-          });
-
-          fingerprints.push(
-            createFingerprint({
-              type:
-                'dns',
-
-              name:
-                `${hostname}:${recordType}`,
-
-              version:
-                null,
-
-              confidence:
-                'high',
-
-              source:
-                'dns',
-
-              evidence: {
-                recordType,
-                value,
-              },
-            }),
-          );
-        }
-      }
-
+    if (context?.signal?.aborted) {
       return {
         data: {
           hostname,
           records,
         },
 
-        evidence,
+        evidence: [],
 
-        fingerprints,
+        fingerprints: [],
 
-        verificationRecords:
-          [],
+        verificationRecords: [],
 
         metadata: {
-          recordTypes:
-            RECORD_TYPES,
+          cancelled: true,
+
+          recordTypes: RECORD_TYPES,
         },
       };
-    },
-  });
+    }
+
+    const evidence = [];
+    const fingerprints = [];
+
+    for (const recordType of RECORD_TYPES) {
+      const values = normalizeRecordValues(records?.[recordType]);
+
+      for (const value of values) {
+        evidence.push({
+          type: "dns",
+
+          hostname,
+
+          recordType,
+
+          value,
+        });
+
+        fingerprints.push(
+          createFingerprint({
+            type: "dns",
+
+            name: `${hostname}:${recordType}`,
+
+            version: null,
+
+            confidence: "high",
+
+            source: "dns",
+
+            evidence: {
+              recordType,
+              value,
+            },
+          }),
+        );
+      }
+    }
+
+    return {
+      data: {
+        hostname,
+        records,
+      },
+
+      evidence,
+
+      fingerprints,
+
+      verificationRecords: [],
+
+      metadata: {
+        recordTypes: RECORD_TYPES,
+      },
+    };
+  },
+});
 
 export default scanner;

@@ -1,132 +1,167 @@
 // STATUS: UPDATED
+// File: src/controllers/scan.controller.js
+
+import { getOwnerId } from "../middleware/authorization.middleware.js";
+
+import { createScan, getScan, cancelScan } from "../services/scan.service.js";
 
 import {
-  createScan as createScanService,
-  getScan as getScanService,
-  cancelScan as cancelScanService,
-} from '../services/scan.service.js';
+  deleteScan,
+  recoverScan,
+  listDeletedScans,
+} from "../services/scanLifecycle.service.js";
 
-import {
-  getOwnerId,
-} from '../middleware/authorization.middleware.js';
+import { getLatestComparisonResult } from "../services/scanComparison.service.js";
 
-const createScan = async (
-  req,
-  res,
-  next,
-) => {
+const createScanController = async (req, res, next) => {
   try {
-    const ownerId =
-      getOwnerId(req);
+    const {
+      targetUrl,
+      scanSelection,
+      scopes = [],
+      companyRuleIds = [],
+      credentials = null,
+      idempotencyKey = null,
+    } = req.body;
 
-    const result =
-      await createScanService({
-        ownerId,
+    const result = await createScan({
+      ownerId: getOwnerId(req),
+      targetUrl,
+      scanSelection,
+      scopes,
+      companyRuleIds,
+      credentials,
+      idempotencyKey,
+      isGuest: req.auth?.userType === "guest",
+    });
 
-        isGuest:
-          req.auth?.userType ===
-          'guest',
-
-        targetUrl:
-          req.body.targetUrl,
-
-        scanSelection:
-          req.body.scanSelection,
-
-        companyRuleIds:
-          req.body.companyRuleIds ??
-          [],
-
-        credentials:
-          req.body.credentials ??
-          null,
-
-        idempotencyKey:
-          req.body.idempotencyKey ??
-          null,
-      });
-
-    res.status(
-      result.duplicated
-        ? 200
-        : 202,
-    ).json({
-      success:
-        true,
-
+    return res.status(result.duplicated ? 200 : 202).json({
+      success: true,
       data: {
-        scan:
-          result.scan,
-
-        duplicated:
-          result.duplicated,
+        scan: result.scan,
+        duplicated: result.duplicated,
       },
     });
   } catch (error) {
-    next(error);
+    return next(error);
   }
 };
 
-const getScan = async (
-  req,
-  res,
-  next,
-) => {
+const getScanController = async (req, res, next) => {
   try {
-    const ownerId =
-      getOwnerId(req);
+    const result = await getScan({
+      ownerId: getOwnerId(req),
+      scanId: req.params.scanId,
+    });
 
-    const result =
-      await getScanService({
-        ownerId,
-
-        scanId:
-          req.params.scanId,
-      });
-
-    res.status(200).json({
-      success:
-        true,
-
+    return res.status(200).json({
+      success: true,
       data: result,
     });
   } catch (error) {
-    next(error);
+    return next(error);
   }
 };
 
-const cancelScan = async (
-  req,
-  res,
-  next,
-) => {
+const cancelScanController = async (req, res, next) => {
   try {
-    const ownerId =
-      getOwnerId(req);
+    const result = await cancelScan({
+      ownerId: getOwnerId(req),
+      scanId: req.params.scanId,
+    });
 
-    const scan =
-      await cancelScanService({
-        ownerId,
-
-        scanId:
-          req.params.scanId,
-      });
-
-    res.status(200).json({
-      success:
-        true,
-
+    return res.status(200).json({
+      success: true,
       data: {
-        scan,
+        scan: result,
       },
     });
   } catch (error) {
-    next(error);
+    return next(error);
+  }
+};
+
+const getLatestComparisonResultController = async (req, res, next) => {
+  try {
+    const result = await getLatestComparisonResult({
+      ownerId: getOwnerId(req),
+      targetId: req.params.targetId,
+    });
+
+    return res.status(200).json({
+      success: true,
+      data: result,
+    });
+  } catch (error) {
+    return next(error);
+  }
+};
+
+const deleteScanController = async (req, res, next) => {
+  try {
+    const result = await deleteScan({
+      ownerId: getOwnerId(req),
+      scanId: req.params.scanId,
+    });
+
+    return res.status(200).json({
+      success: true,
+      data: {
+        scan: result.scan,
+        duplicated: result.duplicated,
+      },
+    });
+  } catch (error) {
+    return next(error);
+  }
+};
+
+const recoverScanController = async (req, res, next) => {
+  try {
+    const result = await recoverScan({
+      ownerId: getOwnerId(req),
+      scanId: req.params.scanId,
+      isGuest: req.auth?.userType === "guest",
+    });
+
+    return res.status(200).json({
+      success: true,
+      data: {
+        scan: result.scan,
+        duplicated: result.duplicated,
+      },
+    });
+  } catch (error) {
+    return next(error);
+  }
+};
+
+const listDeletedScansController = async (req, res, next) => {
+  try {
+    const limit = Number(req.query.limit ?? 50);
+    const skip = Number(req.query.skip ?? 0);
+
+    const result = await listDeletedScans({
+      ownerId: getOwnerId(req),
+      limit,
+      skip,
+    });
+
+    return res.status(200).json({
+      success: true,
+      data: result,
+    });
+  } catch (error) {
+    return next(error);
   }
 };
 
 export {
-  createScan,
-  getScan,
-  cancelScan,
+  createScanController,
+  getScanController,
+  cancelScanController,
+  getLatestComparisonResultController,
+  deleteScanController,
+  recoverScanController,
+  listDeletedScansController,
 };

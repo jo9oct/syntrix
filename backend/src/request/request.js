@@ -1,92 +1,53 @@
 // STATUS: UPDATED
 
-import {
-  executeRequest,
-} from '../core/httpClient.js';
+import { executeRequest } from "../core/httpClient.js";
 
-import {
-  createRequest,
-} from '../core/requestBuilder.js';
+import { createRequest } from "../core/requestBuilder.js";
 
-const request = async (
-  options = {},
-) => {
-  const requestDefinition =
-    createRequest(options);
+const request = async (options = {}) => {
+  const requestDefinition = createRequest(options);
+  const startedAt = Date.now();
 
-  const startedAt =
-    Date.now();
-
-  const response =
-    await executeRequest(
-      requestDefinition,
-    );
+  const response = await executeRequest({
+    ...requestDefinition,
+    // Prefer `data` when provided; otherwise use `body`.
+    data:
+      requestDefinition.data !== undefined
+        ? requestDefinition.data
+        : requestDefinition.body,
+  });
 
   return {
     ...response,
-
-    durationMs:
-      Date.now() -
-      startedAt,
-
+    durationMs: Date.now() - startedAt,
     request: {
-      url:
-        requestDefinition.url,
-
-      method:
-        requestDefinition.method,
-
-      headers:
-        requestDefinition.headers,
+      url: requestDefinition.url,
+      method: requestDefinition.method,
+      headers: requestDefinition.headers,
     },
   };
 };
 
-const get = async (
-  url,
-  options = {},
-) =>
+const get = async (url, options = {}) =>
   request({
     ...options,
-
     url,
-
-    method:
-      'GET',
+    method: "GET",
   });
 
-const post = async (
-  url,
-  body,
-  options = {},
-) =>
+const post = async (url, body, options = {}) =>
   request({
     ...options,
-
     url,
-
-    method:
-      'POST',
-
+    method: "POST",
     body,
   });
 
-const head = async (
-  url,
-  options = {},
-) =>
+const head = async (url, options = {}) =>
   request({
     ...options,
-
     url,
-
-    method:
-      'HEAD',
+    method: "HEAD",
   });
 
-export {
-  request,
-  get,
-  post,
-  head,
-};
+export { request, get, post, head };

@@ -1,14 +1,12 @@
 // STATUS: CREATED
 
-import {
-  getOwnerId,
-} from '../middleware/authorization.middleware.js';
+import { getOwnerId } from "../middleware/authorization.middleware.js";
 
 import {
   getCrawlSummary as getCrawlSummaryService,
   getCrawlPages as getCrawlPagesService,
   getCrawlInputs as getCrawlInputsService,
-} from '../services/crawl.service.js';
+} from "../services/crawl.service.js";
 
 const getCrawlSummary = async (req, res, next) => {
   try {
@@ -62,8 +60,4 @@ const getCrawlInputs = async (req, res, next) => {
   }
 };
 
-export {
-  getCrawlSummary,
-  getCrawlPages,
-  getCrawlInputs,
-};
+export { getCrawlSummary, getCrawlPages, getCrawlInputs };

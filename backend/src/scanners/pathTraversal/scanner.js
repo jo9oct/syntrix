@@ -1,36 +1,21 @@
-import {
-  get,
-} from '../../request/request.js';
+import { get } from "../../request/request.js";
 
-import {
-  createSecurityEvidence,
-} from '../shared/evidenceBuilder.js';
+import { createSecurityEvidence } from "../shared/evidenceBuilder.js";
 
-import {
-  calculateConfidence,
-} from '../shared/confidence.js';
+import { calculateConfidence } from "../shared/confidence.js";
 
-import {
-  normalizeFinding,
-} from '../shared/findingNormalizer.js';
+import { normalizeFinding } from "../shared/findingNormalizer.js";
 
 import {
   createSecurityScanner,
   getTargetUrl,
-} from '../shared/scannerContract.js';
+} from "../shared/scannerContract.js";
 
-import {
-  getParameters,
-  setParameter,
-} from '../shared/parameterTester.js';
+import { getParameters, setParameter } from "../shared/parameterTester.js";
 
-import {
-  getPayloads,
-} from '../shared/payloadManager.js';
+import { getPayloads } from "../shared/payloadManager.js";
 
-import {
-  assertSafeUrl,
-} from '../../recon/shared/resolver.js';
+import { assertSafeUrl } from "../../recon/shared/resolver.js";
 
 const FILE_DISCLOSURE_PATTERNS = [
   /root:x:0:0:/i,
@@ -40,114 +25,70 @@ const FILE_DISCLOSURE_PATTERNS = [
 ];
 
 const scanner = createSecurityScanner({
-  id: 'security.path-traversal',
+  id: "security.path-traversal",
 
-  name: 'Path Traversal',
+  name: "Path Traversal",
 
-  description:
-    'Checks for controlled path traversal indicators.',
+  description: "Checks for controlled path traversal indicators.",
 
   async run(context) {
-    const targetUrl =
-      getTargetUrl(context);
+    const targetUrl = getTargetUrl(context);
 
-    await assertSafeUrl(
-      targetUrl,
-    );
+    await assertSafeUrl(targetUrl);
 
-    const parameters =
-      getParameters(
-        targetUrl,
-      );
+    const parameters = getParameters(targetUrl);
 
-    const payloads =
-      getPayloads(
-        'pathTraversal',
-      );
+    const payloads = getPayloads("pathTraversal");
 
     const findings = [];
 
     const evidence = [];
 
-    for (
-      const parameter
-      of parameters.slice(0, 5)
-    ) {
-      for (
-        const payload
-        of payloads.slice(0, 2)
-      ) {
-        if (
-          context?.signal?.aborted
-        ) {
+    for (const parameter of parameters.slice(0, 5)) {
+      for (const payload of payloads.slice(0, 2)) {
+        if (context?.signal?.aborted) {
           break;
         }
 
-        const testUrl =
-          setParameter(
-            targetUrl,
-            parameter,
-            `${payload}etc/passwd`,
-          );
-
-        await assertSafeUrl(
-          testUrl,
+        const testUrl = setParameter(
+          targetUrl,
+          parameter,
+          `${payload}etc/passwd`,
         );
 
-        const response =
-          await get(
-            testUrl,
-            {
-              signal:
-                context?.signal,
+        await assertSafeUrl(testUrl);
 
-              headers:
-                context?.session
-                  ?.getHeaders?.() ??
-                {},
-            },
-          );
+        const response = await get(testUrl, {
+          signal: context?.signal,
 
-        const body =
-          typeof response.data ===
-          'string'
-            ? response.data
-            : '';
+          headers: context?.session?.getHeaders?.() ?? {},
+        });
 
-        const disclosureDetected =
-          FILE_DISCLOSURE_PATTERNS.some(
-            (pattern) =>
-              pattern.test(body),
-          );
+        const body = typeof response.data === "string" ? response.data : "";
 
-        if (
-          disclosureDetected
-        ) {
+        const disclosureDetected = FILE_DISCLOSURE_PATTERNS.some((pattern) =>
+          pattern.test(body),
+        );
+
+        if (disclosureDetected) {
           findings.push(
             normalizeFinding({
-              scannerId:
-                'security.path-traversal',
+              scannerId: "security.path-traversal",
 
-              title:
-                'Potential Path Traversal File Disclosure',
+              title: "Potential Path Traversal File Disclosure",
 
-              description:
-                `A response contained a signature consistent with local file disclosure after controlled traversal input in "${parameter}".`,
+              description: `A response contained a signature consistent with local file disclosure after controlled traversal input in "${parameter}".`,
 
-              severity:
-                'high',
+              severity: "high",
 
-              confidence:
-                calculateConfidence({
-                  confirmed:
-                    true,
-                }),
+              confidence: calculateConfidence({
+                confirmed: true,
+              }),
 
               remediation:
-                'Canonicalize paths, restrict file access to approved directories, and reject traversal sequences.',
+                "Canonicalize paths, restrict file access to approved directories, and reject traversal sequences.",
 
-              category:
-                'path-traversal',
+              category: "path-traversal",
 
               metadata: {
                 parameter,
@@ -158,30 +99,21 @@ const scanner = createSecurityScanner({
           evidence.push(
             createSecurityEvidence({
               request: {
-                method:
-                  'GET',
+                method: "GET",
 
-                url:
-                  testUrl,
+                url: testUrl,
 
-                headers:
-                  context?.session
-                    ?.getHeaders?.() ??
-                  {},
+                headers: context?.session?.getHeaders?.() ?? {},
               },
 
               response: {
-                status:
-                  response.status,
+                status: response.status,
 
-                statusText:
-                  response.statusText,
+                statusText: response.statusText,
 
-                headers:
-                  response.headers,
+                headers: response.headers,
 
-                body:
-                  response.data,
+                body: response.data,
               },
             }),
           );
@@ -193,14 +125,9 @@ const scanner = createSecurityScanner({
 
     return {
       data: {
-        testedParameters:
-          parameters.slice(
-            0,
-            5,
-          ),
+        testedParameters: parameters.slice(0, 5),
 
-        disclosureDetected:
-          findings.length > 0,
+        disclosureDetected: findings.length > 0,
       },
 
       findings,

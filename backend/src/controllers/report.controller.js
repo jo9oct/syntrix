@@ -1,36 +1,26 @@
 // STATUS: UPDATED
+// File: src/controllers/report.controller.js
 
 import {
   createReport as createReportService,
-  getReport as getReportService
+  getReport as getReportService,
+  getReportsByScan as getReportsByScanService,
 } from "../services/report.service.js";
 
 const createReport = async (req, res, next) => {
   try {
-    const {
+    const { scanId, format } = req.body;
+
+    const result = await createReportService({
+      ownerId: req.auth.ownerId,
+      userType: req.auth.userType,
       scanId,
-      format
-    } = req.body;
+      format,
+    });
 
-    const result =
-      await createReportService({
-        ownerId:
-          req.auth.ownerId,
-
-        userType:
-          req.auth.userType,
-
-        scanId,
-        format
-      });
-
-    return res.status(
-      result.queued
-        ? 202
-        : 200
-    ).json({
+    return res.status(result.queued ? 202 : 200).json({
       success: true,
-      data: result
+      data: result,
     });
   } catch (error) {
     next(error);
@@ -39,33 +29,42 @@ const createReport = async (req, res, next) => {
 
 const getReport = async (req, res, next) => {
   try {
-    const {
-      reportId
-    } = req.params;
+    const { reportId } = req.params;
 
-    const report =
-      await getReportService({
-        ownerId:
-          req.auth.ownerId,
-
-        userType:
-          req.auth.userType,
-
-        reportId
-      });
+    const report = await getReportService({
+      ownerId: req.auth.ownerId,
+      userType: req.auth.userType,
+      reportId,
+    });
 
     return res.status(200).json({
       success: true,
       data: {
-        report
-      }
+        report,
+      },
     });
   } catch (error) {
     next(error);
   }
 };
 
-export {
-  createReport,
-  getReport
+const getReportsByScan = async (req, res, next) => {
+  try {
+    const { scanId } = req.query;
+
+    const result = await getReportsByScanService({
+      ownerId: req.auth.ownerId,
+      userType: req.auth.userType,
+      scanId,
+    });
+
+    return res.status(200).json({
+      success: true,
+      data: result,
+    });
+  } catch (error) {
+    next(error);
+  }
 };
+
+export { createReport, getReport, getReportsByScan };

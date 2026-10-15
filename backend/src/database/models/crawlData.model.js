@@ -1,6 +1,6 @@
 // STATUS: CREATED
 
-import mongoose from 'mongoose';
+import mongoose from "mongoose";
 
 const { Schema, model } = mongoose;
 
@@ -14,7 +14,7 @@ const crawlDataSchema = new Schema(
 
     scanId: {
       type: Schema.Types.ObjectId,
-      ref: 'Scan',
+      ref: "Scan",
       required: true,
       unique: true,
       index: true,
@@ -28,7 +28,7 @@ const crawlDataSchema = new Schema(
 
     plan: {
       type: String,
-      enum: ['free', 'pro', 'enterprise'],
+      enum: ["free", "pro", "enterprise"],
       required: true,
     },
 
@@ -52,14 +52,8 @@ const crawlDataSchema = new Schema(
 
     status: {
       type: String,
-      enum: [
-        'pending',
-        'running',
-        'completed',
-        'failed',
-        'cancelled',
-      ],
-      default: 'pending',
+      enum: ["pending", "running", "completed", "failed", "cancelled"],
+      default: "pending",
       index: true,
     },
 
@@ -109,7 +103,6 @@ crawlDataSchema.index({
 });
 
 const CrawlData =
-  mongoose.models.CrawlData ||
-  model('CrawlData', crawlDataSchema);
+  mongoose.models.CrawlData || model("CrawlData", crawlDataSchema);
 
 export default CrawlData;

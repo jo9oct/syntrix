@@ -1,181 +1,111 @@
-import {
-  get,
-} from '../../request/request.js';
+import { get } from "../../request/request.js";
 
-import {
-  createSecurityEvidence,
-} from '../shared/evidenceBuilder.js';
+import { createSecurityEvidence } from "../shared/evidenceBuilder.js";
 
-import {
-  calculateConfidence,
-} from '../shared/confidence.js';
+import { calculateConfidence } from "../shared/confidence.js";
 
-import {
-  normalizeFinding,
-} from '../shared/findingNormalizer.js';
+import { normalizeFinding } from "../shared/findingNormalizer.js";
 
 import {
   createSecurityScanner,
   getTargetUrl,
-} from '../shared/scannerContract.js';
+} from "../shared/scannerContract.js";
 
-import {
-  assertSafeUrl,
-} from '../../recon/shared/resolver.js';
+import { assertSafeUrl } from "../../recon/shared/resolver.js";
 
-const FILE_INPUT_PATTERN =
-  /<input\b[^>]*type\s*=\s*["']?file["']?[^>]*>/gi;
+const FILE_INPUT_PATTERN = /<input\b[^>]*type\s*=\s*["']?file["']?[^>]*>/gi;
 
-const scanner =
-  createSecurityScanner({
-    id:
-      'security.file-upload',
+const scanner = createSecurityScanner({
+  id: "security.file-upload",
 
-    name:
-      'File Upload Security',
+  name: "File Upload Security",
 
-    description:
-      'Detects public file-upload forms and checks basic client-visible restrictions.',
+  description:
+    "Detects public file-upload forms and checks basic client-visible restrictions.",
 
-    async run(
-      context,
-    ) {
-      const targetUrl =
-        getTargetUrl(
-          context,
-        );
+  async run(context) {
+    const targetUrl = getTargetUrl(context);
 
-      await assertSafeUrl(
-        targetUrl,
-      );
+    await assertSafeUrl(targetUrl);
 
-      const response =
-        await get(
-          targetUrl,
-          {
-            signal:
-              context?.signal,
+    const response = await get(targetUrl, {
+      signal: context?.signal,
 
-            headers:
-              context?.session
-                ?.getHeaders?.() ??
-              {},
-          },
-        );
+      headers: context?.session?.getHeaders?.() ?? {},
+    });
 
-      const body =
-        typeof response.data ===
-        'string'
-          ? response.data
-          : '';
+    const body = typeof response.data === "string" ? response.data : "";
 
-      const inputs =
-        body.match(
-          FILE_INPUT_PATTERN,
-        ) ?? [];
+    const inputs = body.match(FILE_INPUT_PATTERN) ?? [];
 
-      const unrestricted =
-        inputs.filter(
-          (
-            input,
-          ) =>
-            !/\baccept\s*=/i.test(
-              input,
-            ),
-        );
+    const unrestricted = inputs.filter((input) => !/\baccept\s*=/i.test(input));
 
-      const findings = [];
+    const findings = [];
 
-      if (
-        unrestricted.length >
-        0
-      ) {
-        findings.push(
-          normalizeFinding({
-            scannerId:
-              'security.file-upload',
+    if (unrestricted.length > 0) {
+      findings.push(
+        normalizeFinding({
+          scannerId: "security.file-upload",
 
-            title:
-              'File Upload Input Without Client-Side Type Restriction',
+          title: "File Upload Input Without Client-Side Type Restriction",
 
-            description:
-              `A file upload input was identified without an HTML accept attribute. This is only a client-visible restriction check and does not establish a server-side upload vulnerability.`,
+          description: `A file upload input was identified without an HTML accept attribute. This is only a client-visible restriction check and does not establish a server-side upload vulnerability.`,
 
-            severity:
-              'info',
+          severity: "info",
 
-            confidence:
-              calculateConfidence({
-                confirmed:
-                  true,
-              }),
-
-            remediation:
-              'Use an appropriate accept attribute for user experience, but enforce file type, size, content, storage, and execution restrictions on the server.',
-
-            category:
-              'file-upload',
-
-            metadata: {
-              uploadInputs:
-                inputs.length,
-
-              inputsWithoutAccept:
-                unrestricted.length,
-            },
+          confidence: calculateConfidence({
+            confirmed: true,
           }),
-        );
-      }
 
-      return {
-        data: {
-          uploadInputs:
-            inputs.length,
+          remediation:
+            "Use an appropriate accept attribute for user experience, but enforce file type, size, content, storage, and execution restrictions on the server.",
 
-          inputsWithoutAccept:
-            unrestricted.length,
-        },
+          category: "file-upload",
 
-        findings,
+          metadata: {
+            uploadInputs: inputs.length,
 
-        evidence:
-          inputs.length >
-          0
-            ? [
-                createSecurityEvidence({
-                  request: {
-                    method:
-                      'GET',
+            inputsWithoutAccept: unrestricted.length,
+          },
+        }),
+      );
+    }
 
-                    url:
-                      targetUrl,
+    return {
+      data: {
+        uploadInputs: inputs.length,
 
-                    headers:
-                      context?.session
-                        ?.getHeaders?.() ??
-                      {},
-                  },
+        inputsWithoutAccept: unrestricted.length,
+      },
 
-                  response: {
-                    status:
-                      response.status,
+      findings,
 
-                    statusText:
-                      response.statusText,
+      evidence:
+        inputs.length > 0
+          ? [
+              createSecurityEvidence({
+                request: {
+                  method: "GET",
 
-                    headers:
-                      response.headers,
+                  url: targetUrl,
 
-                    contentType:
-                      response.headers?.[
-                        'content-type'
-                      ],
-                  },
-                }),
-              ]
-            : [],
-      };
-    },
-  });
+                  headers: context?.session?.getHeaders?.() ?? {},
+                },
+
+                response: {
+                  status: response.status,
+
+                  statusText: response.statusText,
+
+                  headers: response.headers,
+
+                  contentType: response.headers?.["content-type"],
+                },
+              }),
+            ]
+          : [],
+    };
+  },
+});
 
 export default scanner;

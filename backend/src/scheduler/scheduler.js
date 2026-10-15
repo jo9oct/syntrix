@@ -1,6 +1,6 @@
 import {
   listScheduledScans,
-  enqueueScheduledScan
+  enqueueScheduledScan,
 } from "./scheduledScan.service.js";
 
 let timer = null;
@@ -14,8 +14,7 @@ const executeDueSchedules = async () => {
   running = true;
 
   try {
-    const schedules =
-      listScheduledScans();
+    const schedules = listScheduledScans();
 
     const now = Date.now();
 
@@ -24,30 +23,21 @@ const executeDueSchedules = async () => {
         continue;
       }
 
-      const nextRun =
-        schedule.nextRunAt?.getTime();
+      const nextRun = schedule.nextRunAt?.getTime();
 
-      if (
-        !nextRun ||
-        nextRun > now
-      ) {
+      if (!nextRun || nextRun > now) {
         continue;
       }
 
       try {
-        await enqueueScheduledScan(
-          schedule
-        );
+        await enqueueScheduledScan(schedule);
       } catch (error) {
         console.error(
           JSON.stringify({
-            event:
-              "scheduled_scan.enqueue_failed",
-            scheduleId:
-              schedule.scheduleId,
-            error:
-              error.message
-          })
+            event: "scheduled_scan.enqueue_failed",
+            scheduleId: schedule.scheduleId,
+            error: error.message,
+          }),
         );
       }
     }
@@ -56,19 +46,14 @@ const executeDueSchedules = async () => {
   }
 };
 
-const startScheduler = ({
-  intervalMs = 30_000
-} = {}) => {
+const startScheduler = ({ intervalMs = 30_000 } = {}) => {
   if (timer) {
     return;
   }
 
-  timer = setInterval(
-    () => {
-      void executeDueSchedules();
-    },
-    intervalMs
-  );
+  timer = setInterval(() => {
+    void executeDueSchedules();
+  }, intervalMs);
 
   timer.unref?.();
 
@@ -84,8 +69,4 @@ const stopScheduler = () => {
   timer = null;
 };
 
-export {
-  startScheduler,
-  stopScheduler,
-  executeDueSchedules
-};
+export { startScheduler, stopScheduler, executeDueSchedules };

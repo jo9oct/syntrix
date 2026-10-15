@@ -1,4 +1,4 @@
-import mongoose from 'mongoose';
+import mongoose from "mongoose";
 
 const { Schema, model } = mongoose;
 
@@ -12,14 +12,14 @@ const fingerprintSchema = new Schema(
 
     targetId: {
       type: Schema.Types.ObjectId,
-      ref: 'Target',
+      ref: "Target",
       required: true,
       index: true,
     },
 
     scanId: {
       type: Schema.Types.ObjectId,
-      ref: 'Scan',
+      ref: "Scan",
       required: true,
       index: true,
     },
@@ -27,14 +27,14 @@ const fingerprintSchema = new Schema(
     type: {
       type: String,
       enum: [
-        'technology',
-        'web_server',
-        'framework',
-        'runtime',
-        'service',
-        'certificate',
-        'dns',
-        'other',
+        "technology",
+        "web_server",
+        "framework",
+        "runtime",
+        "service",
+        "certificate",
+        "dns",
+        "other",
       ],
       required: true,
     },
@@ -55,11 +55,7 @@ const fingerprintSchema = new Schema(
 
     confidence: {
       type: String,
-      enum: [
-        'low',
-        'medium',
-        'high',
-      ],
+      enum: ["low", "medium", "high"],
       required: true,
     },
 
@@ -91,6 +87,6 @@ fingerprintSchema.index({
   type: 1,
 });
 
-const Fingerprint = model('Fingerprint', fingerprintSchema);
+const Fingerprint = model("Fingerprint", fingerprintSchema);
 
 export default Fingerprint;

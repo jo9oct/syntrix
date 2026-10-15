@@ -1,23 +1,23 @@
 // STATUS: UPDATED
+// File: src/scanners/shared/evidenceBuilder.js
 
 const CONFIDENCE = Object.freeze({
-  LOW: 'low',
-  MEDIUM: 'medium',
-  HIGH: 'high',
+  LOW: "low",
+  MEDIUM: "medium",
+  HIGH: "high",
 });
 
 const SENSITIVE_HEADERS = new Set([
-  'authorization',
-  'proxy-authorization',
-  'cookie',
-  'set-cookie',
-  'x-api-key',
-  'x-auth-token',
+  "authorization",
+  "proxy-authorization",
+  "cookie",
+  "set-cookie",
+  "x-api-key",
+  "x-auth-token",
 ]);
 
 const MAX_BODY_LENGTH = 10000;
-const MAX_PAYLOAD_LENGTH = 4000;
-const REDACTED = '[REDACTED]';
+const REDACTED = "[REDACTED]";
 
 const calculateConfidence = ({
   confirmed = false,
@@ -43,15 +43,12 @@ const truncateValue = (value, maxLength = MAX_BODY_LENGTH) => {
   let normalized;
 
   try {
-    normalized =
-      typeof value === 'string'
-        ? value
-        : JSON.stringify(value);
+    normalized = typeof value === "string" ? value : JSON.stringify(value);
   } catch {
-    normalized = '[UNSERIALIZABLE]';
+    normalized = "[UNSERIALIZABLE]";
   }
 
-  if (typeof normalized !== 'string') {
+  if (typeof normalized !== "string") {
     normalized = String(normalized);
   }
 
@@ -63,33 +60,33 @@ const truncateValue = (value, maxLength = MAX_BODY_LENGTH) => {
 };
 
 /**
- * Remove credentials and query values before an URL is persisted.
+ * Remove credentials and query values before a URL is persisted.
  * Query parameter names remain available for debugging.
  */
 const sanitizeUrl = (value) => {
-  if (typeof value !== 'string' || !value.trim()) {
+  if (typeof value !== "string" || !value.trim()) {
     return null;
   }
 
   try {
     const url = new URL(value);
 
-    if (!['http:', 'https:'].includes(url.protocol)) {
-      return '[REDACTED_URL]';
+    if (!["http:", "https:"].includes(url.protocol)) {
+      return "[REDACTED_URL]";
     }
 
-    url.username = '';
-    url.password = '';
+    url.username = "";
+    url.password = "";
 
     for (const key of new Set(url.searchParams.keys())) {
-      url.searchParams.set(key, '');
+      url.searchParams.set(key, "");
     }
 
-    url.hash = '';
+    url.hash = "";
 
     return url.toString();
   } catch {
-    return '[REDACTED_URL]';
+    return "[REDACTED_URL]";
   }
 };
 
@@ -112,26 +109,26 @@ const sanitizeRequest = (request = {}) => ({
   method: request.method || null,
   url: sanitizeUrl(request.url),
   headers: redactHeaders(request.headers || {}),
-  body: request.body === null || request.body === undefined
-    ? request.body
-    : REDACTED,
+  body:
+    request.body === null || request.body === undefined
+      ? request.body
+      : REDACTED,
 });
 
 const sanitizeResponse = (response = {}) => ({
   status: response.status ?? response.statusCode ?? null,
   statusCode: response.statusCode ?? response.status ?? null,
   headers: redactHeaders(response.headers || {}),
-  body: response.body !== undefined || response.data !== undefined
-    ? REDACTED
-    : null,
+  body:
+    response.body !== undefined || response.data !== undefined
+      ? REDACTED
+      : null,
   contentType:
-    response.contentType ||
-    response.headers?.['content-type'] ||
-    null,
+    response.contentType || response.headers?.["content-type"] || null,
 });
 
 const sanitizeMetadata = (metadata = {}) => {
-  if (!metadata || typeof metadata !== 'object' || Array.isArray(metadata)) {
+  if (!metadata || typeof metadata !== "object" || Array.isArray(metadata)) {
     return {};
   }
 
@@ -141,36 +138,30 @@ const sanitizeMetadata = (metadata = {}) => {
     const normalizedKey = key.toLowerCase();
 
     if (
-      normalizedKey.includes('url') ||
-      normalizedKey.includes('payload') ||
-      normalizedKey.includes('password') ||
-      normalizedKey.includes('secret') ||
-      normalizedKey.includes('token') ||
-      normalizedKey.includes('authorization') ||
-      normalizedKey.includes('cookie') ||
-      normalizedKey.includes('requestbody') ||
-      normalizedKey.includes('responsebody') ||
-      normalizedKey.includes('rawrequest') ||
-      normalizedKey.includes('rawresponse')
+      normalizedKey.includes("url") ||
+      normalizedKey.includes("payload") ||
+      normalizedKey.includes("password") ||
+      normalizedKey.includes("secret") ||
+      normalizedKey.includes("token") ||
+      normalizedKey.includes("authorization") ||
+      normalizedKey.includes("cookie") ||
+      normalizedKey.includes("requestbody") ||
+      normalizedKey.includes("responsebody") ||
+      normalizedKey.includes("rawrequest") ||
+      normalizedKey.includes("rawresponse")
     ) {
       sanitized[key] = REDACTED;
       continue;
     }
 
-    if (
-      value &&
-      typeof value === 'object' &&
-      !Array.isArray(value)
-    ) {
+    if (value && typeof value === "object" && !Array.isArray(value)) {
       sanitized[key] = sanitizeMetadata(value);
       continue;
     }
 
     if (Array.isArray(value)) {
       sanitized[key] = value.map((item) =>
-        item && typeof item === 'object'
-          ? sanitizeMetadata(item)
-          : item
+        item && typeof item === "object" ? sanitizeMetadata(item) : item,
       );
       continue;
     }
@@ -193,30 +184,26 @@ const createSecurityEvidence = ({
   findingFingerprint = null,
   findingKey = null,
   fingerprint = null,
-  type = 'http_exchange',
+  type = "http_exchange",
 } = {}) => {
-  const sanitizedRequest = request
-    ? sanitizeRequest(request)
-    : null;
+  const sanitizedRequest = request ? sanitizeRequest(request) : null;
 
-  const sanitizedResponse = response
-    ? sanitizeResponse(response)
-    : null;
+  const sanitizedResponse = response ? sanitizeResponse(response) : null;
 
   const method = sanitizedRequest?.method || null;
   const url = sanitizedRequest?.url || null;
 
-  const statusCode =
-    sanitizedResponse?.statusCode ?? null;
+  const statusCode = sanitizedResponse?.statusCode ?? null;
 
-  const summary = [
-    description,
-    parameter ? `Parameter: ${parameter}` : null,
-    payload ? 'Payload: [REDACTED]' : null,
-    confidence ? `Confidence: ${confidence}` : null,
-  ]
-    .filter(Boolean)
-    .join('\n') || null;
+  const summary =
+    [
+      description,
+      parameter ? `Parameter: ${parameter}` : null,
+      payload ? "Payload: [REDACTED]" : null,
+      confidence ? `Confidence: ${confidence}` : null,
+    ]
+      .filter(Boolean)
+      .join("\n") || null;
 
   return {
     type,
@@ -237,7 +224,7 @@ const createSecurityEvidence = ({
       ...(sanitizedResponse?.headers || {}),
     },
 
-    bodyExcerpt: '[REDACTED]',
+    bodyExcerpt: "[REDACTED]",
 
     summary,
 
@@ -254,11 +241,9 @@ const createSecurityEvidence = ({
   };
 };
 
-const buildEvidence = (input = {}) =>
-  createSecurityEvidence(input);
+const buildEvidence = (input = {}) => createSecurityEvidence(input);
 
-const createEvidence = (input = {}) =>
-  createSecurityEvidence(input);
+const createEvidence = (input = {}) => createSecurityEvidence(input);
 
 export {
   CONFIDENCE,

@@ -3,70 +3,43 @@
 import {
   getReconScanners,
   getSecurityScanners,
-} from '../engine/scannerRegistry.js';
+} from "../engine/scannerRegistry.js";
 
-const sanitizeScanner = (
-  scanner,
-) => ({
-  id:
-    scanner.id,
+const sanitizeScanner = (scanner) => ({
+  id: scanner.id,
 
-  category:
-    scanner.category,
+  category: scanner.category,
 
-  name:
-    scanner.name,
+  name: scanner.name,
 
-  description:
-    scanner.description,
+  description: scanner.description,
 });
 
-const getScanners = (
-  _req,
-  res,
-  next,
-) => {
+const getScanners = (_req, res, next) => {
   try {
-    const recon =
-      getReconScanners()
-        .map(
-          sanitizeScanner,
-        );
+    const recon = getReconScanners().map(sanitizeScanner);
 
-    const security =
-      getSecurityScanners()
-        .map(
-          sanitizeScanner,
-        );
+    const security = getSecurityScanners().map(sanitizeScanner);
 
-    return res
-      .status(200)
-      .json({
-        success:
-          true,
+    return res.status(200).json({
+      success: true,
 
-        data: {
-          recon,
-          security,
+      data: {
+        recon,
+        security,
 
-          counts: {
-            recon:
-              recon.length,
+        counts: {
+          recon: recon.length,
 
-            security:
-              security.length,
+          security: security.length,
 
-            total:
-              recon.length +
-              security.length,
-          },
+          total: recon.length + security.length,
         },
-      });
+      },
+    });
   } catch (error) {
     return next(error);
   }
 };
 
-export {
-  getScanners,
-};
+export { getScanners };

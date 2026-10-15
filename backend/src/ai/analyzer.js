@@ -1,112 +1,70 @@
 // STATUS: UPDATED
 
-import {
-  analyzeFinding,
-} from './findingAnalyzer.js';
+import { analyzeFinding } from "./findingAnalyzer.js";
 
 const analyzeScanFindings = async ({
   findings = [],
   evidence = [],
   target = null,
 }) => {
-  if (
-    !Array.isArray(findings) ||
-    findings.length === 0
-  ) {
+  if (!Array.isArray(findings) || findings.length === 0) {
     return {
       enabled: false,
-      status: 'no_findings',
+      status: "no_findings",
       analyses: [],
     };
   }
 
   const results = [];
 
-  for (
-    const finding
-    of findings
-  ) {
-    const findingEvidence =
-      Array.isArray(evidence)
-        ? evidence.filter(
-            (item) =>
-              item?.findingId &&
-              finding?._id &&
-              String(
-                item.findingId,
-              ) ===
-                String(
-                  finding._id,
-                ),
-          )
-        : [];
+  for (const finding of findings) {
+    const findingEvidence = Array.isArray(evidence)
+      ? evidence.filter(
+          (item) =>
+            item?.findingId &&
+            finding?._id &&
+            String(item.findingId) === String(finding._id),
+        )
+      : [];
 
-    const result =
-      await analyzeFinding({
-        finding,
-        evidence:
-          findingEvidence,
-        target,
-      });
+    const result = await analyzeFinding({
+      finding,
+      evidence: findingEvidence,
+      target,
+    });
 
     results.push({
-      findingId:
-        finding?._id ??
-        null,
+      findingId: finding?._id ?? null,
 
-      fingerprint:
-        finding?.fingerprint ??
-        null,
+      fingerprint: finding?.fingerprint ?? null,
 
       ...result,
     });
   }
 
-  const hasCompleted =
-    results.some(
-      (result) =>
-        result.status ===
-        'completed',
-    );
+  const hasCompleted = results.some((result) => result.status === "completed");
 
-  const hasFailed =
-    results.some(
-      (result) =>
-        result.status ===
-        'failed',
-    );
+  const hasFailed = results.some((result) => result.status === "failed");
 
-  const hasEnabled =
-    results.some(
-      (result) =>
-        result.enabled === true,
-    );
+  const hasEnabled = results.some((result) => result.enabled === true);
 
-  let status =
-    'disabled';
+  let status = "disabled";
 
   if (hasCompleted) {
-    status =
-      'completed';
+    status = "completed";
   } else if (hasFailed) {
-    status =
-      'failed';
+    status = "failed";
   } else if (!hasEnabled) {
-    status =
-      'disabled';
+    status = "disabled";
   }
 
   return {
-    enabled:
-      hasEnabled,
+    enabled: hasEnabled,
 
     status,
 
-    analyses:
-      results,
+    analyses: results,
   };
 };
 
-export {
-  analyzeScanFindings,
-};
+export { analyzeScanFindings };

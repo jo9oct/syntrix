@@ -1,6 +1,8 @@
-import mongoose from 'mongoose';
+// STATUS: UPDATED
 
-const { Schema, model } = mongoose;
+import mongoose from "mongoose";
+
+const { Schema, model, models } = mongoose;
 
 const targetSchema = new Schema(
   {
@@ -14,14 +16,12 @@ const targetSchema = new Schema(
       type: String,
       required: true,
       trim: true,
-      maxlength: 2048,
     },
 
     normalizedUrl: {
       type: String,
       required: true,
       trim: true,
-      maxlength: 2048,
     },
 
     hostname: {
@@ -29,7 +29,6 @@ const targetSchema = new Schema(
       required: true,
       lowercase: true,
       trim: true,
-      maxlength: 253,
     },
 
     lastScannedAt: {
@@ -39,8 +38,16 @@ const targetSchema = new Schema(
 
     scanCount: {
       type: Number,
-      default: 0,
       min: 0,
+      default: 0,
+    },
+
+    // Monotonically increasing counter for this target.
+    // It is not reset when scans are deleted.
+    scanVersionCounter: {
+      type: Number,
+      min: 0,
+      default: 0,
     },
 
     isActive: {
@@ -74,6 +81,6 @@ targetSchema.index({
   lastScannedAt: -1,
 });
 
-const Target = model('Target', targetSchema);
+const Target = models.Target || model("Target", targetSchema);
 
 export default Target;

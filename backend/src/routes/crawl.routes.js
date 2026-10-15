@@ -1,55 +1,49 @@
 // STATUS: CREATED
 
-import { Router } from 'express';
+import { Router } from "express";
 
 import {
   getCrawlSummary,
   getCrawlPages,
   getCrawlInputs,
-} from '../controllers/crawl.controller.js';
+} from "../controllers/crawl.controller.js";
 
 import {
   requireAuthorization,
   requireOwner,
-} from '../middleware/authorization.middleware.js';
+} from "../middleware/authorization.middleware.js";
 
-import {
-  validate,
-} from '../middleware/validation.middleware.js';
+import { validate } from "../middleware/validation.middleware.js";
 
-import {
-  scanIdSchema,
-} from '../validators/scan.validator.js';
+import { scanIdSchema } from "../validators/scan.validator.js";
 
-import {
-  crawlPaginationSchema,
-} from '../validators/crawl.validator.js';
+import { crawlPaginationSchema } from "../validators/crawl.validator.js";
 
 const router = Router();
 
 router.get(
-  '/:scanId',
+  "/:scanId",
   requireAuthorization,
   requireOwner,
-  validate(scanIdSchema, 'params'),
+  validate(scanIdSchema, "params"),
   getCrawlSummary,
 );
 
 router.get(
-  '/:scanId/pages',
+  "/:scanId/pages",
   requireAuthorization,
   requireOwner,
-  validate(scanIdSchema, 'params'),
-  validate(crawlPaginationSchema, 'query'),
+  validate(scanIdSchema, "params"),
+  validate(crawlPaginationSchema, "query"),
   getCrawlPages,
 );
 
 router.get(
-  '/:scanId/inputs',
+  "/:scanId/inputs",
   requireAuthorization,
   requireOwner,
-  validate(scanIdSchema, 'params'),
-  validate(crawlPaginationSchema, 'query'),
+  validate(scanIdSchema, "params"),
+  validate(crawlPaginationSchema, "query"),
   getCrawlInputs,
 );
 

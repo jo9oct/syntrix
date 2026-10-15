@@ -1,298 +1,174 @@
-import {
-  get,
-} from '../../request/request.js';
+import { get } from "../../request/request.js";
 
-import {
-  createExchangeEvidence,
-} from '../shared/evidence.js';
+import { createExchangeEvidence } from "../shared/evidence.js";
 
-import {
-  createReconScanner,
-  getTargetUrl,
-} from '../shared/reconContract.js';
+import { createReconScanner, getTargetUrl } from "../shared/reconContract.js";
 
-import {
-  assertSafeUrl,
-} from '../shared/resolver.js';
+import { assertSafeUrl } from "../shared/resolver.js";
 
 const MAX_SITEMAP_URLS = 100;
 
-const SITEMAP_PATHS = Object.freeze([
-  '/sitemap.xml',
-  '/sitemap_index.xml',
-]);
+const SITEMAP_PATHS = Object.freeze(["/sitemap.xml", "/sitemap_index.xml"]);
 
-const decodeXmlValue = (
-  value,
-) =>
+const decodeXmlValue = (value) =>
   value
-    .replace(
-      /&amp;/g,
-      '&',
-    )
-    .replace(
-      /&lt;/g,
-      '<',
-    )
-    .replace(
-      /&gt;/g,
-      '>',
-    )
-    .replace(
-      /&quot;/g,
-      '"',
-    )
-    .replace(
-      /&apos;/g,
-      "'",
-    )
+    .replace(/&amp;/g, "&")
+    .replace(/&lt;/g, "<")
+    .replace(/&gt;/g, ">")
+    .replace(/&quot;/g, '"')
+    .replace(/&apos;/g, "'")
     .trim();
 
-const extractLocations = (
-  body,
-) => {
-  if (
-    typeof body !== 'string'
-  ) {
+const extractLocations = (body) => {
+  if (typeof body !== "string") {
     return [];
   }
 
   const locations = [];
 
-  const pattern =
-    /<loc\b[^>]*>([\s\S]*?)<\/loc>/gi;
+  const pattern = /<loc\b[^>]*>([\s\S]*?)<\/loc>/gi;
 
   let match;
 
   while (
-    (
-      match =
-        pattern.exec(body)
-    ) !== null &&
-    locations.length <
-      MAX_SITEMAP_URLS
+    (match = pattern.exec(body)) !== null &&
+    locations.length < MAX_SITEMAP_URLS
   ) {
-    const value =
-      decodeXmlValue(
-        match[1],
-      );
+    const value = decodeXmlValue(match[1]);
 
     if (!value) {
       continue;
     }
 
     try {
-      const url =
-        new URL(value);
+      const url = new URL(value);
 
-      if (
-        ![
-          'http:',
-          'https:',
-        ].includes(
-          url.protocol,
-        )
-      ) {
+      if (!["http:", "https:"].includes(url.protocol)) {
         continue;
       }
 
-      locations.push(
-        url.toString(),
-      );
+      locations.push(url.toString());
     } catch {
       // Invalid sitemap locations are ignored.
     }
   }
 
-  return [
-    ...new Set(
-      locations,
-    ),
-  ].slice(
-    0,
-    MAX_SITEMAP_URLS,
-  );
+  return [...new Set(locations)].slice(0, MAX_SITEMAP_URLS);
 };
 
-const scanner =
-  createReconScanner({
-    id:
-      'recon.sitemap',
+const scanner = createReconScanner({
+  id: "recon.sitemap",
 
-    name:
-      'Sitemap Reconnaissance',
+  name: "Sitemap Reconnaissance",
 
-    description:
-      'Discovers URLs exposed through standard XML sitemap resources.',
+  description: "Discovers URLs exposed through standard XML sitemap resources.",
 
-    async run(context) {
-      const targetUrl =
-        getTargetUrl(
-          context,
-        );
+  async run(context) {
+    const targetUrl = getTargetUrl(context);
 
-      const baseUrl =
-        new URL(
-          targetUrl,
-        );
+    const baseUrl = new URL(targetUrl);
 
-      const discovered = [];
-      const evidence = [];
+    const discovered = [];
+    const evidence = [];
 
-      for (
-        const pathname of
-          SITEMAP_PATHS
-      ) {
-        if (
-          context?.signal
-            ?.aborted
-        ) {
+    for (const pathname of SITEMAP_PATHS) {
+      if (context?.signal?.aborted) {
+        break;
+      }
+
+      const sitemapUrl = new URL(pathname, baseUrl.origin).toString();
+
+      await assertSafeUrl(sitemapUrl);
+
+      const requestHeaders = context?.session?.getHeaders?.() ?? {};
+
+      try {
+        const response = await get(sitemapUrl, {
+          signal: context?.signal,
+
+          headers: requestHeaders,
+        });
+
+        if (context?.signal?.aborted) {
           break;
         }
 
-        const sitemapUrl =
-          new URL(
-            pathname,
-            baseUrl.origin,
-          ).toString();
+        const locations = extractLocations(response.data);
 
-        await assertSafeUrl(
-          sitemapUrl,
+        discovered.push({
+          url: sitemapUrl,
+
+          status: response.status,
+
+          locations,
+        });
+
+        evidence.push(
+          createExchangeEvidence({
+            request: {
+              method: "GET",
+
+              url: sitemapUrl,
+
+              headers: requestHeaders,
+            },
+
+            response: {
+              status: response.status,
+
+              statusText: response.statusText,
+
+              headers: response.headers,
+
+              body: response.data,
+
+              contentType: response.headers?.["content-type"],
+            },
+          }),
         );
-
-        const requestHeaders =
-          context?.session
-            ?.getHeaders?.() ?? {};
-
-        try {
-          const response =
-            await get(
-              sitemapUrl,
-              {
-                signal:
-                  context?.signal,
-
-                headers:
-                  requestHeaders,
-              },
-            );
-
-          if (
-            context?.signal
-              ?.aborted
-          ) {
-            break;
-          }
-
-          const locations =
-            extractLocations(
-              response.data,
-            );
-
-          discovered.push({
-            url:
-              sitemapUrl,
-
-            status:
-              response.status,
-
-            locations,
-          });
-
-          evidence.push(
-            createExchangeEvidence({
-              request: {
-                method:
-                  'GET',
-
-                url:
-                  sitemapUrl,
-
-                headers:
-                  requestHeaders,
-              },
-
-              response: {
-                status:
-                  response.status,
-
-                statusText:
-                  response.statusText,
-
-                headers:
-                  response.headers,
-
-                body:
-                  response.data,
-
-                contentType:
-                  response
-                    .headers
-                    ?.['content-type'],
-              },
-            }),
-          );
-        } catch {
-          if (
-            context?.signal
-              ?.aborted
-          ) {
-            break;
-          }
-
-          discovered.push({
-            url:
-              sitemapUrl,
-
-            status:
-              null,
-
-            locations: [],
-          });
+      } catch {
+        if (context?.signal?.aborted) {
+          break;
         }
+
+        discovered.push({
+          url: sitemapUrl,
+
+          status: null,
+
+          locations: [],
+        });
       }
+    }
 
-      const discoveredUrls = [
-        ...new Set(
-          discovered.flatMap(
-            (sitemap) =>
-              sitemap.locations,
-          ),
-        ),
-      ].slice(
-        0,
-        MAX_SITEMAP_URLS,
-      );
+    const discoveredUrls = [
+      ...new Set(discovered.flatMap((sitemap) => sitemap.locations)),
+    ].slice(0, MAX_SITEMAP_URLS);
 
-      return {
-        data: {
-          sitemaps:
-            discovered,
+    return {
+      data: {
+        sitemaps: discovered,
 
-          discoveredUrls,
-        },
+        discoveredUrls,
+      },
 
-        evidence,
+      evidence,
 
-        fingerprints: [],
+      fingerprints: [],
 
-        verificationRecords: [],
+      verificationRecords: [],
 
-        metadata: {
-          maximumUrls:
-            MAX_SITEMAP_URLS,
+      metadata: {
+        maximumUrls: MAX_SITEMAP_URLS,
 
-          sitemapCandidates:
-            SITEMAP_PATHS.length,
+        sitemapCandidates: SITEMAP_PATHS.length,
 
-          sitemapResourcesChecked:
-            discovered.length,
+        sitemapResourcesChecked: discovered.length,
 
-          discoveredUrlCount:
-            discoveredUrls.length,
-        },
-      };
-    },
-  });
+        discoveredUrlCount: discoveredUrls.length,
+      },
+    };
+  },
+});
 
 export default scanner;

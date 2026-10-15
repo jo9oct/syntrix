@@ -1,22 +1,12 @@
 // STATUS: UPDATED
 
-const normalizeValue = (
-  value,
-) =>
-  String(
-    value ?? '',
-  )
+const normalizeValue = (value) =>
+  String(value ?? "")
     .trim()
     .toLowerCase();
 
-const getHeaderValue = ({
-  scannerResults,
-  header,
-}) => {
-  const normalizedHeader =
-    normalizeValue(
-      header,
-    );
+const getHeaderValue = ({ scannerResults, header }) => {
+  const normalizedHeader = normalizeValue(header);
 
   /*
    * CORS-specific headers must be read from
@@ -24,58 +14,36 @@ const getHeaderValue = ({
    * the scanner registry and result processor.
    */
   if (
-    normalizedHeader ===
-      'access-control-allow-origin' ||
-    normalizedHeader ===
-      'access-control-allow-credentials'
+    normalizedHeader === "access-control-allow-origin" ||
+    normalizedHeader === "access-control-allow-credentials"
   ) {
-    const corsResult =
-      scannerResults.find(
-        (result) =>
-          result?.scannerId ===
-          'cors',
-      );
+    const corsResult = scannerResults.find(
+      (result) => result?.scannerId === "cors",
+    );
 
     if (corsResult) {
-      const data =
-        corsResult.data ?? {};
+      const data = corsResult.data ?? {};
 
-      if (
-        normalizedHeader ===
-        'access-control-allow-origin'
-      ) {
+      if (normalizedHeader === "access-control-allow-origin") {
         return {
-          found:
-            data.allowOrigin !==
-              null &&
-            data.allowOrigin !==
-              undefined,
+          found: data.allowOrigin !== null && data.allowOrigin !== undefined,
 
-          value:
-            data.allowOrigin ??
-            null,
+          value: data.allowOrigin ?? null,
 
-          scannerId:
-            corsResult.scannerId,
+          scannerId: corsResult.scannerId,
 
-          source:
-            'data.allowOrigin',
+          source: "data.allowOrigin",
         };
       }
 
       return {
-        found:
-          data.allowCredentials !==
-          undefined,
+        found: data.allowCredentials !== undefined,
 
-        value:
-          data.allowCredentials,
+        value: data.allowCredentials,
 
-        scannerId:
-          corsResult.scannerId,
+        scannerId: corsResult.scannerId,
 
-        source:
-          'data.allowCredentials',
+        source: "data.allowCredentials",
       };
     }
   }
@@ -89,49 +57,32 @@ const getHeaderValue = ({
    * registry exposes it as "securityHeaders".
    * resultProcessor.js uses the registry ID.
    */
-  const securityHeadersResult =
-    scannerResults.find(
-      (result) =>
-        result?.scannerId ===
-        'securityHeaders',
-    );
+  const securityHeadersResult = scannerResults.find(
+    (result) => result?.scannerId === "securityHeaders",
+  );
 
-  if (
-    securityHeadersResult
-  ) {
-    const data =
-      securityHeadersResult.data;
+  if (securityHeadersResult) {
+    const data = securityHeadersResult.data;
 
     if (
       data &&
-      typeof data === 'object' &&
+      typeof data === "object" &&
       data.headers &&
-      typeof data.headers ===
-        'object'
+      typeof data.headers === "object"
     ) {
-      const match =
-        Object.entries(
-          data.headers,
-        ).find(
-          ([key]) =>
-            normalizeValue(
-              key,
-            ) ===
-            normalizedHeader,
-        );
+      const match = Object.entries(data.headers).find(
+        ([key]) => normalizeValue(key) === normalizedHeader,
+      );
 
       if (match) {
         return {
           found: true,
 
-          value:
-            match[1],
+          value: match[1],
 
-          scannerId:
-            securityHeadersResult.scannerId,
+          scannerId: securityHeadersResult.scannerId,
 
-          source:
-            'data.headers',
+          source: "data.headers",
         };
       }
 
@@ -140,11 +91,9 @@ const getHeaderValue = ({
 
         value: null,
 
-        scannerId:
-          securityHeadersResult.scannerId,
+        scannerId: securityHeadersResult.scannerId,
 
-        source:
-          'data.headers',
+        source: "data.headers",
       };
     }
   }
@@ -157,24 +106,12 @@ const getHeaderValue = ({
   };
 };
 
-const evaluateOperator = ({
-  actual,
-  operator,
-  expected,
-  exists,
-}) => {
+const evaluateOperator = ({ actual, operator, expected, exists }) => {
   switch (operator) {
-    case 'equals':
-      return (
-        normalizeValue(
-          actual,
-        ) ===
-        normalizeValue(
-          expected,
-        )
-      );
+    case "equals":
+      return normalizeValue(actual) === normalizeValue(expected);
 
-    case 'not_equals':
+    case "not_equals":
       /*
        * A missing value is considered different
        * from the expected value.
@@ -187,55 +124,32 @@ const evaluateOperator = ({
         return true;
       }
 
-      return (
-        normalizeValue(
-          actual,
-        ) !==
-        normalizeValue(
-          expected,
-        )
-      );
+      return normalizeValue(actual) !== normalizeValue(expected);
 
-    case 'contains':
+    case "contains":
       if (!exists) {
         return false;
       }
 
-      return normalizeValue(
-        actual,
-      ).includes(
-        normalizeValue(
-          expected,
-        ),
-      );
+      return normalizeValue(actual).includes(normalizeValue(expected));
 
-    case 'not_contains':
+    case "not_contains":
       if (!exists) {
         return false;
       }
 
-      return !normalizeValue(
-        actual,
-      ).includes(
-        normalizeValue(
-          expected,
-        ),
-      );
+      return !normalizeValue(actual).includes(normalizeValue(expected));
 
-    case 'exists':
+    case "exists":
       return exists === true;
 
-    case 'not_exists':
+    case "not_exists":
       return exists === false;
 
     default: {
-      const error =
-        new Error(
-          `Unsupported company rule operator: ${operator}`,
-        );
+      const error = new Error(`Unsupported company rule operator: ${operator}`);
 
-      error.code =
-        'UNSUPPORTED_COMPANY_RULE_OPERATOR';
+      error.code = "UNSUPPORTED_COMPANY_RULE_OPERATOR";
 
       error.statusCode = 400;
 
@@ -244,164 +158,101 @@ const evaluateOperator = ({
   }
 };
 
-const evaluateHeaderRule = ({
-  rule,
-  scannerResults,
-}) => {
-  const ruleDefinition =
-    rule?.rule ?? {};
+const evaluateHeaderRule = ({ rule, scannerResults }) => {
+  const ruleDefinition = rule?.rule ?? {};
 
-  const header =
-    ruleDefinition.header;
+  const header = ruleDefinition.header;
 
-  const operator =
-    ruleDefinition.operator;
+  const operator = ruleDefinition.operator;
 
-  const expected =
-    ruleDefinition.value;
+  const expected = ruleDefinition.value;
 
-  if (
-    typeof header !==
-      'string' ||
-    header.trim().length === 0
-  ) {
-    const error =
-      new Error(
-        'Header company rule requires a header name.',
-      );
+  if (typeof header !== "string" || header.trim().length === 0) {
+    const error = new Error("Header company rule requires a header name.");
 
-    error.code =
-      'INVALID_COMPANY_RULE_DEFINITION';
+    error.code = "INVALID_COMPANY_RULE_DEFINITION";
 
     error.statusCode = 400;
 
     throw error;
   }
 
-  if (
-    typeof operator !==
-      'string' ||
-    operator.trim().length === 0
-  ) {
-    const error =
-      new Error(
-        'Header company rule requires an operator.',
-      );
+  if (typeof operator !== "string" || operator.trim().length === 0) {
+    const error = new Error("Header company rule requires an operator.");
 
-    error.code =
-      'INVALID_COMPANY_RULE_DEFINITION';
+    error.code = "INVALID_COMPANY_RULE_DEFINITION";
 
     error.statusCode = 400;
 
     throw error;
   }
 
-  const observation =
-    getHeaderValue({
-      scannerResults,
-      header,
-    });
+  const observation = getHeaderValue({
+    scannerResults,
+    header,
+  });
 
-  const matches =
-    evaluateOperator({
-      actual:
-        observation.value,
+  const matches = evaluateOperator({
+    actual: observation.value,
 
-      operator,
+    operator,
 
-      expected,
+    expected,
 
-      exists:
-        observation.found,
-    });
+    exists: observation.found,
+  });
 
   return {
-    supported:
-      observation.scannerId !==
-      null,
+    supported: observation.scannerId !== null,
 
-    violated:
-      !matches,
+    violated: !matches,
 
-    actual:
-      observation.value,
+    actual: observation.value,
 
     expected,
 
     operator,
 
-    scannerId:
-      observation.scannerId,
+    scannerId: observation.scannerId,
 
-    source:
-      observation.source,
+    source: observation.source,
   };
 };
 
-const evaluateCorsRule = ({
-  rule,
-  scannerResults,
-}) => {
-  const ruleDefinition =
-    rule?.rule ?? {};
+const evaluateCorsRule = ({ rule, scannerResults }) => {
+  const ruleDefinition = rule?.rule ?? {};
 
-  const property =
-    ruleDefinition.property;
+  const property = ruleDefinition.property;
 
-  const operator =
-    ruleDefinition.operator;
+  const operator = ruleDefinition.operator;
 
-  const expected =
-    ruleDefinition.value;
+  const expected = ruleDefinition.value;
 
-  const supportedProperties =
-    new Set([
-      'allowOrigin',
-      'allowCredentials',
-    ]);
+  const supportedProperties = new Set(["allowOrigin", "allowCredentials"]);
 
-  if (
-    !supportedProperties.has(
-      property,
-    )
-  ) {
-    const error =
-      new Error(
-        `Unsupported CORS rule property: ${property}`,
-      );
+  if (!supportedProperties.has(property)) {
+    const error = new Error(`Unsupported CORS rule property: ${property}`);
 
-    error.code =
-      'INVALID_COMPANY_RULE_DEFINITION';
+    error.code = "INVALID_COMPANY_RULE_DEFINITION";
 
     error.statusCode = 400;
 
     throw error;
   }
 
-  if (
-    typeof operator !==
-      'string' ||
-    operator.trim().length === 0
-  ) {
-    const error =
-      new Error(
-        'CORS company rule requires an operator.',
-      );
+  if (typeof operator !== "string" || operator.trim().length === 0) {
+    const error = new Error("CORS company rule requires an operator.");
 
-    error.code =
-      'INVALID_COMPANY_RULE_DEFINITION';
+    error.code = "INVALID_COMPANY_RULE_DEFINITION";
 
     error.statusCode = 400;
 
     throw error;
   }
 
-  const corsResult =
-    scannerResults.find(
-      (result) =>
-        result?.scannerId ===
-        'cors',
-    );
+  const corsResult = scannerResults.find(
+    (result) => result?.scannerId === "cors",
+  );
 
   if (!corsResult) {
     return {
@@ -415,40 +266,32 @@ const evaluateCorsRule = ({
 
       operator,
 
-      scannerId:
-        'cors',
+      scannerId: "cors",
 
-      source:
-        `data.${property}`,
+      source: `data.${property}`,
     };
   }
 
-  const data =
-    corsResult.data ?? {};
+  const data = corsResult.data ?? {};
 
-  const actual =
-    data[property];
+  const actual = data[property];
 
-  const exists =
-    actual !== undefined &&
-    actual !== null;
+  const exists = actual !== undefined && actual !== null;
 
-  const matches =
-    evaluateOperator({
-      actual,
+  const matches = evaluateOperator({
+    actual,
 
-      operator,
+    operator,
 
-      expected,
+    expected,
 
-      exists,
-    });
+    exists,
+  });
 
   return {
     supported: true,
 
-    violated:
-      !matches,
+    violated: !matches,
 
     actual,
 
@@ -456,44 +299,32 @@ const evaluateCorsRule = ({
 
     operator,
 
-    scannerId:
-      'cors',
+    scannerId: "cors",
 
-    source:
-      `data.${property}`,
+    source: `data.${property}`,
   };
 };
 
-const evaluateRule = ({
-  rule,
-  scannerResults = [],
-}) => {
-  const type =
-    normalizeValue(
-      rule?.rule?.type,
-    );
+const evaluateRule = ({ rule, scannerResults = [] }) => {
+  const type = normalizeValue(rule?.rule?.type);
 
   switch (type) {
-    case 'header':
+    case "header":
       return evaluateHeaderRule({
         rule,
         scannerResults,
       });
 
-    case 'cors':
+    case "cors":
       return evaluateCorsRule({
         rule,
         scannerResults,
       });
 
     default: {
-      const error =
-        new Error(
-          `Unsupported company rule type: ${type}`,
-        );
+      const error = new Error(`Unsupported company rule type: ${type}`);
 
-      error.code =
-        'UNSUPPORTED_COMPANY_RULE_TYPE';
+      error.code = "UNSUPPORTED_COMPANY_RULE_TYPE";
 
       error.statusCode = 400;
 
@@ -502,8 +333,4 @@ const evaluateRule = ({
   }
 };
 
-export {
-  evaluateRule,
-  evaluateHeaderRule,
-  evaluateCorsRule,
-};
+export { evaluateRule, evaluateHeaderRule, evaluateCorsRule };

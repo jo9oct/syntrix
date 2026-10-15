@@ -1,30 +1,27 @@
-// STATUS: UPDATED
+/* STATUS: UPDATED
+ * File: src/engine/scanContext.js
+ */
 
-import { createSession } from '../core/session.js';
-import { createScope } from '../core/scope.js';
-import { createRateLimiter } from '../core/rateLimiter.js';
-import { createProgressTracker } from '../core/progress.js';
-import { createLogger } from '../core/logger.js';
+import { createSession } from "../core/session.js";
+import { createScope, isInScope } from "../core/scope.js";
+import { createRateLimiter } from "../core/rateLimiter.js";
+import { createProgressTracker } from "../core/progress.js";
+import { createLogger } from "../core/logger.js";
 
 const MAX_DISCOVERED_TARGETS = 10;
 
-const normalizeDiscoveredUrls = ({
-  urls = [],
-  targetUrl,
-  scope,
-}) => {
+const normalizeDiscoveredUrls = ({ urls = [], scope }) => {
   if (!Array.isArray(urls)) {
     return [];
   }
 
-  const rootOrigin = new URL(targetUrl).origin;
-  const seen = new Set([targetUrl]);
+  const seen = new Set();
   const normalized = [];
 
   for (const value of urls) {
     if (
       normalized.length >= MAX_DISCOVERED_TARGETS ||
-      typeof value !== 'string'
+      typeof value !== "string"
     ) {
       break;
     }
@@ -33,16 +30,14 @@ const normalizeDiscoveredUrls = ({
       const url = new URL(value);
 
       if (
-        !['http:', 'https:'].includes(url.protocol) ||
+        !["http:", "https:"].includes(url.protocol) ||
         url.username ||
-        url.password ||
-        url.origin !== rootOrigin ||
-        !url.searchParams.size
+        url.password
       ) {
         continue;
       }
 
-      url.hash = '';
+      url.hash = "";
 
       const candidate = url.toString();
 
@@ -50,8 +45,21 @@ const normalizeDiscoveredUrls = ({
         continue;
       }
 
-      if (typeof scope?.assertInScope === 'function') {
-        scope.assertInScope(candidate);
+      /*
+       * Discovered URLs must belong to the effective scope.
+       * Do not rely on same-origin checks: a saved scope may
+       * explicitly authorize additional hostnames or ports.
+       */
+      if (!isInScope(candidate, scope)) {
+        continue;
+      }
+
+      /*
+       * Preserve the existing behavior of accepting only
+       * discovered URLs with query parameters.
+       */
+      if (!url.searchParams.size) {
+        continue;
       }
 
       seen.add(candidate);
@@ -73,26 +81,58 @@ const createScanContext = ({
   credentials,
   options = {},
   discoveredUrls = [],
+  scopeSnapshot = null,
 }) => {
   if (!scan?.id) {
-    throw new Error('Scan context requires a scan ID.');
+    throw new Error("Scan context requires a scan ID.");
   }
 
   if (!target?.url) {
-    throw new Error('Scan context requires a target URL.');
+    throw new Error("Scan context requires a target URL.");
   }
+
+  let parsedTarget;
+
+  try {
+    parsedTarget = new URL(target.url);
+  } catch {
+    throw new Error("Scan context requires a valid target URL.");
+  }
+
+  if (
+    !["http:", "https:"].includes(parsedTarget.protocol) ||
+    parsedTarget.username ||
+    parsedTarget.password
+  ) {
+    throw new Error(
+      "Scan context requires an HTTP or HTTPS URL without embedded credentials.",
+    );
+  }
+
+  /*
+   * Use the immutable snapshot captured when the scan was created.
+   * This prevents later saved-scope edits from silently changing
+   * the authorization boundary of an already queued scan.
+   */
+  const scope = createScope(target.url, scopeSnapshot);
+
+  if (!isInScope(target.url, scope)) {
+    const error = new Error("The scan target is outside the effective scope.");
+
+    error.code = "SCAN_TARGET_OUT_OF_SCOPE";
+    error.statusCode = 403;
+
+    throw error;
+  }
+
+  const safeDiscoveredUrls = normalizeDiscoveredUrls({
+    urls: discoveredUrls,
+    scope,
+  });
 
   const session = createSession({
     headers: options.headers ?? {},
     cookies: options.cookies ?? {},
-  });
-
-  const scope = createScope(target.url);
-
-  const safeDiscoveredUrls = normalizeDiscoveredUrls({
-    urls: discoveredUrls,
-    targetUrl: target.url,
-    scope,
   });
 
   const rateLimiter = createRateLimiter({
@@ -104,7 +144,7 @@ const createScanContext = ({
   });
 
   const logger = createLogger({
-    component: 'scan-engine',
+    component: "scan-engine",
     scanId: scan.id,
   });
 
@@ -118,7 +158,7 @@ const createScanContext = ({
       id: target.id,
       url: target.url,
       normalizedUrl: target.normalizedUrl ?? target.url,
-      hostname: target.hostname ?? new URL(target.url).hostname,
+      hostname: target.hostname ?? parsedTarget.hostname,
     },
 
     discoveredUrls: safeDiscoveredUrls,
@@ -132,11 +172,7 @@ const createScanContext = ({
 
     ownerId,
     credentials: credentials ?? null,
-
-    options: {
-      ...options,
-    },
-
+    options: { ...options },
     signal,
     session,
     scope,
@@ -146,7 +182,4 @@ const createScanContext = ({
   };
 };
 
-export {
-  createScanContext,
-  MAX_DISCOVERED_TARGETS,
-};
+export { createScanContext, MAX_DISCOVERED_TARGETS };

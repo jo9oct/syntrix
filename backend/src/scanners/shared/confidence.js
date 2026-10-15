@@ -1,7 +1,7 @@
 const CONFIDENCE = Object.freeze({
-  LOW: 'low',
-  MEDIUM: 'medium',
-  HIGH: 'high',
+  LOW: "low",
+  MEDIUM: "medium",
+  HIGH: "high",
 });
 
 const calculateConfidence = ({
@@ -20,7 +20,4 @@ const calculateConfidence = ({
   return CONFIDENCE.LOW;
 };
 
-export {
-  CONFIDENCE,
-  calculateConfidence,
-};
+export { CONFIDENCE, calculateConfidence };

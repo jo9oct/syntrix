@@ -3,13 +3,13 @@ const SEVERITY_WEIGHT = Object.freeze({
   high: 7,
   medium: 4,
   low: 2,
-  info: 0
+  info: 0,
 });
 
 const CONFIDENCE_MULTIPLIER = Object.freeze({
   high: 1,
   medium: 0.8,
-  low: 0.6
+  low: 0.6,
 });
 
 const SEVERITY_ORDER = Object.freeze([
@@ -17,7 +17,7 @@ const SEVERITY_ORDER = Object.freeze([
   "high",
   "medium",
   "low",
-  "info"
+  "info",
 ]);
 
 const clamp = (value, minimum, maximum) =>
@@ -26,10 +26,7 @@ const clamp = (value, minimum, maximum) =>
 const normalizeSeverity = (severity) => {
   const value = String(severity ?? "").toLowerCase();
 
-  return Object.prototype.hasOwnProperty.call(
-    SEVERITY_WEIGHT,
-    value
-  )
+  return Object.prototype.hasOwnProperty.call(SEVERITY_WEIGHT, value)
     ? value
     : "info";
 };
@@ -37,33 +34,23 @@ const normalizeSeverity = (severity) => {
 const normalizeConfidence = (confidence) => {
   const value = String(confidence ?? "").toLowerCase();
 
-  return Object.prototype.hasOwnProperty.call(
-    CONFIDENCE_MULTIPLIER,
-    value
-  )
+  return Object.prototype.hasOwnProperty.call(CONFIDENCE_MULTIPLIER, value)
     ? value
     : "low";
 };
 
 const calculateFindingRisk = (finding) => {
   const severity = normalizeSeverity(finding?.severity);
-  const confidence = normalizeConfidence(
-    finding?.confidence
-  );
+  const confidence = normalizeConfidence(finding?.confidence);
 
   const severityWeight = SEVERITY_WEIGHT[severity];
-  const confidenceMultiplier =
-    CONFIDENCE_MULTIPLIER[confidence];
+  const confidenceMultiplier = CONFIDENCE_MULTIPLIER[confidence];
 
   return severityWeight * confidenceMultiplier;
 };
 
 const calculateRawRisk = (findings = []) =>
-  findings.reduce(
-    (total, finding) =>
-      total + calculateFindingRisk(finding),
-    0
-  );
+  findings.reduce((total, finding) => total + calculateFindingRisk(finding), 0);
 
 const calculateRiskScore = (findings = []) => {
   if (!findings.length) {
@@ -72,16 +59,13 @@ const calculateRiskScore = (findings = []) => {
 
   const rawRisk = calculateRawRisk(findings);
 
-  const maximumPossibleRisk =
-    findings.length * SEVERITY_WEIGHT.critical;
+  const maximumPossibleRisk = findings.length * SEVERITY_WEIGHT.critical;
 
   if (maximumPossibleRisk === 0) {
     return 0;
   }
 
-  const score = Math.round(
-    (rawRisk / maximumPossibleRisk) * 100
-  );
+  const score = Math.round((rawRisk / maximumPossibleRisk) * 100);
 
   return clamp(score, 0, 100);
 };
@@ -92,13 +76,11 @@ const calculateSeverityCounts = (findings = []) => {
     high: 0,
     medium: 0,
     low: 0,
-    info: 0
+    info: 0,
   };
 
   for (const finding of findings) {
-    const severity = normalizeSeverity(
-      finding?.severity
-    );
+    const severity = normalizeSeverity(finding?.severity);
 
     counts[severity] += 1;
   }
@@ -110,13 +92,11 @@ const calculateConfidenceCounts = (findings = []) => {
   const counts = {
     high: 0,
     medium: 0,
-    low: 0
+    low: 0,
   };
 
   for (const finding of findings) {
-    const confidence = normalizeConfidence(
-      finding?.confidence
-    );
+    const confidence = normalizeConfidence(finding?.confidence);
 
     counts[confidence] += 1;
   }
@@ -125,11 +105,7 @@ const calculateConfidenceCounts = (findings = []) => {
 };
 
 const determineRiskLevel = (riskScore) => {
-  const score = clamp(
-    Number(riskScore) || 0,
-    0,
-    100
-  );
+  const score = clamp(Number(riskScore) || 0, 0, 100);
 
   if (score >= 75) {
     return "critical";
@@ -151,20 +127,16 @@ const determineRiskLevel = (riskScore) => {
 };
 
 const calculateRisk = (findings = []) => {
-  const severityCounts =
-    calculateSeverityCounts(findings);
+  const severityCounts = calculateSeverityCounts(findings);
 
-  const confidenceCounts =
-    calculateConfidenceCounts(findings);
+  const confidenceCounts = calculateConfidenceCounts(findings);
 
   const rawRisk = calculateRawRisk(findings);
   const riskScore = calculateRiskScore(findings);
   const riskLevel = determineRiskLevel(riskScore);
 
   const highestSeverity =
-    SEVERITY_ORDER.find(
-      (severity) => severityCounts[severity] > 0
-    ) || "info";
+    SEVERITY_ORDER.find((severity) => severityCounts[severity] > 0) || "info";
 
   return {
     score: riskScore,
@@ -173,28 +145,21 @@ const calculateRisk = (findings = []) => {
     highestSeverity,
     totalFindings: findings.length,
     severityCounts,
-    confidenceCounts
+    confidenceCounts,
   };
 };
 
 const sortFindingsByRisk = (findings = []) =>
   [...findings].sort((left, right) => {
     const severityDifference =
-      SEVERITY_WEIGHT[
-        normalizeSeverity(right.severity)
-      ] -
-      SEVERITY_WEIGHT[
-        normalizeSeverity(left.severity)
-      ];
+      SEVERITY_WEIGHT[normalizeSeverity(right.severity)] -
+      SEVERITY_WEIGHT[normalizeSeverity(left.severity)];
 
     if (severityDifference !== 0) {
       return severityDifference;
     }
 
-    return (
-      calculateFindingRisk(right) -
-      calculateFindingRisk(left)
-    );
+    return calculateFindingRisk(right) - calculateFindingRisk(left);
   });
 
 export {
@@ -207,5 +172,5 @@ export {
   calculateConfidenceCounts,
   determineRiskLevel,
   calculateRisk,
-  sortFindingsByRisk
+  sortFindingsByRisk,
 };

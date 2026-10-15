@@ -1,18 +1,18 @@
-// STATUS: UPDATED
+/* STATUS: UPDATED
+ * File: src/engine/scanEngine.js
+ */
 
-import { createScanContext } from './scanContext.js';
-import { resolveSelectedScanners } from './scannerRegistry.js';
-import {
-  mergeResults,
-  processScannerResult,
-} from './resultProcessor.js';
+import { createScanContext } from "./scanContext.js";
+import { resolveSelectedScanners } from "./scannerRegistry.js";
+
+import { mergeResults, processScannerResult } from "./resultProcessor.js";
 
 const SCAN_STATUS = Object.freeze({
-  PENDING: 'pending',
-  RUNNING: 'running',
-  COMPLETED: 'completed',
-  FAILED: 'failed',
-  CANCELLED: 'cancelled',
+  PENDING: "pending",
+  RUNNING: "running",
+  COMPLETED: "completed",
+  FAILED: "failed",
+  CANCELLED: "cancelled",
 });
 
 const assertSelection = (selection) => {
@@ -22,7 +22,7 @@ const assertSelection = (selection) => {
     selection.selectedScannerIds.length === 0
   ) {
     throw new Error(
-      'Scan selection is mandatory. At least one scanner must be selected.',
+      "Scan selection is mandatory. At least one scanner must be selected.",
     );
   }
 
@@ -37,6 +37,7 @@ const executeScan = async ({
   credentials = null,
   options = {},
   discoveredUrls = [],
+  scopeSnapshot = null,
   signal,
   onScannerStart,
   onScannerComplete,
@@ -57,19 +58,21 @@ const executeScan = async ({
     credentials,
     options,
     discoveredUrls,
+    scopeSnapshot,
   });
 
   const results = [];
 
-  context.logger.info('Scan execution started.', {
+  context.logger.info("Scan execution started.", {
     selectedScannerCount: scanners.length,
     selectedScannerIds: scanners.map((scanner) => scanner.id),
     discoveredQueryTargetCount: context.discoveredUrls.length,
+    savedScopeId: scopeSnapshot?.scopeId ? String(scopeSnapshot.scopeId) : null,
   });
 
   for (const scanner of scanners) {
     if (signal?.aborted) {
-      context.logger.warn('Scan execution cancelled.', {
+      context.logger.warn("Scan execution cancelled.", {
         scannerId: scanner.id,
       });
 
@@ -78,8 +81,11 @@ const executeScan = async ({
 
     context.progress.start(scanner.id);
 
-    if (typeof onScannerStart === 'function') {
-      await onScannerStart({ scanner, context });
+    if (typeof onScannerStart === "function") {
+      await onScannerStart({
+        scanner,
+        context,
+      });
     }
 
     try {
@@ -93,9 +99,10 @@ const executeScan = async ({
       });
 
       results.push(processedResult);
+
       context.progress.complete(scanner.id);
 
-      if (typeof onScannerComplete === 'function') {
+      if (typeof onScannerComplete === "function") {
         await onScannerComplete({
           scanner,
           context,
@@ -103,14 +110,14 @@ const executeScan = async ({
         });
       }
 
-      context.logger.info('Scanner completed.', {
+      context.logger.info("Scanner completed.", {
         scannerId: scanner.id,
         findingCount: processedResult.findings.length,
       });
     } catch (error) {
       context.progress.fail(scanner.id);
 
-      context.logger.error('Scanner failed.', {
+      context.logger.error("Scanner failed.", {
         scannerId: scanner.id,
         error: {
           name: error?.name,
@@ -119,14 +126,18 @@ const executeScan = async ({
         },
       });
 
-      if (typeof onScannerError === 'function') {
-        await onScannerError({ scanner, context, error });
+      if (typeof onScannerError === "function") {
+        await onScannerError({
+          scanner,
+          context,
+          error,
+        });
       }
 
       results.push({
         scannerId: scanner.id,
         category: scanner.category,
-        status: 'failed',
+        status: "failed",
         data: {},
         findings: [],
         evidence: [],
@@ -145,9 +156,7 @@ const executeScan = async ({
 
   const merged = mergeResults(results);
 
-  const hasFailedScanner = results.some(
-    (result) => result.status === 'failed',
-  );
+  const hasFailedScanner = results.some((result) => result.status === "failed");
 
   const status = signal?.aborted
     ? SCAN_STATUS.CANCELLED
@@ -155,7 +164,7 @@ const executeScan = async ({
       ? SCAN_STATUS.FAILED
       : SCAN_STATUS.COMPLETED;
 
-  context.logger.info('Scan execution completed.', {
+  context.logger.info("Scan execution completed.", {
     status,
     scannerCount: results.length,
     findingCount: merged.findings.length,
@@ -172,7 +181,4 @@ const executeScan = async ({
   };
 };
 
-export {
-  SCAN_STATUS,
-  executeScan,
-};
+export { SCAN_STATUS, executeScan };

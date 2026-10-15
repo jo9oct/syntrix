@@ -1,15 +1,15 @@
 // STATUS: UPDATED
 
 const PLAN_NAMES = Object.freeze({
-  FREE: 'free',
-  PRO: 'pro',
-  ENTERPRISE: 'enterprise',
+  FREE: "free",
+  PRO: "pro",
+  ENTERPRISE: "enterprise",
 });
 
 const REPORT_FORMATS = Object.freeze({
-  JSON: 'json',
-  HTML: 'html',
-  PDF: 'pdf',
+  JSON: "json",
+  HTML: "html",
+  PDF: "pdf",
 });
 
 const PLANS = Object.freeze({
@@ -34,9 +34,7 @@ const PLANS = Object.freeze({
 
     maxReportsPerScan: 3,
 
-    allowedReportFormats: Object.freeze([
-      REPORT_FORMATS.JSON,
-    ]),
+    allowedReportFormats: Object.freeze([REPORT_FORMATS.JSON]),
 
     ai: Object.freeze({
       analysis: false,
@@ -130,7 +128,7 @@ const PLANS = Object.freeze({
 });
 
 const normalizePlanName = (value) => {
-  if (typeof value !== 'string') {
+  if (typeof value !== "string") {
     return PLAN_NAMES.FREE;
   }
 
@@ -153,14 +151,11 @@ const getPlanName = (planName = process.env.USER_TIER) =>
   getPlan(planName).name;
 
 const isValidPlan = (planName) => {
-  if (typeof planName !== 'string') {
+  if (typeof planName !== "string") {
     return false;
   }
 
-  return Object.hasOwn(
-    PLANS,
-    planName.trim().toLowerCase(),
-  );
+  return Object.hasOwn(PLANS, planName.trim().toLowerCase());
 };
 
 export {

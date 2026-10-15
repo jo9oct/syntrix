@@ -1,24 +1,15 @@
 // STATUS: UPDATED
+// File: src/validators/scan.validators.js
 
-import Joi from 'joi';
+import Joi from "joi";
 
-const scannerNamePattern =
-  /^[a-zA-Z0-9_-]+$/;
+const scannerNamePattern = /^[a-zA-Z0-9_-]+$/;
 
-const scannerName = Joi.string()
-  .trim()
-  .pattern(scannerNamePattern)
-  .max(128);
+const scannerName = Joi.string().trim().pattern(scannerNamePattern).max(128);
 
-const scannerSelection = Joi.array()
-  .items(scannerName)
-  .max(100)
-  .unique();
+const scannerSelection = Joi.array().items(scannerName).max(100).unique();
 
-const companyRuleId = Joi.string()
-  .trim()
-  .hex()
-  .length(24);
+const companyRuleId = Joi.string().trim().hex().length(24);
 
 const companyRuleIds = Joi.array()
   .items(companyRuleId)
@@ -26,13 +17,18 @@ const companyRuleIds = Joi.array()
   .unique()
   .optional();
 
+const scopeId = Joi.string().trim().hex().length(24);
+
+const scopes = Joi.array().items(scopeId).max(1).unique().default([]).messages({
+  "array.max": "Only one saved scope can be selected per scan.",
+  "string.hex": "Each scope ID must be a valid hexadecimal ID.",
+  "string.length": "Each scope ID must contain exactly 24 characters.",
+});
+
 const targetUrl = Joi.string()
   .trim()
   .uri({
-    scheme: [
-      'http',
-      'https',
-    ],
+    scheme: ["http", "https"],
     allowRelative: false,
   })
   .max(2048)
@@ -42,187 +38,95 @@ const targetUrl = Joi.string()
     try {
       parsedUrl = new URL(value);
     } catch {
-      return helpers.error(
-        'any.invalid',
-      );
+      return helpers.error("any.invalid");
     }
 
     if (
-      !['http:', 'https:'].includes(
-        parsedUrl.protocol,
-      )
-    ) {
-      return helpers.error(
-        'any.invalid',
-      );
-    }
-
-    if (
+      !["http:", "https:"].includes(parsedUrl.protocol) ||
       !parsedUrl.hostname ||
-      parsedUrl.hostname.length > 253
-    ) {
-      return helpers.error(
-        'any.invalid',
-      );
-    }
-
-    if (
+      parsedUrl.hostname.length > 253 ||
       parsedUrl.username ||
       parsedUrl.password
     ) {
-      return helpers.error(
-        'any.invalid',
-      );
+      return helpers.error("any.invalid");
     }
 
     return value;
   });
 
 const credentialsSchema = Joi.object({
-  username: Joi.string()
-    .trim()
-    .min(1)
-    .max(512)
-    .required(),
+  username: Joi.string().trim().min(1).max(512).required(),
 
-  password: Joi.string()
-    .min(1)
-    .max(4096)
-    .required(),
+  password: Joi.string().min(1).max(4096).required(),
 }).required();
 
 const scanSelectionSchema = Joi.object({
-  recon:
-    scannerSelection.default([]),
-
-  security:
-    scannerSelection.default([]),
+  recon: scannerSelection.default([]),
+  security: scannerSelection.default([]),
 })
   .required()
   .custom((value, helpers) => {
-    const reconCount =
-      value.recon?.length ?? 0;
-
-    const securityCount =
-      value.security?.length ?? 0;
-
     if (
-      reconCount === 0 &&
-      securityCount === 0
+      (value.recon?.length ?? 0) === 0 &&
+      (value.security?.length ?? 0) === 0
     ) {
-      return helpers.error(
-        'any.custom',
-      );
+      return helpers.error("any.custom");
     }
 
     return value;
   })
   .messages({
-    'any.custom':
-      'At least one recon or security scanner must be selected.',
+    "any.custom": "At least one recon or security scanner must be selected.",
   });
 
 const createScanSchema = Joi.object({
-  targetUrl:
-    targetUrl.required(),
+  targetUrl: targetUrl.required(),
 
-  scanSelection:
-    scanSelectionSchema,
+  scanSelection: scanSelectionSchema,
+
+  scopes,
 
   companyRuleIds,
 
-  credentials:
-    credentialsSchema.optional(),
+  credentials: credentialsSchema.optional(),
 
-  idempotencyKey:
-    Joi.string()
-      .trim()
-      .min(8)
-      .max(256)
-      .pattern(
-        /^[a-zA-Z0-9._:-]+$/,
-      )
-      .optional(),
+  idempotencyKey: Joi.string()
+    .trim()
+    .min(8)
+    .max(256)
+    .pattern(/^[a-zA-Z0-9._:-]+$/)
+    .optional(),
 }).required();
 
 const scanIdSchema = Joi.object({
-  scanId:
-    Joi.string()
-      .trim()
-      .hex()
-      .length(24)
-      .required(),
+  scanId: Joi.string().trim().hex().length(24).required(),
 }).required();
 
-const cancelScanSchema =
-  scanIdSchema;
+const cancelScanSchema = scanIdSchema;
 
-const listScanQuerySchema =
-  Joi.object({
-    status:
-      Joi.string()
-        .valid(
-          'pending',
-          'running',
-          'completed',
-          'failed',
-          'cancelled',
-        )
-        .optional(),
+const listScanQuerySchema = Joi.object({
+  status: Joi.string()
+    .valid("pending", "running", "completed", "failed", "cancelled")
+    .optional(),
 
-    limit:
-      Joi.number()
-        .integer()
-        .min(1)
-        .max(100)
-        .default(50),
+  limit: Joi.number().integer().min(1).max(100).default(50),
 
-    skip:
-      Joi.number()
-        .integer()
-        .min(0)
-        .max(100_000)
-        .default(0),
-  });
-
-const normalizeSelection = (
-  selection,
-) => ({
-  recon: [
-    ...new Set(
-      selection?.recon ?? [],
-    ),
-  ],
-
-  security: [
-    ...new Set(
-      selection?.security ?? [],
-    ),
-  ],
+  skip: Joi.number().integer().min(0).max(100_000).default(0),
 });
 
-const normalizeCompanyRuleIds = (
-  ruleIds,
-) => [
-  ...new Set(
-    Array.isArray(ruleIds)
-      ? ruleIds
-      : [],
-  ),
+const normalizeSelection = (selection) => ({
+  recon: [...new Set(selection?.recon ?? [])],
+  security: [...new Set(selection?.security ?? [])],
+});
+
+const normalizeCompanyRuleIds = (ruleIds) => [
+  ...new Set(Array.isArray(ruleIds) ? ruleIds : []),
 ];
 
-const getSelectedScannerIds = (
-  selection,
-) => {
-  const normalized =
-    normalizeSelection(
-      selection,
-    );
+const getSelectedScannerIds = (selection) => {
+  const normalized = normalizeSelection(selection);
 
-  return [
-    ...normalized.recon,
-    ...normalized.security,
-  ];
+  return [...normalized.recon, ...normalized.security];
 };
 
 export {
@@ -231,6 +135,8 @@ export {
   scannerSelection,
   companyRuleId,
   companyRuleIds,
+  scopeId,
+  scopes,
   scanSelectionSchema,
   createScanSchema,
   scanIdSchema,

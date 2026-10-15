@@ -1,6 +1,6 @@
-import mongoose from 'mongoose';
+import mongoose from "mongoose";
 
-import environment from './environment.js';
+import environment from "./environment.js";
 
 const getMongoUri = () => {
   const uri =
@@ -10,13 +10,8 @@ const getMongoUri = () => {
     process.env.MONGODB_URI ??
     process.env.MONGO_URI;
 
-  if (
-    typeof uri !== 'string' ||
-    !uri.trim()
-  ) {
-    throw new Error(
-      'MongoDB connection URI is not configured.',
-    );
+  if (typeof uri !== "string" || !uri.trim()) {
+    throw new Error("MongoDB connection URI is not configured.");
   }
 
   return uri.trim();
@@ -25,82 +20,50 @@ const getMongoUri = () => {
 const connectDatabase = async () => {
   const uri = getMongoUri();
 
-  mongoose.set(
-    'strictQuery',
-    true,
-  );
+  mongoose.set("strictQuery", true);
 
-  await mongoose.connect(
-    uri,
-    {
-      serverSelectionTimeoutMS:
-        environment.database
-          ?.serverSelectionTimeoutMs ??
-        10000,
+  await mongoose.connect(uri, {
+    serverSelectionTimeoutMS:
+      environment.database?.serverSelectionTimeoutMs ?? 10000,
 
-      maxPoolSize:
-        environment.database
-          ?.maxPoolSize ??
-        20,
+    maxPoolSize: environment.database?.maxPoolSize ?? 20,
 
-      minPoolSize:
-        environment.database
-          ?.minPoolSize ??
-        2,
-    },
-  );
+    minPoolSize: environment.database?.minPoolSize ?? 2,
+  });
 
   return mongoose.connection;
 };
 
-const disconnectDatabase =
-  async () => {
-    if (
-      mongoose.connection
-        .readyState === 0
-    ) {
-      return;
-    }
+const disconnectDatabase = async () => {
+  if (mongoose.connection.readyState === 0) {
+    return;
+  }
 
-    await mongoose.disconnect();
-  };
+  await mongoose.disconnect();
+};
 
 const getDatabaseStatus = () => {
   const states = {
-    0: 'disconnected',
-    1: 'connected',
-    2: 'connecting',
-    3: 'disconnecting',
+    0: "disconnected",
+    1: "connected",
+    2: "connecting",
+    3: "disconnecting",
   };
 
   return {
-    state:
-      states[
-        mongoose.connection
-          .readyState
-      ] ?? 'unknown',
+    state: states[mongoose.connection.readyState] ?? "unknown",
 
-    readyState:
-      mongoose.connection
-        .readyState,
+    readyState: mongoose.connection.readyState,
 
-    name:
-      mongoose.connection
-        .name || null,
+    name: mongoose.connection.name || null,
 
-    host:
-      mongoose.connection
-        .host || null,
+    host: mongoose.connection.host || null,
   };
 };
 
-const isDatabaseConnected =
-  () => {
-    return (
-      mongoose.connection
-        .readyState === 1
-    );
-  };
+const isDatabaseConnected = () => {
+  return mongoose.connection.readyState === 1;
+};
 
 export {
   connectDatabase,

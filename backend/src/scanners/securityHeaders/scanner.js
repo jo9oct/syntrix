@@ -1,75 +1,56 @@
 // STATUS: UPDATED
 
-import {
-  get,
-} from '../../request/request.js';
+import { get } from "../../request/request.js";
 
-import {
-  createSecurityEvidence,
-} from '../shared/evidenceBuilder.js';
+import { createSecurityEvidence } from "../shared/evidenceBuilder.js";
 
-import {
-  calculateConfidence,
-} from '../shared/confidence.js';
+import { calculateConfidence } from "../shared/confidence.js";
 
-import {
-  normalizeFinding,
-} from '../shared/findingNormalizer.js';
+import { normalizeFinding } from "../shared/findingNormalizer.js";
 
 import {
   createSecurityScanner,
   getTargetUrl,
-} from '../shared/scannerContract.js';
+} from "../shared/scannerContract.js";
 
-import {
-  assertSafeUrl,
-} from '../../recon/shared/resolver.js';
+import { assertSafeUrl } from "../../recon/shared/resolver.js";
 
 const REQUIRED_HEADERS = [
   {
-    name: 'strict-transport-security',
-    title: 'Missing Strict-Transport-Security Header',
-    severity: 'medium',
-    remediation:
-      'Configure Strict-Transport-Security for HTTPS deployments.',
+    name: "strict-transport-security",
+    title: "Missing Strict-Transport-Security Header",
+    severity: "medium",
+    remediation: "Configure Strict-Transport-Security for HTTPS deployments.",
   },
   {
-    name: 'content-security-policy',
-    title: 'Missing Content-Security-Policy Header',
-    severity: 'medium',
-    remediation:
-      'Define an appropriate Content-Security-Policy.',
+    name: "content-security-policy",
+    title: "Missing Content-Security-Policy Header",
+    severity: "medium",
+    remediation: "Define an appropriate Content-Security-Policy.",
   },
   {
-    name: 'x-content-type-options',
-    title: 'Missing X-Content-Type-Options Header',
-    severity: 'low',
-    remediation:
-      'Set X-Content-Type-Options to nosniff.',
+    name: "x-content-type-options",
+    title: "Missing X-Content-Type-Options Header",
+    severity: "low",
+    remediation: "Set X-Content-Type-Options to nosniff.",
   },
   {
-    name: 'referrer-policy',
-    title: 'Missing Referrer-Policy Header',
-    severity: 'low',
-    remediation:
-      'Configure an appropriate Referrer-Policy.',
+    name: "referrer-policy",
+    title: "Missing Referrer-Policy Header",
+    severity: "low",
+    remediation: "Configure an appropriate Referrer-Policy.",
   },
 ];
 
 const normalizeHeaders = (headers) =>
   Object.fromEntries(
-    Object.entries(headers ?? {}).map(
-      ([key, value]) => [
-        key.toLowerCase(),
-        value,
-      ],
-    ),
+    Object.entries(headers ?? {}).map(([key, value]) => [
+      key.toLowerCase(),
+      value,
+    ]),
   );
 
-const createCancelledResult = (
-  headers = {},
-  status = null,
-) => ({
+const createCancelledResult = (headers = {}, status = null) => ({
   data: {
     headers,
     present: [],
@@ -86,12 +67,11 @@ const createCancelledResult = (
 });
 
 const scanner = createSecurityScanner({
-  id: 'security.security-headers',
+  id: "security.security-headers",
 
-  name: 'Security Headers',
+  name: "Security Headers",
 
-  description:
-    'Checks common HTTP security response headers.',
+  description: "Checks common HTTP security response headers.",
 
   async run(context) {
     const targetUrl = getTargetUrl(context);
@@ -102,23 +82,17 @@ const scanner = createSecurityScanner({
       return createCancelledResult();
     }
 
-    const requestHeaders =
-      context?.session?.getHeaders?.() ?? {};
+    const requestHeaders = context?.session?.getHeaders?.() ?? {};
 
     const response = await get(targetUrl, {
       signal: context?.signal,
       headers: requestHeaders,
     });
 
-    const headers = normalizeHeaders(
-      response.headers,
-    );
+    const headers = normalizeHeaders(response.headers);
 
     if (context?.signal?.aborted) {
-      return createCancelledResult(
-        headers,
-        response.status,
-      );
+      return createCancelledResult(headers, response.status);
     }
 
     const status = Number(response.status);
@@ -131,13 +105,12 @@ const scanner = createSecurityScanner({
      * missing-header findings from a 5xx response.
      */
     if (status >= 500 && status <= 599) {
-      const description =
-        `Security header assessment is inconclusive because the server returned HTTP ${status}.`;
+      const description = `Security header assessment is inconclusive because the server returned HTTP ${status}.`;
 
       const evidence = [
         createSecurityEvidence({
           request: {
-            method: 'GET',
+            method: "GET",
             url: targetUrl,
             headers: requestHeaders,
           },
@@ -146,22 +119,20 @@ const scanner = createSecurityScanner({
             status: response.status,
             statusText: response.statusText,
             headers: response.headers,
-            contentType:
-              response.headers?.['content-type'],
+            contentType: response.headers?.["content-type"],
           },
 
           description,
 
           metadata: {
-            assessment: 'inconclusive',
-            reason: 'server_error_response',
+            assessment: "inconclusive",
+            reason: "server_error_response",
             responseStatus: status,
           },
 
-          findingKey:
-            `security.security-headers:inconclusive:${status}`,
+          findingKey: `security.security-headers:inconclusive:${status}`,
 
-          type: 'http_exchange',
+          type: "http_exchange",
         }),
       ];
 
@@ -182,8 +153,7 @@ const scanner = createSecurityScanner({
         verificationRecords: [],
 
         metadata: {
-          requiredHeaderCount:
-            REQUIRED_HEADERS.length,
+          requiredHeaderCount: REQUIRED_HEADERS.length,
 
           presentHeaderCount: 0,
 
@@ -193,7 +163,7 @@ const scanner = createSecurityScanner({
 
           inconclusive: true,
 
-          reason: 'server_error_response',
+          reason: "server_error_response",
 
           responseStatus: status,
         },
@@ -207,28 +177,26 @@ const scanner = createSecurityScanner({
         return false;
       }
 
-      if (typeof value === 'string') {
+      if (typeof value === "string") {
         return value.trim().length > 0;
       }
 
       if (Array.isArray(value)) {
         return value.some(
-          (entry) =>
-            entry != null &&
-            String(entry).trim().length > 0,
+          (entry) => entry != null && String(entry).trim().length > 0,
         );
       }
 
       return Boolean(value);
     };
 
-    const present = REQUIRED_HEADERS
-      .filter((item) => hasHeader(item.name))
-      .map((item) => item.name);
+    const present = REQUIRED_HEADERS.filter((item) => hasHeader(item.name)).map(
+      (item) => item.name,
+    );
 
-    const missing = REQUIRED_HEADERS
-      .filter((item) => !hasHeader(item.name))
-      .map((item) => item.name);
+    const missing = REQUIRED_HEADERS.filter(
+      (item) => !hasHeader(item.name),
+    ).map((item) => item.name);
 
     const findings = [];
     const evidence = [];
@@ -240,15 +208,13 @@ const scanner = createSecurityScanner({
 
       const title = required.title;
 
-      const description =
-        `The response does not expose the ${required.name} security header.`;
+      const description = `The response does not expose the ${required.name} security header.`;
 
-      const findingKey =
-        `security.security-headers:${title}`;
+      const findingKey = `security.security-headers:${title}`;
 
       findings.push(
         normalizeFinding({
-          scannerId: 'security.security-headers',
+          scannerId: "security.security-headers",
 
           title,
 
@@ -262,7 +228,7 @@ const scanner = createSecurityScanner({
 
           remediation: required.remediation,
 
-          category: 'security-headers',
+          category: "security-headers",
 
           metadata: {
             header: required.name,
@@ -274,7 +240,7 @@ const scanner = createSecurityScanner({
       evidence.push(
         createSecurityEvidence({
           request: {
-            method: 'GET',
+            method: "GET",
             url: targetUrl,
             headers: requestHeaders,
           },
@@ -283,8 +249,7 @@ const scanner = createSecurityScanner({
             status: response.status,
             statusText: response.statusText,
             headers: response.headers,
-            contentType:
-              response.headers?.['content-type'],
+            contentType: response.headers?.["content-type"],
           },
 
           description,
@@ -296,7 +261,7 @@ const scanner = createSecurityScanner({
 
           findingKey,
 
-          type: 'http_exchange',
+          type: "http_exchange",
         }),
       );
     }
@@ -318,14 +283,11 @@ const scanner = createSecurityScanner({
       verificationRecords: [],
 
       metadata: {
-        requiredHeaderCount:
-          REQUIRED_HEADERS.length,
+        requiredHeaderCount: REQUIRED_HEADERS.length,
 
-        presentHeaderCount:
-          present.length,
+        presentHeaderCount: present.length,
 
-        missingHeaderCount:
-          missing.length,
+        missingHeaderCount: missing.length,
 
         cancelled: false,
 

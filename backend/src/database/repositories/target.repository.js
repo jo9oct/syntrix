@@ -1,99 +1,174 @@
 // STATUS: UPDATED
+// File: src/database/repositories/target.repository.js
 
-import Target from '../models/target.model.js';
+import mongoose from "mongoose";
+import Target from "../models/target.model.js";
 
-const create = async (data) =>
-  Target.create(data);
+const DEFAULT_LIMIT = 100;
+const MAX_LIMIT = 100;
+const MAX_SKIP = 100000;
 
-const findById = async (
-  ownerId,
-  targetId,
-) =>
+const assertObjectId = (value, fieldName) => {
+  if (!mongoose.isValidObjectId(value)) {
+    const error = new Error(`${fieldName} must be a valid MongoDB ObjectId.`);
+
+    error.statusCode = 400;
+    error.code = "INVALID_ID";
+
+    throw error;
+  }
+
+  return new mongoose.Types.ObjectId(String(value));
+};
+
+const normalizePagination = (limit, skip) => {
+  const normalizedLimit = limit === undefined ? DEFAULT_LIMIT : Number(limit);
+
+  const normalizedSkip = skip === undefined ? 0 : Number(skip);
+
+  if (
+    !Number.isInteger(normalizedLimit) ||
+    normalizedLimit < 1 ||
+    normalizedLimit > MAX_LIMIT
+  ) {
+    throw new RangeError(
+      `limit must be an integer between 1 and ${MAX_LIMIT}.`,
+    );
+  }
+
+  if (
+    !Number.isInteger(normalizedSkip) ||
+    normalizedSkip < 0 ||
+    normalizedSkip > MAX_SKIP
+  ) {
+    throw new RangeError(`skip must be an integer between 0 and ${MAX_SKIP}.`);
+  }
+
+  return {
+    limit: normalizedLimit,
+    skip: normalizedSkip,
+  };
+};
+
+const create = async (data) => {
+  if (!data || typeof data !== "object") {
+    throw new TypeError("Target data is required.");
+  }
+
+  return Target.create({
+    ...data,
+    ownerId: assertObjectId(data.ownerId, "ownerId"),
+  });
+};
+
+const findById = async (ownerId, targetId) =>
   Target.findOne({
-    _id: targetId,
-    ownerId,
+    _id: assertObjectId(targetId, "targetId"),
+    ownerId: assertObjectId(ownerId, "ownerId"),
   }).lean();
 
-const findByNormalizedUrl = async (
-  ownerId,
-  normalizedUrl,
-) =>
+const findDocumentById = async (ownerId, targetId) =>
   Target.findOne({
-    ownerId,
+    _id: assertObjectId(targetId, "targetId"),
+    ownerId: assertObjectId(ownerId, "ownerId"),
+  });
+
+const findByNormalizedUrl = async (ownerId, normalizedUrl) =>
+  Target.findOne({
+    ownerId: assertObjectId(ownerId, "ownerId"),
     normalizedUrl,
   });
 
-const list = async (
-  ownerId,
-  options = {},
-) => {
-  const {
-    limit = 50,
-    skip = 0,
-  } = options;
+const list = async (ownerId, options = {}) => {
+  const { limit, skip } = normalizePagination(options.limit, options.skip);
 
   return Target.find({
-    ownerId,
+    ownerId: assertObjectId(ownerId, "ownerId"),
     isActive: true,
   })
-    .sort({
-      updatedAt: -1,
-    })
+    .sort({ updatedAt: -1, _id: -1 })
     .skip(skip)
     .limit(limit)
     .lean();
 };
 
-const updateLastScanned = async (
-  ownerId,
-  targetId,
-  date = new Date(),
-) =>
-  Target.findOneAndUpdate(
+// Update only the timestamp. Never increment scanCount here.
+const updateLastScanned = async (ownerId, targetId, date = new Date()) => {
+  if (!(date instanceof Date) || Number.isNaN(date.getTime())) {
+    throw new TypeError("date must be a valid Date.");
+  }
+
+  return Target.findOneAndUpdate(
     {
-      _id: targetId,
-      ownerId,
+      _id: assertObjectId(targetId, "targetId"),
+      ownerId: assertObjectId(ownerId, "ownerId"),
     },
     {
       $set: {
         lastScannedAt: date,
       },
+    },
+    {
+      new: true,
+      runValidators: true,
+    },
+  ).lean();
+};
+
+const incrementScanCount = async (ownerId, targetId) =>
+  Target.findOneAndUpdate(
+    {
+      _id: assertObjectId(targetId, "targetId"),
+      ownerId: assertObjectId(ownerId, "ownerId"),
+    },
+    {
       $inc: {
         scanCount: 1,
       },
     },
     {
       new: true,
+      runValidators: true,
     },
-  );
+  ).lean();
 
-const incrementScanCount = async (
-  ownerId,
-  targetId,
-) =>
-  Target.findOneAndUpdate(
+/*
+ * Atomically reserve the next target scan version.
+ * Version numbers are never decremented or reused after deletion.
+ *
+ * This helper is safe for concurrent increments, but scan creation
+ * must coordinate its use with idempotency checks.
+ */
+const incrementScanVersionCounter = async (ownerId, targetId) => {
+  const target = await Target.findOneAndUpdate(
     {
-      _id: targetId,
-      ownerId,
+      _id: assertObjectId(targetId, "targetId"),
+      ownerId: assertObjectId(ownerId, "ownerId"),
+      isActive: true,
     },
     {
       $inc: {
-        scanCount: 1,
+        scanVersionCounter: 1,
       },
     },
     {
       new: true,
+      runValidators: true,
     },
-  );
+  )
+    .select({ _id: 1, scanVersionCounter: 1 })
+    .lean();
 
-const deactivate = async (
-  ownerId,
-  targetId,
-) =>
+  if (!target) return null;
+
+  return target.scanVersionCounter;
+};
+
+const deactivate = async (ownerId, targetId) =>
   Target.findOneAndUpdate(
     {
-      _id: targetId,
-      ownerId,
+      _id: assertObjectId(targetId, "targetId"),
+      ownerId: assertObjectId(ownerId, "ownerId"),
     },
     {
       $set: {
@@ -102,23 +177,24 @@ const deactivate = async (
     },
     {
       new: true,
+      runValidators: true,
     },
-  );
+  ).lean();
 
-const deleteByOwnerId = async (
-  ownerId,
-) =>
+const deleteByOwnerId = async (ownerId) =>
   Target.deleteMany({
-    ownerId,
+    ownerId: assertObjectId(ownerId, "ownerId"),
   });
 
 export {
   create,
   findById,
+  findDocumentById,
   findByNormalizedUrl,
   list,
   updateLastScanned,
   incrementScanCount,
+  incrementScanVersionCounter,
   deactivate,
   deleteByOwnerId,
 };

@@ -1,7 +1,6 @@
 # STATUS: UPDATED
 
 services:
-
   api:
     build:
       context: .
@@ -70,7 +69,7 @@ services:
           "mongosh",
           "--quiet",
           "--eval",
-          "db.adminCommand({ ping: 1 }).ok"
+          "db.adminCommand({ ping: 1 }).ok",
         ]
 
       interval: 10s
@@ -93,12 +92,7 @@ services:
       - redis-data:/data
 
     healthcheck:
-      test:
-        [
-          "CMD",
-          "redis-cli",
-          "ping"
-        ]
+      test: ["CMD", "redis-cli", "ping"]
 
       interval: 10s
       timeout: 5s
@@ -108,12 +102,10 @@ services:
       - assessment-network
 
 volumes:
-
   mongodb-data:
 
   redis-data:
 
 networks:
-
   assessment-network:
     driver: bridge

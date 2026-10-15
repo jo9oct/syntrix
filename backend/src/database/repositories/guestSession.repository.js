@@ -1,27 +1,19 @@
 // STATUS: CREATED
 
-import GuestSession from '../models/guestSession.model.js';
+import GuestSession from "../models/guestSession.model.js";
 
-const findByGuestOwnerId = async (
-  guestOwnerId,
-) =>
+const findByGuestOwnerId = async (guestOwnerId) =>
   GuestSession.findOne({
     guestOwnerId,
   }).lean();
 
-const create = async ({
-  guestOwnerId,
-  expiresAt,
-}) =>
+const create = async ({ guestOwnerId, expiresAt }) =>
   GuestSession.create({
     guestOwnerId,
     expiresAt,
   });
 
-const updateExpiration = async ({
-  guestOwnerId,
-  expiresAt,
-}) =>
+const updateExpiration = async ({ guestOwnerId, expiresAt }) =>
   GuestSession.findOneAndUpdate(
     {
       guestOwnerId,
@@ -36,16 +28,9 @@ const updateExpiration = async ({
     },
   ).lean();
 
-const deleteByGuestOwnerId = async (
-  guestOwnerId,
-) =>
+const deleteByGuestOwnerId = async (guestOwnerId) =>
   GuestSession.deleteOne({
     guestOwnerId,
   });
 
-export {
-  findByGuestOwnerId,
-  create,
-  updateExpiration,
-  deleteByGuestOwnerId,
-};
+export { findByGuestOwnerId, create, updateExpiration, deleteByGuestOwnerId };

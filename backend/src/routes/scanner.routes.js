@@ -1,19 +1,11 @@
 // STATUS: CREATED
 
-import {
-  Router
-} from "express";
+import { Router } from "express";
 
-import {
-  getScanners
-} from "../controllers/scanner.controller.js";
+import { getScanners } from "../controllers/scanner.controller.js";
 
-const router =
-  Router();
+const router = Router();
 
-router.get(
-  "/",
-  getScanners
-);
+router.get("/", getScanners);
 
 export default router;

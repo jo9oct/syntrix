@@ -1,53 +1,47 @@
 import {
   createReconScanner,
   getTargetHostname,
-} from '../shared/reconContract.js';
+} from "../shared/reconContract.js";
 
-import {
-  resolveAndValidateHostname,
-} from '../shared/resolver.js';
+import { resolveAndValidateHostname } from "../shared/resolver.js";
 
-import {
-  createFingerprint,
-} from '../shared/fingerprint.js';
+import { createFingerprint } from "../shared/fingerprint.js";
 
 const COMMON_SUBDOMAINS = Object.freeze([
-  'www',
-  'api',
-  'app',
-  'admin',
-  'portal',
-  'dev',
-  'test',
-  'staging',
-  'qa',
-  'uat',
-  'mail',
-  'smtp',
-  'ftp',
-  'cdn',
-  'static',
-  'assets',
-  'blog',
-  'docs',
-  'support',
-  'status',
+  "www",
+  "api",
+  "app",
+  "admin",
+  "portal",
+  "dev",
+  "test",
+  "staging",
+  "qa",
+  "uat",
+  "mail",
+  "smtp",
+  "ftp",
+  "cdn",
+  "static",
+  "assets",
+  "blog",
+  "docs",
+  "support",
+  "status",
 ]);
 
 const scanner = createReconScanner({
-  id: 'recon.subdomains',
+  id: "recon.subdomains",
 
-  name: 'Subdomain Discovery',
+  name: "Subdomain Discovery",
 
   description:
-    'Performs bounded discovery of common subdomains under the target domain.',
+    "Performs bounded discovery of common subdomains under the target domain.",
 
   async run(context) {
-    const hostname =
-      getTargetHostname(context);
+    const hostname = getTargetHostname(context);
 
-    const labels =
-      hostname.split('.');
+    const labels = hostname.split(".");
 
     if (labels.length < 2) {
       return {
@@ -68,10 +62,7 @@ const scanner = createReconScanner({
       };
     }
 
-    const baseDomain =
-      labels
-        .slice(-2)
-        .join('.');
+    const baseDomain = labels.slice(-2).join(".");
 
     const discovered = [];
     const evidence = [];
@@ -79,73 +70,57 @@ const scanner = createReconScanner({
 
     let candidatesTested = 0;
 
-    for (
-      const label of COMMON_SUBDOMAINS
-    ) {
-      if (
-        context?.signal?.aborted
-      ) {
+    for (const label of COMMON_SUBDOMAINS) {
+      if (context?.signal?.aborted) {
         break;
       }
 
-      const candidate =
-        `${label}.${baseDomain}`;
+      const candidate = `${label}.${baseDomain}`;
 
       candidatesTested += 1;
 
       try {
-        const resolution =
-          await resolveAndValidateHostname(
-            candidate,
-          );
+        const resolution = await resolveAndValidateHostname(candidate);
 
-        if (
-          context?.signal?.aborted
-        ) {
+        if (context?.signal?.aborted) {
           break;
         }
 
         const discovery = {
           hostname: candidate,
-          addresses:
-            resolution.addresses,
+          addresses: resolution.addresses,
         };
 
-        discovered.push(
-          discovery,
-        );
+        discovered.push(discovery);
 
         evidence.push({
-          type: 'dns',
+          type: "dns",
 
           hostname: candidate,
 
-          recordType: 'A/AAAA',
+          recordType: "A/AAAA",
 
-          value:
-            resolution.addresses,
+          value: resolution.addresses,
 
-          summary:
-            `Discovered subdomain ${candidate}.`,
+          summary: `Discovered subdomain ${candidate}.`,
         });
 
         fingerprints.push(
           createFingerprint({
-            type: 'dns',
+            type: "dns",
 
             name: candidate,
 
             version: null,
 
-            confidence: 'high',
+            confidence: "high",
 
-            source: 'subdomains',
+            source: "subdomains",
 
             evidence: {
               hostname: candidate,
 
-              addresses:
-                resolution.addresses,
+              addresses: resolution.addresses,
             },
           }),
         );
@@ -170,8 +145,7 @@ const scanner = createReconScanner({
 
       metadata: {
         candidatesTested,
-        candidatesAvailable:
-          COMMON_SUBDOMAINS.length,
+        candidatesAvailable: COMMON_SUBDOMAINS.length,
       },
     };
   },

@@ -1,6 +1,7 @@
-// STATUS: CREATED
+// STATUS: UPDATED
+// File: src/database/models/companyRule.model.js
 
-import mongoose from 'mongoose';
+import mongoose from "mongoose";
 
 const { Schema, model } = mongoose;
 
@@ -19,19 +20,26 @@ const companyRuleSchema = new Schema(
       maxlength: 256,
     },
 
+    normalizedName: {
+      type: String,
+      required: true,
+      trim: true,
+      maxlength: 256,
+    },
+
     category: {
       type: String,
       required: true,
       enum: [
-        'cors',
-        'transport',
-        'authentication',
-        'authorization',
-        'security-headers',
-        'csrf',
-        'session',
-        'api-security',
-        'general',
+        "cors",
+        "transport",
+        "authentication",
+        "authorization",
+        "security-headers",
+        "csrf",
+        "session",
+        "api-security",
+        "general",
       ],
       index: true,
     },
@@ -46,14 +54,8 @@ const companyRuleSchema = new Schema(
     severity: {
       type: String,
       required: true,
-      enum: [
-        'critical',
-        'high',
-        'medium',
-        'low',
-        'info',
-      ],
-      default: 'medium',
+      enum: ["critical", "high", "medium", "low", "info"],
+      default: "medium",
     },
 
     rule: {
@@ -73,6 +75,17 @@ const companyRuleSchema = new Schema(
   },
 );
 
+companyRuleSchema.index(
+  {
+    ownerId: 1,
+    normalizedName: 1,
+  },
+  {
+    unique: true,
+    name: "unique_company_rule_name",
+  },
+);
+
 companyRuleSchema.index({
   ownerId: 1,
   createdAt: -1,
@@ -84,9 +97,6 @@ companyRuleSchema.index({
   enabled: 1,
 });
 
-const CompanyRule = model(
-  'CompanyRule',
-  companyRuleSchema,
-);
+const CompanyRule = model("CompanyRule", companyRuleSchema);
 
 export default CompanyRule;

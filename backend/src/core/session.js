@@ -1,8 +1,4 @@
-const createSession = ({
-  headers = {},
-  cookies = {},
-  metadata = {},
-} = {}) => {
+const createSession = ({ headers = {}, cookies = {}, metadata = {} } = {}) => {
   const session = {
     headers: {
       ...headers,
@@ -18,37 +14,20 @@ const createSession = ({
   };
 
   const getCookieHeader = () =>
-    Object.entries(
-      session.cookies,
-    )
-      .map(
-        ([name, value]) =>
-          `${name}=${value}`,
-      )
-      .join('; ');
+    Object.entries(session.cookies)
+      .map(([name, value]) => `${name}=${value}`)
+      .join("; ");
 
-  const setCookie = (
-    name,
-    value,
-  ) => {
-    if (
-      typeof name !== 'string' ||
-      name.trim().length === 0
-    ) {
+  const setCookie = (name, value) => {
+    if (typeof name !== "string" || name.trim().length === 0) {
       return;
     }
 
-    session.cookies[
-      name.trim()
-    ] = String(value);
+    session.cookies[name.trim()] = String(value);
   };
 
-  const removeCookie = (
-    name,
-  ) => {
-    delete session.cookies[
-      name
-    ];
+  const removeCookie = (name) => {
+    delete session.cookies[name];
   };
 
   const getHeaders = () => {
@@ -56,24 +35,17 @@ const createSession = ({
       ...session.headers,
     };
 
-    const cookieHeader =
-      getCookieHeader();
+    const cookieHeader = getCookieHeader();
 
     if (cookieHeader) {
-      result.cookie =
-        cookieHeader;
+      result.cookie = cookieHeader;
     }
 
     return result;
   };
 
-  const setHeader = (
-    name,
-    value,
-  ) => {
-    session.headers[
-      String(name).toLowerCase()
-    ] = String(value);
+  const setHeader = (name, value) => {
+    session.headers[String(name).toLowerCase()] = String(value);
   };
 
   const clear = () => {
@@ -92,6 +64,4 @@ const createSession = ({
   };
 };
 
-export {
-  createSession,
-};
+export { createSession };

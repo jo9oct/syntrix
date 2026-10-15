@@ -10,17 +10,10 @@ const getParameters = (value) => {
   return [...url.searchParams.keys()];
 };
 
-const setParameter = (
-  value,
-  parameter,
-  replacement,
-) => {
+const setParameter = (value, parameter, replacement) => {
   const url = cloneUrl(value);
 
-  url.searchParams.set(
-    parameter,
-    replacement,
-  );
+  url.searchParams.set(parameter, replacement);
 
   return url.toString();
 };
@@ -31,8 +24,4 @@ const getParameterEntries = (value) => {
   return [...url.searchParams.entries()];
 };
 
-export {
-  getParameterEntries,
-  getParameters,
-  setParameter,
-};
+export { getParameterEntries, getParameters, setParameter };

@@ -1,4 +1,4 @@
-import mongoose from 'mongoose';
+import mongoose from "mongoose";
 
 const { Schema, model } = mongoose;
 
@@ -12,48 +12,35 @@ const verificationSchema = new Schema(
 
     scanId: {
       type: Schema.Types.ObjectId,
-      ref: 'Scan',
+      ref: "Scan",
       required: true,
       index: true,
     },
 
     findingId: {
       type: Schema.Types.ObjectId,
-      ref: 'Finding',
+      ref: "Finding",
       required: true,
       unique: true,
     },
 
     status: {
       type: String,
-      enum: [
-        'pending',
-        'verified',
-        'rejected',
-        'inconclusive',
-      ],
-      default: 'pending',
+      enum: ["pending", "verified", "rejected", "inconclusive"],
+      default: "pending",
       index: true,
     },
 
     method: {
       type: String,
-      enum: [
-        'automated',
-        'manual',
-        'secondary_check',
-      ],
-      default: 'automated',
+      enum: ["automated", "manual", "secondary_check"],
+      default: "automated",
     },
 
     confidence: {
       type: String,
-      enum: [
-        'low',
-        'medium',
-        'high',
-      ],
-      default: 'low',
+      enum: ["low", "medium", "high"],
+      default: "low",
     },
 
     reason: {
@@ -65,7 +52,7 @@ const verificationSchema = new Schema(
     evidenceIds: [
       {
         type: Schema.Types.ObjectId,
-        ref: 'Evidence',
+        ref: "Evidence",
       },
     ],
 
@@ -90,6 +77,6 @@ verificationSchema.index({
   status: 1,
 });
 
-const Verification = model('Verification', verificationSchema);
+const Verification = model("Verification", verificationSchema);
 
 export default Verification;

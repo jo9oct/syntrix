@@ -1,120 +1,520 @@
-import {
-  get,
-} from '../../request/request.js';
-import {
-  createSecurityEvidence,
-} from '../shared/evidenceBuilder.js';
-import {
-  calculateConfidence,
-} from '../shared/confidence.js';
-import {
-  normalizeFinding,
-} from '../shared/findingNormalizer.js';
+// STATUS: UPDATED
+// File: src/scanners/authentication/scanner.js
+
+import puppeteer from "puppeteer-core";
+
+import { createSecurityEvidence } from "../shared/evidenceBuilder.js";
+import { calculateConfidence } from "../shared/confidence.js";
+import { normalizeFinding } from "../shared/findingNormalizer.js";
 import {
   createSecurityScanner,
   getTargetUrl,
-} from '../shared/scannerContract.js';
-import {
-  assertSafeUrl,
-} from '../../recon/shared/resolver.js';
+} from "../shared/scannerContract.js";
+import { assertSafeUrl } from "../../recon/shared/resolver.js";
 
-const scanner = createSecurityScanner({
-  id: 'security.authentication',
-  name: 'Authentication Security',
-  description:
-    'Assesses exposed authentication behavior without credential guessing.',
+const SCANNER_ID = "security.authentication";
 
-  async run(context) {
-    const targetUrl = getTargetUrl(context);
+const MAX_AUTH_PAGES = 6;
+const NAVIGATION_TIMEOUT_MS = 15000;
+const PAGE_RENDER_TIMEOUT_MS = 3000;
+const MAX_FINDINGS = 50;
 
-    await assertSafeUrl(targetUrl);
+const LOGIN_PATTERN =
+  /(?:login|log-in|signin|sign-in|authenticate|auth)(?:\/|$|[?#])/i;
 
-    const response = await get(targetUrl, {
-      signal: context?.signal,
-      headers:
-        context?.session?.getHeaders?.() ?? {},
-      maxRedirects: 0,
-      validateStatus: () => true,
+const REGISTER_PATTERN =
+  /(?:register|sign-up|signup|create-account|registration)(?:\/|$|[?#])/i;
+
+const getChromiumExecutablePath = () =>
+  process.env.PUPPETEER_EXECUTABLE_PATH || "/usr/bin/chromium";
+
+function safeUrl(rawUrl, baseUrl) {
+  try {
+    const parsed = new URL(rawUrl, baseUrl);
+
+    if (
+      !["http:", "https:"].includes(parsed.protocol) ||
+      parsed.username ||
+      parsed.password
+    ) {
+      return null;
+    }
+
+    return parsed;
+  } catch {
+    return null;
+  }
+}
+
+function classifyAuthUrl(rawUrl) {
+  try {
+    const url = new URL(rawUrl);
+
+    const candidate = `${url.pathname} ${url.search}`;
+
+    if (REGISTER_PATTERN.test(candidate)) {
+      return "registration";
+    }
+
+    if (LOGIN_PATTERN.test(candidate)) {
+      return "login";
+    }
+
+    return null;
+  } catch {
+    return null;
+  }
+}
+
+function makeFinding({ title, description, severity, remediation }) {
+  return normalizeFinding({
+    scannerId: SCANNER_ID,
+    title,
+    description,
+    severity,
+    confidence: calculateConfidence({ confirmed: true }),
+    remediation,
+    category: "authentication",
+  });
+}
+
+function addFinding(findings, finding) {
+  if (findings.length >= MAX_FINDINGS) {
+    return;
+  }
+
+  const key = `${finding.title}:${finding.description}`;
+
+  if (
+    findings.some(
+      (existing) => `${existing.title}:${existing.description}` === key,
+    )
+  ) {
+    return;
+  }
+
+  findings.push(finding);
+}
+
+async function inspectRenderedPage(page) {
+  return page.evaluate(() => {
+    const resolveUrl = (rawUrl, baseUrl) => {
+      try {
+        const url = new URL(rawUrl, baseUrl);
+
+        if (
+          !["http:", "https:"].includes(url.protocol) ||
+          url.username ||
+          url.password
+        ) {
+          return null;
+        }
+
+        return url.href;
+      } catch {
+        return null;
+      }
+    };
+
+    const forms = [...document.querySelectorAll("form")].map((form) => {
+      const action = resolveUrl(
+        form.getAttribute("action") || document.URL,
+        document.baseURI,
+      );
+
+      const passwordInputs = [
+        ...form.querySelectorAll('input[type="password"]'),
+      ].map((input) => ({
+        autocomplete: (input.getAttribute("autocomplete") || "")
+          .trim()
+          .toLowerCase(),
+        name: input.getAttribute("name") || "",
+      }));
+
+      return {
+        action,
+        method: (form.getAttribute("method") || "get").trim().toLowerCase(),
+        passwordInputs,
+      };
     });
 
-    const wwwAuthenticate =
-      response.headers?.['www-authenticate'] ?? null;
+    // Some JavaScript applications render password fields without
+    // wrapping them in a native HTML form.
+    const uncontainedPasswordInputs = [
+      ...document.querySelectorAll('input[type="password"]'),
+    ]
+      .filter((input) => !input.closest("form"))
+      .map((input) => ({
+        autocomplete: (input.getAttribute("autocomplete") || "")
+          .trim()
+          .toLowerCase(),
+        name: input.getAttribute("name") || "",
+      }));
 
-    const server =
-      response.headers?.server ?? null;
+    const links = [...document.querySelectorAll("a[href]")]
+      .map((anchor) => ({
+        url: resolveUrl(anchor.href, document.baseURI),
+        text: (anchor.innerText || anchor.textContent || "")
+          .replace(/\s+/g, " ")
+          .trim()
+          .slice(0, 120),
+      }))
+      .filter((link) => link.url);
+
+    return {
+      url: document.URL,
+      title: document.title || "",
+      forms,
+      uncontainedPasswordInputs,
+      links,
+      passwordFieldCount: document.querySelectorAll('input[type="password"]')
+        .length,
+    };
+  });
+}
+
+const scanner = createSecurityScanner({
+  id: SCANNER_ID,
+  name: "Authentication Security",
+  description:
+    "Inspects public login and registration pages using Chromium without submitting credentials or forms.",
+
+  async run(context) {
+    const target = safeUrl(getTargetUrl(context), getTargetUrl(context));
+
+    if (!target) {
+      throw new Error("Authentication scanner received an invalid target URL.");
+    }
+
+    await assertSafeUrl(target.href);
 
     const findings = [];
+    const evidence = [];
+    const pages = [];
+    const visited = new Set();
+    const pending = new Map();
 
-    if (
-      response.status === 401 &&
-      !wwwAuthenticate
-    ) {
-      findings.push(
-        normalizeFinding({
-          scannerId:
-            'security.authentication',
-          title:
-            'Authentication Challenge Missing WWW-Authenticate Header',
-          description:
-            'The endpoint returned HTTP 401 without an authentication challenge header.',
-          severity: 'low',
-          confidence:
-            calculateConfidence({
-              confirmed: true,
+    pending.set(target.href, "target");
+
+    let browser;
+
+    try {
+      browser = await puppeteer.launch({
+        executablePath: getChromiumExecutablePath(),
+        headless: true,
+        timeout: NAVIGATION_TIMEOUT_MS,
+        args: [
+          "--no-sandbox",
+          "--disable-setuid-sandbox",
+          "--disable-dev-shm-usage",
+          "--disable-gpu",
+        ],
+      });
+
+      const page = await browser.newPage();
+
+      page.setDefaultNavigationTimeout(NAVIGATION_TIMEOUT_MS);
+      page.setDefaultTimeout(NAVIGATION_TIMEOUT_MS);
+
+      // Use a fresh browser page. Do not copy scan-session headers,
+      // cookies, credentials, or authentication state into this scan.
+      await page.setRequestInterception(true);
+
+      page.on("request", (request) => {
+        let allowed = false;
+
+        try {
+          const requestedUrl = new URL(request.url());
+
+          allowed =
+            ["http:", "https:"].includes(requestedUrl.protocol) &&
+            requestedUrl.origin === target.origin;
+        } catch {
+          allowed = false;
+        }
+
+        if (allowed && !context?.signal?.aborted) {
+          void request.continue().catch(() => {});
+        } else {
+          void request.abort().catch(() => {});
+        }
+      });
+
+      while (
+        pending.size > 0 &&
+        visited.size < MAX_AUTH_PAGES &&
+        !context?.signal?.aborted
+      ) {
+        const [pageUrl, discoveredType] = pending.entries().next().value;
+
+        pending.delete(pageUrl);
+
+        if (visited.has(pageUrl)) {
+          continue;
+        }
+
+        const parsedPageUrl = safeUrl(pageUrl, target.href);
+
+        if (!parsedPageUrl || parsedPageUrl.origin !== target.origin) {
+          continue;
+        }
+
+        // Revalidate every navigation to retain the project's
+        // existing SSRF protections.
+        await assertSafeUrl(parsedPageUrl.href);
+
+        visited.add(parsedPageUrl.href);
+
+        let response;
+
+        try {
+          response = await page.goto(parsedPageUrl.href, {
+            waitUntil: "domcontentloaded",
+            timeout: NAVIGATION_TIMEOUT_MS,
+          });
+        } catch {
+          if (context?.signal?.aborted) {
+            break;
+          }
+
+          // A failed optional page should not prevent other pages
+          // from being inspected.
+          continue;
+        }
+
+        if (context?.signal?.aborted) {
+          break;
+        }
+
+        if (page.url()) {
+          const finalUrl = safeUrl(page.url(), target.href);
+
+          if (!finalUrl || finalUrl.origin !== target.origin) {
+            continue;
+          }
+        }
+
+        // Allow client-rendered React/Vue/etc. UI to appear.
+        await page
+          .waitForSelector('form, input[type="password"], a[href]', {
+            timeout: PAGE_RENDER_TIMEOUT_MS,
+          })
+          .catch(() => {});
+
+        if (context?.signal?.aborted) {
+          break;
+        }
+
+        let rendered;
+
+        try {
+          rendered = await inspectRenderedPage(page);
+        } catch {
+          continue;
+        }
+
+        const responseStatus = response?.status() ?? null;
+        const pageType = classifyAuthUrl(parsedPageUrl.href) || discoveredType;
+
+        const inspectedPage = {
+          url: parsedPageUrl.href,
+          type: pageType,
+          status: responseStatus,
+          renderedDomInspected: true,
+          formCount: rendered.forms.length,
+          passwordFieldCount: rendered.passwordFieldCount,
+          uncontainedPasswordFieldCount:
+            rendered.uncontainedPasswordInputs.length,
+        };
+
+        pages.push(inspectedPage);
+
+        // Record only a minimal public GET exchange. Do not include
+        // browser cookies, request authorization, or form values.
+        try {
+          evidence.push(
+            createSecurityEvidence({
+              request: {
+                method: "GET",
+                url: parsedPageUrl.href,
+                headers: {
+                  accept: "text/html",
+                },
+              },
+              response: {
+                status: responseStatus,
+                statusText: "",
+                headers: {
+                  "content-type": response?.headers()?.["content-type"] || "",
+                },
+              },
             }),
-          remediation:
-            'Return an appropriate authentication challenge when HTTP authentication is used.',
-          category: 'authentication',
-        }),
-      );
+          );
+        } catch {
+          // Evidence formatting must not interrupt the scan.
+        }
+
+        for (const link of rendered.links) {
+          if (visited.size + pending.size >= MAX_AUTH_PAGES) {
+            break;
+          }
+
+          const linkUrl = safeUrl(link.url, target.href);
+
+          if (
+            !linkUrl ||
+            linkUrl.origin !== target.origin ||
+            visited.has(linkUrl.href) ||
+            pending.has(linkUrl.href)
+          ) {
+            continue;
+          }
+
+          const linkType = classifyAuthUrl(linkUrl.href);
+          const labelType = classifyAuthUrl(
+            `https://local.invalid/${link.text}`,
+          );
+
+          const authType = linkType || labelType;
+
+          if (authType) {
+            pending.set(linkUrl.href, authType);
+          }
+        }
+
+        const formsToCheck = rendered.forms.map((form) => ({
+          ...form,
+          hasPassword: form.passwordInputs.length > 0,
+        }));
+
+        for (const form of formsToCheck) {
+          if (!form.hasPassword) {
+            continue;
+          }
+
+          const formAction = form.action
+            ? safeUrl(form.action, parsedPageUrl.href)
+            : null;
+
+          const actionIsSameOrigin = formAction?.origin === target.origin;
+
+          const transportIsInsecure =
+            parsedPageUrl.protocol !== "https:" ||
+            !formAction ||
+            formAction.protocol !== "https:";
+
+          if (transportIsInsecure) {
+            addFinding(
+              findings,
+              makeFinding({
+                title: "Password Form Uses Insecure HTTP",
+                description:
+                  "A rendered public password form is served over HTTP, has an invalid destination, or submits to an HTTP action. Credentials could be exposed in transit. The scanner did not submit the form.",
+                severity: "high",
+                remediation:
+                  "Serve authentication pages exclusively over HTTPS and ensure password forms submit only to trusted HTTPS endpoints. Configure HSTS where appropriate.",
+              }),
+            );
+          }
+
+          if (form.method === "get") {
+            addFinding(
+              findings,
+              makeFinding({
+                title: "Password Form Uses GET Method",
+                description:
+                  "A rendered password form uses GET. A normal submission may expose form values in URLs, browser history, or logs. No form was submitted during this scan.",
+                severity: "high",
+                remediation:
+                  "Use POST for password forms and protect authentication traffic with HTTPS.",
+              }),
+            );
+          }
+
+          if (!formAction || !actionIsSameOrigin) {
+            addFinding(
+              findings,
+              makeFinding({
+                title: "Password Form Has an External or Invalid Action",
+                description:
+                  "A rendered password form does not have a valid same-origin destination. Review the destination before treating this as a vulnerability; an approved external identity provider may be intentional.",
+                severity: "medium",
+                remediation:
+                  "Use an explicit, trusted HTTPS authentication destination. Document and validate any approved external identity provider.",
+              }),
+            );
+          }
+
+          for (const input of form.passwordInputs) {
+            if (!input.autocomplete) {
+              addFinding(
+                findings,
+                makeFinding({
+                  title: "Password Field Missing Autocomplete Guidance",
+                  description:
+                    "A rendered password field does not declare an autocomplete value. This is a configuration observation, not proof of an authentication bypass.",
+                  severity: "info",
+                  remediation:
+                    'Set autocomplete="current-password" for login fields or autocomplete="new-password" for password-creation fields.',
+                }),
+              );
+            }
+          }
+        }
+
+        for (const input of rendered.uncontainedPasswordInputs) {
+          if (!input.autocomplete) {
+            addFinding(
+              findings,
+              makeFinding({
+                title: "Password Field Missing Autocomplete Guidance",
+                description:
+                  "A rendered password field outside a native form does not declare an autocomplete value. This is a configuration observation, not proof of an authentication bypass.",
+                severity: "info",
+                remediation:
+                  'Set autocomplete="current-password" for login fields or autocomplete="new-password" for password-creation fields.',
+              }),
+            );
+          }
+        }
+      }
+    } finally {
+      if (browser) {
+        await browser.close().catch(() => {});
+      }
     }
 
-    if (
-      server &&
-      /login|auth/i.test(server)
-    ) {
-      findings.push(
-        normalizeFinding({
-          scannerId:
-            'security.authentication',
-          title:
-            'Authentication Service Information Disclosure',
-          description:
-            'Authentication-related server information appears to be exposed in the response.',
-          severity: 'low',
-          confidence:
-            calculateConfidence({
-              confirmed: true,
-            }),
-          remediation:
-            'Minimize unnecessary authentication implementation details in public response headers.',
-          category: 'authentication',
-        }),
-      );
-    }
+    const publicAuthPages = pages.filter(
+      (page) => page.type === "login" || page.type === "registration",
+    );
 
     return {
       data: {
-        status: response.status,
-        authenticationChallenge:
-          wwwAuthenticate,
+        status: context?.signal?.aborted ? "cancelled" : "completed",
+        credentialRequired: false,
+        credentialsSubmitted: false,
+        pagesInspected: pages.length,
+        publicAuthenticationPagesFound: publicAuthPages.length,
+        pages,
+        checksPerformed: [
+          "javascript_rendered_public_page_inspection",
+          "public_login_and_registration_page_discovery",
+          "password_form_transport_security",
+          "password_form_method",
+          "password_form_destination",
+          "password_field_autocomplete",
+        ],
+        checksNotProvenByThisScan: [
+          "brute_force_protection",
+          "account_enumeration",
+          "password_policy_enforcement",
+          "registration_completion",
+          "email_verification",
+          "authenticated_access_control",
+        ],
       },
       findings,
-      evidence: [
-        createSecurityEvidence({
-          request: {
-            method: 'GET',
-            url: targetUrl,
-            headers:
-              context?.session?.getHeaders?.() ?? {},
-          },
-          response: {
-            status: response.status,
-            statusText: response.statusText,
-            headers: response.headers,
-          },
-        }),
-      ],
+      evidence,
     };
   },
 });

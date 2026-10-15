@@ -1,23 +1,18 @@
 // STATUS: UPDATED
 
-import { get } from '../../request/request.js';
-import { createSecurityEvidence } from '../shared/evidenceBuilder.js';
-import { calculateConfidence } from '../shared/confidence.js';
-import { normalizeFinding } from '../shared/findingNormalizer.js';
-import { findReflection } from '../shared/reflectionDetector.js';
+import { get } from "../../request/request.js";
+import { createSecurityEvidence } from "../shared/evidenceBuilder.js";
+import { calculateConfidence } from "../shared/confidence.js";
+import { normalizeFinding } from "../shared/findingNormalizer.js";
+import { findReflection } from "../shared/reflectionDetector.js";
 import {
   createSecurityScanner,
   getTargetUrl,
-} from '../shared/scannerContract.js';
-import {
-  getParameters,
-  setParameter,
-} from '../shared/parameterTester.js';
-import { getSafeMarker } from '../shared/payloadManager.js';
-import { assertSafeUrl } from '../../recon/shared/resolver.js';
-import {
-  createFindingFingerprint,
-} from '../../analysis/fingerprint/fingerprint.js';
+} from "../shared/scannerContract.js";
+import { getParameters, setParameter } from "../shared/parameterTester.js";
+import { getSafeMarker } from "../shared/payloadManager.js";
+import { assertSafeUrl } from "../../recon/shared/resolver.js";
+import { createFindingFingerprint } from "../../analysis/fingerprint/fingerprint.js";
 
 const MAX_PARAMETERS = 5;
 const MAX_TARGETS = 11;
@@ -26,18 +21,18 @@ const normalizeTargetForFingerprint = (value) => {
   try {
     const url = new URL(value);
 
-    if (!['http:', 'https:'].includes(url.protocol)) {
+    if (!["http:", "https:"].includes(url.protocol)) {
       return value;
     }
 
-    url.username = '';
-    url.password = '';
+    url.username = "";
+    url.password = "";
 
     for (const key of new Set(url.searchParams.keys())) {
-      url.searchParams.set(key, '');
+      url.searchParams.set(key, "");
     }
 
-    url.hash = '';
+    url.hash = "";
 
     return url.toString();
   } catch {
@@ -45,19 +40,18 @@ const normalizeTargetForFingerprint = (value) => {
   }
 };
 
-const getTargets = (context, rootUrl) => [
-  ...new Set([
-    rootUrl,
-    ...(Array.isArray(context?.discoveredUrls)
-      ? context.discoveredUrls
-      : []),
-  ]),
-].slice(0, MAX_TARGETS);
+const getTargets = (context, rootUrl) =>
+  [
+    ...new Set([
+      rootUrl,
+      ...(Array.isArray(context?.discoveredUrls) ? context.discoveredUrls : []),
+    ]),
+  ].slice(0, MAX_TARGETS);
 
 const scanner = createSecurityScanner({
-  id: 'security.xss',
-  name: 'Cross-Site Scripting',
-  description: 'Performs a bounded reflected-input marker test.',
+  id: "security.xss",
+  name: "Cross-Site Scripting",
+  description: "Performs a bounded reflected-input marker test.",
 
   async run(context) {
     const rootUrl = getTargetUrl(context);
@@ -100,19 +94,12 @@ const scanner = createSecurityScanner({
 
       await assertSafeUrl(targetUrl);
 
-      const parameters = getParameters(targetUrl).slice(
-        0,
-        MAX_PARAMETERS,
-      );
+      const parameters = getParameters(targetUrl).slice(0, MAX_PARAMETERS);
 
       for (const parameter of parameters) {
         if (context?.signal?.aborted) break;
 
-        const testUrl = setParameter(
-          targetUrl,
-          parameter,
-          marker,
-        );
+        const testUrl = setParameter(targetUrl, parameter, marker);
 
         await assertSafeUrl(testUrl);
 
@@ -132,29 +119,28 @@ const scanner = createSecurityScanner({
         if (!reflection) continue;
 
         const findingFingerprint = createFindingFingerprint({
-          scannerId: 'security.xss',
-          category: 'xss',
-          title: 'Potential Reflected Input Injection',
+          scannerId: "security.xss",
+          category: "xss",
+          title: "Potential Reflected Input Injection",
           target: normalizeTargetForFingerprint(targetUrl),
           parameter,
           location: reflection.context,
-          evidenceType: 'http_exchange',
+          evidenceType: "http_exchange",
         });
 
         const finding = normalizeFinding({
-          scannerId: 'security.xss',
-          title: 'Potential Reflected Input Injection',
-          description:
-            `The controlled marker was reflected in the response for parameter "${parameter}". Reflection alone does not confirm executable cross-site scripting.`,
-          severity: 'medium',
+          scannerId: "security.xss",
+          title: "Potential Reflected Input Injection",
+          description: `The controlled marker was reflected in the response for parameter "${parameter}". Reflection alone does not confirm executable cross-site scripting.`,
+          severity: "medium",
           confidence: calculateConfidence({ confirmed: false }),
           remediation:
-            'Apply context-aware output encoding, validate untrusted input, and ensure reflected data cannot be interpreted as executable HTML or JavaScript.',
-          category: 'xss',
+            "Apply context-aware output encoding, validate untrusted input, and ensure reflected data cannot be interpreted as executable HTML or JavaScript.",
+          category: "xss",
           metadata: {
             parameter,
             reflectionContext: reflection.context,
-            detection: 'reflected-marker',
+            detection: "reflected-marker",
           },
         });
 
@@ -166,7 +152,7 @@ const scanner = createSecurityScanner({
         evidence.push(
           createSecurityEvidence({
             request: {
-              method: 'GET',
+              method: "GET",
               url: testUrl,
               headers: requestHeaders,
             },
@@ -174,7 +160,7 @@ const scanner = createSecurityScanner({
               status: response.status,
               headers: response.headers,
               body: response.data,
-              contentType: response.headers?.['content-type'],
+              contentType: response.headers?.["content-type"],
             },
             parameter,
             payload: marker,
@@ -182,7 +168,7 @@ const scanner = createSecurityScanner({
             findingKey: findingFingerprint,
             metadata: {
               parameter,
-              marker: '[REDACTED]',
+              marker: "[REDACTED]",
               reflectionContext: reflection.context,
             },
           }),

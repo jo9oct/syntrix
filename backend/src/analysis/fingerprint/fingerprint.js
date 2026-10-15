@@ -1,19 +1,19 @@
 // STATUS: UPDATED
 
-import crypto from 'node:crypto';
+import crypto from "node:crypto";
 
 const normalizeValue = (value) =>
-  String(value ?? '')
+  String(value ?? "")
     .trim()
     .toLowerCase()
-    .replace(/\s+/g, ' ');
+    .replace(/\s+/g, " ");
 
 const stableSerialize = (value) => {
   if (value === null || value === undefined) {
     return null;
   }
 
-  if (typeof value !== 'object') {
+  if (typeof value !== "object") {
     return value;
   }
 
@@ -30,10 +30,7 @@ const stableSerialize = (value) => {
 };
 
 const createHash = (value) =>
-  crypto
-    .createHash('sha256')
-    .update(value)
-    .digest('hex');
+  crypto.createHash("sha256").update(value).digest("hex");
 
 const createFindingFingerprint = ({
   scannerId,
@@ -52,19 +49,16 @@ const createFindingFingerprint = ({
     normalizeValue(parameter),
     normalizeValue(location),
     normalizeValue(evidenceType),
-  ].join('|');
+  ].join("|");
 
   return createHash(normalized);
 };
 
-const createTargetFingerprint = ({
-  normalizedUrl,
-  hostname,
-}) => {
+const createTargetFingerprint = ({ normalizedUrl, hostname }) => {
   const normalized = [
     normalizeValue(normalizedUrl),
     normalizeValue(hostname),
-  ].join('|');
+  ].join("|");
 
   return createHash(normalized);
 };
@@ -106,7 +100,7 @@ const createEvidenceFingerprint = ({
 };
 
 const attachFindingFingerprint = (finding) => {
-  if (!finding || typeof finding !== 'object') {
+  if (!finding || typeof finding !== "object") {
     return finding;
   }
 
@@ -120,23 +114,11 @@ const attachFindingFingerprint = (finding) => {
       scannerId: finding.scannerId,
       category: finding.category,
       title: finding.title,
-      target:
-        finding.target ||
-        finding.url ||
-        finding.metadata?.url ||
-        '',
-      parameter:
-        finding.parameter ||
-        finding.metadata?.parameter ||
-        null,
-      location:
-        finding.location ||
-        finding.metadata?.location ||
-        null,
+      target: finding.target || finding.url || finding.metadata?.url || "",
+      parameter: finding.parameter || finding.metadata?.parameter || null,
+      location: finding.location || finding.metadata?.location || null,
       evidenceType:
-        finding.evidenceType ||
-        finding.metadata?.evidenceType ||
-        null,
+        finding.evidenceType || finding.metadata?.evidenceType || null,
     }),
   };
 };
@@ -154,23 +136,11 @@ const correlateFindings = (findings = []) => {
         scannerId: finding.scannerId,
         category: finding.category,
         title: finding.title,
-        target:
-          finding.target ||
-          finding.url ||
-          finding.metadata?.url ||
-          '',
-        parameter:
-          finding.parameter ||
-          finding.metadata?.parameter ||
-          null,
-        location:
-          finding.location ||
-          finding.metadata?.location ||
-          null,
+        target: finding.target || finding.url || finding.metadata?.url || "",
+        parameter: finding.parameter || finding.metadata?.parameter || null,
+        location: finding.location || finding.metadata?.location || null,
         evidenceType:
-          finding.evidenceType ||
-          finding.metadata?.evidenceType ||
-          null,
+          finding.evidenceType || finding.metadata?.evidenceType || null,
       });
 
     if (!groups.has(fingerprint)) {
@@ -183,14 +153,12 @@ const correlateFindings = (findings = []) => {
     });
   }
 
-  return Array.from(groups.entries()).map(
-    ([fingerprint, items]) => ({
-      fingerprint,
-      count: items.length,
-      primary: items[0],
-      occurrences: items,
-    }),
-  );
+  return Array.from(groups.entries()).map(([fingerprint, items]) => ({
+    fingerprint,
+    count: items.length,
+    primary: items[0],
+    occurrences: items,
+  }));
 };
 
 export {

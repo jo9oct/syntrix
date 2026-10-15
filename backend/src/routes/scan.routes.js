@@ -1,63 +1,77 @@
-// STATUS: UPDATED
+﻿// STATUS: UPDATED
+
+import { Router } from "express";
 
 import {
-  Router,
-} from 'express';
-
-import {
-  cancelScan,
-  createScan,
-  getScan,
-} from '../controllers/scan.controller.js';
+  createScanController,
+  getScanController,
+  cancelScanController,
+  getLatestComparisonResultController,
+  deleteScanController,
+  recoverScanController,
+  listDeletedScansController,
+} from "../controllers/scan.controller.js";
 
 import {
   requireAuthorization,
   requireOwner,
-} from '../middleware/authorization.middleware.js';
+} from "../middleware/authorization.middleware.js";
 
-import {
-  validate,
-} from '../middleware/validation.middleware.js';
+import { validate } from "../middleware/validation.middleware.js";
 
 import {
   createScanSchema,
   scanIdSchema,
-} from '../validators/scan.validator.js';
+  cancelScanSchema,
+} from "../validators/scan.validator.js";
 
-const router =
-  Router();
+import {
+  scanIdParamsSchema,
+  deletedScansQuerySchema,
+} from "../validators/scanLifecycle.validator.js";
 
-router.post(
-  '/',
-  requireAuthorization,
-  requireOwner,
-  validate(
-    createScanSchema,
-    'body',
-  ),
-  createScan,
-);
+import { targetIdSchema } from "../validators/target.validator.js";
+
+const router = Router();
+
+router.use(requireAuthorization, requireOwner);
+
+router.post("/", validate(createScanSchema, "body"), createScanController);
+
+// Static routes must appear before "/:scanId".
 
 router.get(
-  '/:scanId',
-  requireAuthorization,
-  requireOwner,
-  validate(
-    scanIdSchema,
-    'params',
-  ),
-  getScan,
+  "/deleted",
+  validate(deletedScansQuerySchema, "query"),
+  listDeletedScansController,
 );
 
+// GET /api/v1/scans/compare/:targetId/result
+router.get(
+  "/compare/:targetId/result",
+  validate(targetIdSchema, "params"),
+  getLatestComparisonResultController,
+);
+
+router.patch(
+  "/:scanId/delete",
+  validate(scanIdParamsSchema, "params"),
+  deleteScanController,
+);
+
+router.patch(
+  "/:scanId/recover",
+  validate(scanIdParamsSchema, "params"),
+  recoverScanController,
+);
+
+router.get("/:scanId", validate(scanIdSchema, "params"), getScanController);
+
 router.post(
-  '/:scanId/cancel',
-  requireAuthorization,
-  requireOwner,
-  validate(
-    scanIdSchema,
-    'params',
-  ),
-  cancelScan,
+  "/:scanId/cancel",
+  validate(scanIdSchema, "params"),
+  validate(cancelScanSchema, "body"),
+  cancelScanController,
 );
 
 export default router;

@@ -1,19 +1,16 @@
 // STATUS: UPDATED
 
-import { get } from '../../request/request.js';
-import { createSecurityEvidence } from '../shared/evidenceBuilder.js';
-import { calculateConfidence } from '../shared/confidence.js';
-import { normalizeFinding } from '../shared/findingNormalizer.js';
+import { get } from "../../request/request.js";
+import { createSecurityEvidence } from "../shared/evidenceBuilder.js";
+import { calculateConfidence } from "../shared/confidence.js";
+import { normalizeFinding } from "../shared/findingNormalizer.js";
 import {
   createSecurityScanner,
   getTargetUrl,
-} from '../shared/scannerContract.js';
-import {
-  getParameters,
-  setParameter,
-} from '../shared/parameterTester.js';
-import { getPayloads } from '../shared/payloadManager.js';
-import { assertSafeUrl } from '../../recon/shared/resolver.js';
+} from "../shared/scannerContract.js";
+import { getParameters, setParameter } from "../shared/parameterTester.js";
+import { getPayloads } from "../shared/payloadManager.js";
+import { assertSafeUrl } from "../../recon/shared/resolver.js";
 
 const MAX_PARAMETERS = 5;
 const MAX_PAYLOADS_PER_PARAMETER = 2;
@@ -31,23 +28,22 @@ const SQL_ERROR_PATTERNS = [
 ];
 
 const containsSqlError = (body) =>
-  typeof body === 'string' &&
+  typeof body === "string" &&
   SQL_ERROR_PATTERNS.some((pattern) => pattern.test(body));
 
-const getTargets = (context, rootUrl) => [
-  ...new Set([
-    rootUrl,
-    ...(Array.isArray(context?.discoveredUrls)
-      ? context.discoveredUrls
-      : []),
-  ]),
-].slice(0, MAX_TARGETS);
+const getTargets = (context, rootUrl) =>
+  [
+    ...new Set([
+      rootUrl,
+      ...(Array.isArray(context?.discoveredUrls) ? context.discoveredUrls : []),
+    ]),
+  ].slice(0, MAX_TARGETS);
 
 const scanner = createSecurityScanner({
-  id: 'security.sqli',
-  name: 'SQL Injection Detection',
+  id: "security.sqli",
+  name: "SQL Injection Detection",
   description:
-    'Performs a conservative SQL error-surface assessment using controlled parameter input.',
+    "Performs a conservative SQL error-surface assessment using controlled parameter input.",
 
   async run(context) {
     const rootUrl = getTargetUrl(context);
@@ -75,10 +71,7 @@ const scanner = createSecurityScanner({
       return emptyResult(true);
     }
 
-    const payloads = getPayloads('sqli').slice(
-      0,
-      MAX_PAYLOADS_PER_PARAMETER,
-    );
+    const payloads = getPayloads("sqli").slice(0, MAX_PAYLOADS_PER_PARAMETER);
 
     const findings = [];
     const evidence = [];
@@ -94,10 +87,7 @@ const scanner = createSecurityScanner({
 
       await assertSafeUrl(targetUrl);
 
-      const parameters = getParameters(targetUrl).slice(
-        0,
-        MAX_PARAMETERS,
-      );
+      const parameters = getParameters(targetUrl).slice(0, MAX_PARAMETERS);
 
       for (const parameter of parameters) {
         if (context?.signal?.aborted) break;
@@ -107,11 +97,7 @@ const scanner = createSecurityScanner({
         for (const payload of payloads) {
           if (context?.signal?.aborted) break;
 
-          const testUrl = setParameter(
-            targetUrl,
-            parameter,
-            payload,
-          );
+          const testUrl = setParameter(targetUrl, parameter, payload);
 
           await assertSafeUrl(testUrl);
 
@@ -126,19 +112,18 @@ const scanner = createSecurityScanner({
 
           findings.push(
             normalizeFinding({
-              scannerId: 'security.sqli',
-              title: 'Potential SQL Error Disclosure',
-              description:
-                `A database-related error signature was observed after controlled input was supplied to "${parameter}". This indicates a potential SQL error disclosure condition, but does not by itself confirm exploitable SQL injection.`,
-              severity: 'high',
+              scannerId: "security.sqli",
+              title: "Potential SQL Error Disclosure",
+              description: `A database-related error signature was observed after controlled input was supplied to "${parameter}". This indicates a potential SQL error disclosure condition, but does not by itself confirm exploitable SQL injection.`,
+              severity: "high",
               confidence: calculateConfidence({ confirmed: false }),
               remediation:
-                'Use parameterized database queries, validate input, and avoid exposing database errors or database implementation details to clients.',
-              category: 'sqli',
+                "Use parameterized database queries, validate input, and avoid exposing database errors or database implementation details to clients.",
+              category: "sqli",
               metadata: {
                 parameter,
-                payloadType: 'controlled-sqli',
-                detection: 'database-error-signature',
+                payloadType: "controlled-sqli",
+                detection: "database-error-signature",
               },
             }),
           );
@@ -146,7 +131,7 @@ const scanner = createSecurityScanner({
           evidence.push(
             createSecurityEvidence({
               request: {
-                method: 'GET',
+                method: "GET",
                 url: testUrl,
                 headers: requestHeaders,
               },

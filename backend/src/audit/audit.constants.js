@@ -12,19 +12,14 @@ const AUDIT_ACTIONS = Object.freeze({
   REPORT_GENERATED: "report.generated",
   REPORT_FAILED: "report.failed",
 
-  SCHEDULE_CREATED:
-    "schedule.created",
-  SCHEDULE_EXECUTED:
-    "schedule.executed"
+  SCHEDULE_CREATED: "schedule.created",
+  SCHEDULE_EXECUTED: "schedule.executed",
 });
 
 const AUDIT_ACTOR_TYPES = Object.freeze({
   USER: "user",
   SYSTEM: "system",
-  WORKER: "worker"
+  WORKER: "worker",
 });
 
-export {
-  AUDIT_ACTIONS,
-  AUDIT_ACTOR_TYPES
-};
+export { AUDIT_ACTIONS, AUDIT_ACTOR_TYPES };

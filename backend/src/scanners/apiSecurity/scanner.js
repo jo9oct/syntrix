@@ -1,222 +1,142 @@
-import {
-  get,
-} from '../../request/request.js';
+import { get } from "../../request/request.js";
 
-import {
-  createSecurityEvidence,
-} from '../shared/evidenceBuilder.js';
+import { createSecurityEvidence } from "../shared/evidenceBuilder.js";
 
-import {
-  calculateConfidence,
-} from '../shared/confidence.js';
+import { calculateConfidence } from "../shared/confidence.js";
 
-import {
-  normalizeFinding,
-} from '../shared/findingNormalizer.js';
+import { normalizeFinding } from "../shared/findingNormalizer.js";
 
 import {
   createSecurityScanner,
   getTargetUrl,
-} from '../shared/scannerContract.js';
+} from "../shared/scannerContract.js";
 
-import {
-  assertSafeUrl,
-} from '../../recon/shared/resolver.js';
+import { assertSafeUrl } from "../../recon/shared/resolver.js";
 
 const API_PATHS = [
-  '/api',
-  '/api/v1',
-  '/api/v1/health',
-  '/openapi.json',
-  '/swagger.json',
+  "/api",
+  "/api/v1",
+  "/api/v1/health",
+  "/openapi.json",
+  "/swagger.json",
 ];
 
-const scanner =
-  createSecurityScanner({
-    id:
-      'security.api-security',
+const scanner = createSecurityScanner({
+  id: "security.api-security",
 
-    name:
-      'API Security',
+  name: "API Security",
 
-    description:
-      'Performs bounded discovery of common API documentation and endpoint surfaces.',
+  description:
+    "Performs bounded discovery of common API documentation and endpoint surfaces.",
 
-    async run(
-      context,
-    ) {
-      const targetUrl =
-        getTargetUrl(
-          context,
-        );
+  async run(context) {
+    const targetUrl = getTargetUrl(context);
 
-      const baseUrl =
-        new URL(
-          targetUrl,
-        );
+    const baseUrl = new URL(targetUrl);
 
-      const findings = [];
-      const evidence = [];
-      const results = [];
+    const findings = [];
+    const evidence = [];
+    const results = [];
 
-      for (
-        const pathname
-        of API_PATHS
-      ) {
-        if (
-          context?.signal
-            ?.aborted
-        ) {
-          break;
-        }
+    for (const pathname of API_PATHS) {
+      if (context?.signal?.aborted) {
+        break;
+      }
 
-        const candidate =
-          new URL(
-            pathname,
-            baseUrl.origin,
-          ).toString();
+      const candidate = new URL(pathname, baseUrl.origin).toString();
 
-        await assertSafeUrl(
-          candidate,
-        );
+      await assertSafeUrl(candidate);
 
-        const response =
-          await get(
-            candidate,
-            {
-              signal:
-                context?.signal,
+      const response = await get(candidate, {
+        signal: context?.signal,
 
-              headers:
-                context?.session
-                  ?.getHeaders?.() ??
-                {},
+        headers: context?.session?.getHeaders?.() ?? {},
 
-              maxRedirects:
-                0,
+        maxRedirects: 0,
 
-              validateStatus:
-                () => true,
-            },
-          );
+        validateStatus: () => true,
+      });
 
-        results.push({
-          path:
-            pathname,
+      results.push({
+        path: pathname,
 
-          status:
-            response.status,
-        });
+        status: response.status,
+      });
 
-        const contentType =
-          String(
-            response.headers?.[
-              'content-type'
-            ] ??
-              '',
-          ).toLowerCase();
+      const contentType = String(
+        response.headers?.["content-type"] ?? "",
+      ).toLowerCase();
 
-        const successful =
-          response.status >=
-            200 &&
-          response.status <
-            300;
+      const successful = response.status >= 200 && response.status < 300;
 
-        const isDocumentationPath =
-          pathname ===
-            '/openapi.json' ||
-          pathname ===
-            '/swagger.json';
+      const isDocumentationPath =
+        pathname === "/openapi.json" || pathname === "/swagger.json";
 
-        const isDocumentationContent =
-          /json|openapi|swagger/i.test(
-            contentType,
-          );
+      const isDocumentationContent = /json|openapi|swagger/i.test(contentType);
 
-        const isDocumentation =
-          successful &&
-          isDocumentationPath &&
-          isDocumentationContent;
+      const isDocumentation =
+        successful && isDocumentationPath && isDocumentationContent;
 
-        if (
-          isDocumentation
-        ) {
-          findings.push(
-            normalizeFinding({
-              scannerId:
-                'security.api-security',
+      if (isDocumentation) {
+        findings.push(
+          normalizeFinding({
+            scannerId: "security.api-security",
 
-              title:
-                'Public API Documentation Exposure',
+            title: "Public API Documentation Exposure",
 
-              description:
-                `An API documentation or schema resource was publicly accessible at "${pathname}".`,
+            description: `An API documentation or schema resource was publicly accessible at "${pathname}".`,
 
-              severity:
-                'low',
+            severity: "low",
 
-              confidence:
-                calculateConfidence({
-                  confirmed:
-                    true,
-                }),
-
-              remediation:
-                'Restrict API documentation to intended audiences and avoid exposing sensitive implementation details.',
-
-              category:
-                'api-security',
-
-              metadata: {
-                path:
-                  pathname,
-
-                contentType,
-              },
+            confidence: calculateConfidence({
+              confirmed: true,
             }),
-          );
-        }
 
-        evidence.push(
-          createSecurityEvidence({
-            request: {
-              method:
-                'GET',
+            remediation:
+              "Restrict API documentation to intended audiences and avoid exposing sensitive implementation details.",
 
-              url:
-                candidate,
+            category: "api-security",
 
-              headers:
-                context?.session
-                  ?.getHeaders?.() ??
-                {},
-            },
+            metadata: {
+              path: pathname,
 
-            response: {
-              status:
-                response.status,
-
-              statusText:
-                response.statusText,
-
-              headers:
-                response.headers,
+              contentType,
             },
           }),
         );
       }
 
-      return {
-        data: {
-          endpoints:
-            results,
-        },
+      evidence.push(
+        createSecurityEvidence({
+          request: {
+            method: "GET",
 
-        findings,
+            url: candidate,
 
-        evidence,
-      };
-    },
-  });
+            headers: context?.session?.getHeaders?.() ?? {},
+          },
+
+          response: {
+            status: response.status,
+
+            statusText: response.statusText,
+
+            headers: response.headers,
+          },
+        }),
+      );
+    }
+
+    return {
+      data: {
+        endpoints: results,
+      },
+
+      findings,
+
+      evidence,
+    };
+  },
+});
 
 export default scanner;

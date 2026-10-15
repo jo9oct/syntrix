@@ -4,22 +4,17 @@ const scanMetrics = {
   failed: 0,
   cancelled: 0,
   findings: 0,
-  durationMs: 0
+  durationMs: 0,
 };
 
 const recordScanStarted = () => {
   scanMetrics.started += 1;
 };
 
-const recordScanCompleted = ({
-  durationMs = 0,
-  findingCount = 0
-} = {}) => {
+const recordScanCompleted = ({ durationMs = 0, findingCount = 0 } = {}) => {
   scanMetrics.completed += 1;
-  scanMetrics.durationMs +=
-    Number(durationMs) || 0;
-  scanMetrics.findings +=
-    Number(findingCount) || 0;
+  scanMetrics.durationMs += Number(durationMs) || 0;
+  scanMetrics.findings += Number(findingCount) || 0;
 };
 
 const recordScanFailed = () => {
@@ -34,11 +29,8 @@ const getScanMetrics = () => ({
   ...scanMetrics,
   averageDurationMs:
     scanMetrics.completed > 0
-      ? Math.round(
-          scanMetrics.durationMs /
-            scanMetrics.completed
-        )
-      : 0
+      ? Math.round(scanMetrics.durationMs / scanMetrics.completed)
+      : 0,
 });
 
 const resetScanMetrics = () => {
@@ -56,5 +48,5 @@ export {
   recordScanFailed,
   recordScanCancelled,
   getScanMetrics,
-  resetScanMetrics
+  resetScanMetrics,
 };

@@ -4,46 +4,31 @@ import {
   listFindings as listFindingsService,
   getFinding as getFindingService,
   updateFinding as updateFindingService,
-} from '../services/finding.service.js';
+} from "../services/finding.service.js";
 
-import {
-  getOwnerId,
-} from '../middleware/authorization.middleware.js';
+import { getOwnerId } from "../middleware/authorization.middleware.js";
 
-const listFindings = async (
-  req,
-  res,
-  next,
-) => {
+const listFindings = async (req, res, next) => {
   try {
-    const ownerId =
-      getOwnerId(req);
+    const ownerId = getOwnerId(req);
 
-    const result =
-      await listFindingsService({
-        ownerId,
+    const result = await listFindingsService({
+      ownerId,
 
-        scanId:
-          req.query.scanId,
+      scanId: req.query.scanId,
 
-        severity:
-          req.query.severity,
+      severity: req.query.severity,
 
-        confidence:
-          req.query.confidence,
+      confidence: req.query.confidence,
 
-        status:
-          req.query.status,
+      status: req.query.status,
 
-        scannerId:
-          req.query.scannerId,
+      scannerId: req.query.scannerId,
 
-        limit:
-          req.query.limit,
+      limit: req.query.limit,
 
-        skip:
-          req.query.skip,
-      });
+      skip: req.query.skip,
+    });
 
     return res.status(200).json({
       success: true,
@@ -57,22 +42,15 @@ const listFindings = async (
   }
 };
 
-const getFinding = async (
-  req,
-  res,
-  next,
-) => {
+const getFinding = async (req, res, next) => {
   try {
-    const ownerId =
-      getOwnerId(req);
+    const ownerId = getOwnerId(req);
 
-    const finding =
-      await getFindingService({
-        ownerId,
+    const finding = await getFindingService({
+      ownerId,
 
-        findingId:
-          req.params.findingId,
-      });
+      findingId: req.params.findingId,
+    });
 
     return res.status(200).json({
       success: true,
@@ -86,28 +64,19 @@ const getFinding = async (
   }
 };
 
-const updateFinding = async (
-  req,
-  res,
-  next,
-) => {
+const updateFinding = async (req, res, next) => {
   try {
-    const ownerId =
-      getOwnerId(req);
+    const ownerId = getOwnerId(req);
 
-    const finding =
-      await updateFindingService({
-        ownerId,
+    const finding = await updateFindingService({
+      ownerId,
 
-        findingId:
-          req.params.findingId,
+      findingId: req.params.findingId,
 
-        status:
-          req.body.status,
+      status: req.body.status,
 
-        remediation:
-          req.body.remediation,
-      });
+      remediation: req.body.remediation,
+    });
 
     return res.status(200).json({
       success: true,
@@ -121,8 +90,4 @@ const updateFinding = async (
   }
 };
 
-export {
-  listFindings,
-  getFinding,
-  updateFinding,
-};
+export { listFindings, getFinding, updateFinding };

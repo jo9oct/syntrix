@@ -1,28 +1,21 @@
-import {
-  AUDIT_ACTOR_TYPES
-} from "./audit.constants.js";
+import { AUDIT_ACTOR_TYPES } from "./audit.constants.js";
 
 const auditLog = async ({
   ownerId,
   action,
-  actorType =
-    AUDIT_ACTOR_TYPES.SYSTEM,
+  actorType = AUDIT_ACTOR_TYPES.SYSTEM,
   actorId = null,
   resourceType = null,
   resourceId = null,
   requestId = null,
-  metadata = {}
+  metadata = {},
 }) => {
   if (!ownerId) {
-    throw new Error(
-      "ownerId is required for audit logging."
-    );
+    throw new Error("ownerId is required for audit logging.");
   }
 
   if (!action) {
-    throw new Error(
-      "Audit action is required."
-    );
+    throw new Error("Audit action is required.");
   }
 
   const entry = {
@@ -34,8 +27,7 @@ const auditLog = async ({
     resourceId,
     requestId,
     metadata,
-    timestamp:
-      new Date().toISOString()
+    timestamp: new Date().toISOString(),
   };
 
   /*
@@ -50,13 +42,11 @@ const auditLog = async ({
   console.info(
     JSON.stringify({
       event: "audit",
-      ...entry
-    })
+      ...entry,
+    }),
   );
 
   return entry;
 };
 
-export {
-  auditLog
-};
+export { auditLog };

@@ -1,117 +1,68 @@
-import {
-  normalizeHeaders,
-  normalizeString,
-} from '../utils/normalization.js';
+import { normalizeHeaders, normalizeString } from "../utils/normalization.js";
 
-const parseResponse = (
-  response,
-) => {
+const parseResponse = (response) => {
   const body =
-    typeof response?.body ===
-    'string'
+    typeof response?.body === "string"
       ? response.body
-      : String(
-          response?.body ?? '',
-        );
+      : String(response?.body ?? "");
 
-  const headers =
-    normalizeHeaders(
-      response?.headers ?? {},
-    );
+  const headers = normalizeHeaders(response?.headers ?? {});
 
   return {
-    statusCode:
-      Number.isInteger(
-        response?.statusCode,
-      )
-        ? response.statusCode
-        : null,
+    statusCode: Number.isInteger(response?.statusCode)
+      ? response.statusCode
+      : null,
 
-    statusMessage:
-      normalizeString(
-        response?.statusMessage ??
-          '',
-        512,
-      ),
+    statusMessage: normalizeString(response?.statusMessage ?? "", 512),
 
     headers,
 
     body,
 
-    bodyLength:
-      Buffer.byteLength(
-        body,
-        'utf8',
-      ),
+    bodyLength: Buffer.byteLength(body, "utf8"),
 
-    contentType:
-      headers[
-        'content-type'
-      ] ?? null,
+    contentType: headers["content-type"] ?? null,
 
-    server:
-      headers.server ?? null,
+    server: headers.server ?? null,
 
-    location:
-      headers.location ?? null,
+    location: headers.location ?? null,
 
-    hasBody:
-      body.length > 0,
+    hasBody: body.length > 0,
   };
 };
 
-const getHeader = (
-  response,
-  name,
-) => {
-  const headers =
-    normalizeHeaders(
-      response?.headers ?? {},
-    );
+const getHeader = (response, name) => {
+  const headers = normalizeHeaders(response?.headers ?? {});
 
-  return (
-    headers[
-      String(name).toLowerCase()
-    ] ?? null
-  );
+  return headers[String(name).toLowerCase()] ?? null;
 };
 
-const getStatusClass = (
-  statusCode,
-) => {
-  if (
-    !Number.isInteger(
-      statusCode,
-    )
-  ) {
-    return 'unknown';
+const getStatusClass = (statusCode) => {
+  if (!Number.isInteger(statusCode)) {
+    return "unknown";
   }
 
   if (statusCode >= 100 && statusCode < 200) {
-    return '1xx';
+    return "1xx";
   }
 
   if (statusCode >= 200 && statusCode < 300) {
-    return '2xx';
+    return "2xx";
   }
 
   if (statusCode >= 300 && statusCode < 400) {
-    return '3xx';
+    return "3xx";
   }
 
   if (statusCode >= 400 && statusCode < 500) {
-    return '4xx';
+    return "4xx";
   }
 
   if (statusCode >= 500 && statusCode < 600) {
-    return '5xx';
+    return "5xx";
   }
 
-  return 'unknown';
+  return "unknown";
 };
 
-export {
-  parseResponse,
-  getHeader,
-  getStatusClass,
-};
+export { parseResponse, getHeader, getStatusClass };

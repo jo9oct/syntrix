@@ -5,14 +5,11 @@ const NOTIFICATION_TYPES = Object.freeze({
   REPORT_COMPLETED: "report.completed",
   REPORT_FAILED: "report.failed",
   SCHEDULED_SCAN_STARTED: "scheduled_scan.started",
-  SCHEDULED_SCAN_FAILED: "scheduled_scan.failed"
+  SCHEDULED_SCAN_FAILED: "scheduled_scan.failed",
 });
 
 const NOTIFICATION_CHANNELS = Object.freeze({
-  EMAIL: "email"
+  EMAIL: "email",
 });
 
-export {
-  NOTIFICATION_TYPES,
-  NOTIFICATION_CHANNELS
-};
+export { NOTIFICATION_TYPES, NOTIFICATION_CHANNELS };

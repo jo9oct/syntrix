@@ -4,40 +4,27 @@ import {
   listEvidenceByFinding as listEvidenceByFindingService,
   listEvidenceByScan as listEvidenceByScanService,
   getEvidence as getEvidenceService,
-} from '../services/evidence.service.js';
+} from "../services/evidence.service.js";
 
-import {
-  getOwnerId,
-} from '../middleware/authorization.middleware.js';
+import { getOwnerId } from "../middleware/authorization.middleware.js";
 
-const listEvidenceByFinding = async (
-  req,
-  res,
-  next,
-) => {
+const listEvidenceByFinding = async (req, res, next) => {
   try {
-    const ownerId =
-      getOwnerId(req);
+    const ownerId = getOwnerId(req);
 
-    const result =
-      await listEvidenceByFindingService({
-        ownerId,
+    const result = await listEvidenceByFindingService({
+      ownerId,
 
-        findingId:
-          req.params.findingId,
+      findingId: req.params.findingId,
 
-        type:
-          req.query.type,
+      type: req.query.type,
 
-        scannerId:
-          req.query.scannerId,
+      scannerId: req.query.scannerId,
 
-        limit:
-          req.query.limit,
+      limit: req.query.limit,
 
-        skip:
-          req.query.skip,
-      });
+      skip: req.query.skip,
+    });
 
     return res.status(200).json({
       success: true,
@@ -51,37 +38,25 @@ const listEvidenceByFinding = async (
   }
 };
 
-const listEvidenceByScan = async (
-  req,
-  res,
-  next,
-) => {
+const listEvidenceByScan = async (req, res, next) => {
   try {
-    const ownerId =
-      getOwnerId(req);
+    const ownerId = getOwnerId(req);
 
-    const result =
-      await listEvidenceByScanService({
-        ownerId,
+    const result = await listEvidenceByScanService({
+      ownerId,
 
-        scanId:
-          req.query.scanId,
+      scanId: req.query.scanId,
 
-        findingId:
-          req.query.findingId,
+      findingId: req.query.findingId,
 
-        type:
-          req.query.type,
+      type: req.query.type,
 
-        scannerId:
-          req.query.scannerId,
+      scannerId: req.query.scannerId,
 
-        limit:
-          req.query.limit,
+      limit: req.query.limit,
 
-        skip:
-          req.query.skip,
-      });
+      skip: req.query.skip,
+    });
 
     return res.status(200).json({
       success: true,
@@ -95,22 +70,15 @@ const listEvidenceByScan = async (
   }
 };
 
-const getEvidence = async (
-  req,
-  res,
-  next,
-) => {
+const getEvidence = async (req, res, next) => {
   try {
-    const ownerId =
-      getOwnerId(req);
+    const ownerId = getOwnerId(req);
 
-    const evidence =
-      await getEvidenceService({
-        ownerId,
+    const evidence = await getEvidenceService({
+      ownerId,
 
-        evidenceId:
-          req.params.evidenceId,
-      });
+      evidenceId: req.params.evidenceId,
+    });
 
     return res.status(200).json({
       success: true,
@@ -124,8 +92,4 @@ const getEvidence = async (
   }
 };
 
-export {
-  listEvidenceByFinding,
-  listEvidenceByScan,
-  getEvidence,
-};
+export { listEvidenceByFinding, listEvidenceByScan, getEvidence };

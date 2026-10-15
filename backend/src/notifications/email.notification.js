@@ -1,48 +1,31 @@
-const buildEmailMessage = ({
-  recipient,
-  subject,
-  text,
-  html = null
-}) => {
+const buildEmailMessage = ({ recipient, subject, text, html = null }) => {
   if (!recipient) {
-    throw new Error(
-      "Email recipient is required."
-    );
+    throw new Error("Email recipient is required.");
   }
 
   if (!subject) {
-    throw new Error(
-      "Email subject is required."
-    );
+    throw new Error("Email subject is required.");
   }
 
   if (!text) {
-    throw new Error(
-      "Email text is required."
-    );
+    throw new Error("Email text is required.");
   }
 
   return {
     to: recipient,
     subject,
     text,
-    html
+    html,
   };
 };
 
-const sendEmail = async ({
-  recipient,
-  subject,
-  text,
-  html = null
-}) => {
-  const message =
-    buildEmailMessage({
-      recipient,
-      subject,
-      text,
-      html
-    });
+const sendEmail = async ({ recipient, subject, text, html = null }) => {
+  const message = buildEmailMessage({
+    recipient,
+    subject,
+    text,
+    html,
+  });
 
   /*
    * External email delivery is intentionally
@@ -54,11 +37,8 @@ const sendEmail = async ({
   return {
     status: "prepared",
     provider: null,
-    message
+    message,
   };
 };
 
-export {
-  buildEmailMessage,
-  sendEmail
-};
+export { buildEmailMessage, sendEmail };

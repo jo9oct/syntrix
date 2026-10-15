@@ -1,43 +1,26 @@
-import {
-  enqueueNotificationJob
-} from "../jobs/notification.job.js";
+import { enqueueNotificationJob } from "../jobs/notification.job.js";
 import {
   NOTIFICATION_TYPES,
-  NOTIFICATION_CHANNELS
+  NOTIFICATION_CHANNELS,
 } from "./notification.constants.js";
 
 const notify = async ({
   ownerId,
   type,
-  channel =
-    NOTIFICATION_CHANNELS.EMAIL,
+  channel = NOTIFICATION_CHANNELS.EMAIL,
   recipient = null,
-  data = {}
+  data = {},
 }) => {
   if (!ownerId) {
-    throw new Error(
-      "ownerId is required."
-    );
+    throw new Error("ownerId is required.");
   }
 
-  if (
-    !Object.values(
-      NOTIFICATION_TYPES
-    ).includes(type)
-  ) {
-    throw new Error(
-      `Unsupported notification type: ${type}`
-    );
+  if (!Object.values(NOTIFICATION_TYPES).includes(type)) {
+    throw new Error(`Unsupported notification type: ${type}`);
   }
 
-  if (
-    !Object.values(
-      NOTIFICATION_CHANNELS
-    ).includes(channel)
-  ) {
-    throw new Error(
-      `Unsupported notification channel: ${channel}`
-    );
+  if (!Object.values(NOTIFICATION_CHANNELS).includes(channel)) {
+    throw new Error(`Unsupported notification channel: ${channel}`);
   }
 
   return enqueueNotificationJob({
@@ -46,75 +29,62 @@ const notify = async ({
     payload: {
       channel,
       recipient,
-      data
-    }
+      data,
+    },
   });
 };
 
-const notifyScanStarted = ({
-  ownerId,
-  scanId,
-  recipient = null
-}) =>
+const notifyScanStarted = ({ ownerId, scanId, recipient = null }) =>
   notify({
     ownerId,
-    type:
-      NOTIFICATION_TYPES.SCAN_STARTED,
+    type: NOTIFICATION_TYPES.SCAN_STARTED,
     recipient,
     data: {
-      scanId
-    }
+      scanId,
+    },
   });
 
 const notifyScanCompleted = ({
   ownerId,
   scanId,
   riskScore,
-  recipient = null
+  recipient = null,
 }) =>
   notify({
     ownerId,
-    type:
-      NOTIFICATION_TYPES.SCAN_COMPLETED,
+    type: NOTIFICATION_TYPES.SCAN_COMPLETED,
     recipient,
     data: {
       scanId,
-      riskScore
-    }
+      riskScore,
+    },
   });
 
-const notifyScanFailed = ({
-  ownerId,
-  scanId,
-  error,
-  recipient = null
-}) =>
+const notifyScanFailed = ({ ownerId, scanId, error, recipient = null }) =>
   notify({
     ownerId,
-    type:
-      NOTIFICATION_TYPES.SCAN_FAILED,
+    type: NOTIFICATION_TYPES.SCAN_FAILED,
     recipient,
     data: {
       scanId,
-      error
-    }
+      error,
+    },
   });
 
 const notifyReportCompleted = ({
   ownerId,
   reportId,
   scanId,
-  recipient = null
+  recipient = null,
 }) =>
   notify({
     ownerId,
-    type:
-      NOTIFICATION_TYPES.REPORT_COMPLETED,
+    type: NOTIFICATION_TYPES.REPORT_COMPLETED,
     recipient,
     data: {
       reportId,
-      scanId
-    }
+      scanId,
+    },
   });
 
 const notifyReportFailed = ({
@@ -122,18 +92,17 @@ const notifyReportFailed = ({
   reportId,
   scanId,
   error,
-  recipient = null
+  recipient = null,
 }) =>
   notify({
     ownerId,
-    type:
-      NOTIFICATION_TYPES.REPORT_FAILED,
+    type: NOTIFICATION_TYPES.REPORT_FAILED,
     recipient,
     data: {
       reportId,
       scanId,
-      error
-    }
+      error,
+    },
   });
 
 export {
@@ -142,5 +111,5 @@ export {
   notifyScanCompleted,
   notifyScanFailed,
   notifyReportCompleted,
-  notifyReportFailed
+  notifyReportFailed,
 };

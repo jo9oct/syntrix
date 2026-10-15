@@ -1,219 +1,126 @@
-import dns from 'node:dns/promises';
-import net from 'node:net';
+// STATUS: UPDATED
 
-import {
-  blockedHostnames,
-  privateIpv4Ranges,
-} from '../../config/security.js';
+import dns from "node:dns/promises";
+import net from "node:net";
 
-import {
-  SsrfProtectionError,
-} from '../../utils/errors.js';
+import { blockedHostnames, privateIpv4Ranges } from "../../config/security.js";
+
+import { SsrfProtectionError } from "../../utils/errors.js";
 
 const ipv4ToNumber = (address) => {
-  const parts = address
-    .split('.')
-    .map(Number);
-
-  if (
-    parts.length !== 4 ||
-    parts.some(
-      (part) =>
-        !Number.isInteger(part) ||
-        part < 0 ||
-        part > 255,
-    )
-  ) {
+  if (net.isIP(address) !== 4) {
     return null;
   }
 
+  return address
+    .split(".")
+    .reduce((result, part) => result * 256 + Number(part), 0);
+};
+
+const isIpv4InRange = (address, range) => {
+  const value = ipv4ToNumber(address);
+  const start = ipv4ToNumber(range?.start);
+  const end = ipv4ToNumber(range?.end);
+
   return (
-    parts[0] * 256 ** 3 +
-    parts[1] * 256 ** 2 +
-    parts[2] * 256 +
-    parts[3]
+    value !== null &&
+    start !== null &&
+    end !== null &&
+    value >= start &&
+    value <= end
   );
 };
 
-const isIpv4InRange = (
-  address,
-  range,
-) => {
-  if (
-    !range ||
-    typeof range.start !== 'string' ||
-    typeof range.end !== 'string'
-  ) {
-    return false;
+const normalizeIpv6 = (address) => {
+  if (typeof address !== "string") {
+    return null;
   }
 
-  const addressNumber =
-    ipv4ToNumber(address);
+  let value = address.toLowerCase();
 
-  const startNumber =
-    ipv4ToNumber(range.start);
-
-  const endNumber =
-    ipv4ToNumber(range.end);
-
-  if (
-    addressNumber === null ||
-    startNumber === null ||
-    endNumber === null
-  ) {
-    return false;
-  }
-
-  return (
-    addressNumber >= startNumber &&
-    addressNumber <= endNumber
-  );
-};
-
-const normalizeIpv6 = (
-  address,
-) => {
-  let value =
-    address
-      .trim()
-      .toLowerCase();
-
-  const zoneIndex =
-    value.indexOf('%');
+  // Strip an IPv6 zone identifier, if present.
+  const zoneIndex = value.indexOf("%");
 
   if (zoneIndex !== -1) {
-    value = value.slice(
-      0,
-      zoneIndex,
-    );
+    value = value.slice(0, zoneIndex);
   }
 
-  if (value.includes('.')) {
-    const lastColon =
-      value.lastIndexOf(':');
+  // Convert embedded IPv4 notation into two IPv6 groups.
+  // Example: ::ffff:127.0.0.1 -> ::ffff:7f00:1
+  if (value.includes(".")) {
+    const lastColon = value.lastIndexOf(":");
 
     if (lastColon === -1) {
       return null;
     }
 
-    const ipv4Part =
-      value.slice(
-        lastColon + 1,
-      );
+    const ipv4 = value.slice(lastColon + 1);
 
-    const ipv4Number =
-      ipv4ToNumber(
-        ipv4Part,
-      );
-
-    if (ipv4Number === null) {
+    if (net.isIP(ipv4) !== 4) {
       return null;
     }
 
-    const high =
-      Math.floor(
-        ipv4Number / 65536,
-      ).toString(16);
+    const octets = ipv4.split(".").map(Number);
 
-    const low =
-      (ipv4Number % 65536).toString(16);
+    const high = ((octets[0] << 8) | octets[1]).toString(16);
 
-    value =
-      `${value.slice(0, lastColon)}:${high}:${low}`;
+    const low = ((octets[2] << 8) | octets[3]).toString(16);
+
+    value = `${value.slice(0, lastColon + 1)}${high}:${low}`;
   }
 
-  const halves =
-    value.split('::');
+  if (net.isIP(value) !== 6) {
+    return null;
+  }
+
+  const halves = value.split("::");
 
   if (halves.length > 2) {
     return null;
   }
 
-  const left =
-    halves[0]
-      ? halves[0].split(':')
-      : [];
+  const parseGroups = (part) => (part ? part.split(":") : []);
 
-  const right =
-    halves[1]
-      ? halves[1].split(':')
-      : [];
+  const left = parseGroups(halves[0]);
+  const right = halves.length === 2 ? parseGroups(halves[1]) : [];
+
+  const missing = 8 - left.length - right.length;
 
   if (
-    halves.length === 1 &&
-    left.length !== 8
+    (halves.length === 1 && missing !== 0) ||
+    (halves.length === 2 && missing < 1)
   ) {
     return null;
   }
 
-  const missing =
-    8 -
-    left.length -
-    right.length;
-
-  if (missing < 0) {
-    return null;
-  }
-
-  const groups = [
-    ...left,
-    ...(halves.length === 2
-      ? Array(missing).fill('0')
-      : []),
-    ...right,
-  ];
-
-  if (groups.length !== 8) {
-    return null;
-  }
+  const groups = [...left, ...Array(missing).fill("0"), ...right];
 
   if (
-    groups.some(
-      (group) =>
-        !/^[0-9a-f]{1,4}$/.test(
-          group,
-        ),
-    )
+    groups.length !== 8 ||
+    groups.some((group) => !/^[0-9a-f]{1,4}$/.test(group))
   ) {
     return null;
   }
 
-  return groups
-    .map((group) =>
-      group.padStart(4, '0'),
-    )
-    .join('');
+  return groups.map((group) => group.padStart(4, "0")).join("");
 };
 
-const ipv6ToBigInt = (
-  address,
-) => {
-  const normalized =
-    normalizeIpv6(address);
+const ipv6ToBigInt = (address) => {
+  const normalized = normalizeIpv6(address);
 
-  if (!normalized) {
-    return null;
-  }
-
-  return BigInt(
-    `0x${normalized}`,
-  );
+  return normalized ? BigInt(`0x${normalized}`) : null;
 };
 
-const isIpv6InPrefix = (
-  address,
-  prefix,
-  prefixLength,
-) => {
-  const addressValue =
-    ipv6ToBigInt(address);
-
-  const prefixValue =
-    ipv6ToBigInt(prefix);
+const isIpv6InPrefix = (address, prefix, prefixLength) => {
+  const value = ipv6ToBigInt(address);
+  const prefixValue = ipv6ToBigInt(prefix);
 
   if (
-    addressValue === null ||
-    prefixValue === null
+    value === null ||
+    prefixValue === null ||
+    !Number.isInteger(prefixLength) ||
+    prefixLength < 0 ||
+    prefixLength > 128
   ) {
     return false;
   }
@@ -222,393 +129,214 @@ const isIpv6InPrefix = (
     return true;
   }
 
-  const shift =
-    128n -
-    BigInt(prefixLength);
+  const shift = 128n - BigInt(prefixLength);
+  const mask = ((1n << BigInt(prefixLength)) - 1n) << shift;
 
-  const mask =
-    ((1n <<
-      BigInt(prefixLength)) -
-      1n) <<
-    shift;
+  return (value & mask) === (prefixValue & mask);
+};
 
-  return (
-    (addressValue & mask) ===
-    (prefixValue & mask)
+const isIpv4MappedIpv6 = (address) => {
+  const normalized = normalizeIpv6(address);
+
+  return Boolean(
+    normalized && normalized.startsWith("00000000000000000000ffff"),
   );
 };
 
-const isBlockedIpv4 = (
-  address,
-) =>
-  privateIpv4Ranges.some(
-    (range) =>
-      isIpv4InRange(
-        address,
-        range,
-      ),
-  );
+const getMappedIpv4 = (address) => {
+  const normalized = normalizeIpv6(address);
 
-const isBlockedIpv6 = (
-  address,
-) => {
-  if (
-    isIpv6InPrefix(
-      address,
-      '::1',
-      128,
-    )
-  ) {
-    return true;
-  }
-
-  if (
-    isIpv6InPrefix(
-      address,
-      'fc00::',
-      7,
-    )
-  ) {
-    return true;
-  }
-
-  if (
-    isIpv6InPrefix(
-      address,
-      'fe80::',
-      10,
-    )
-  ) {
-    return true;
-  }
-
-  if (
-    isIpv6InPrefix(
-      address,
-      'ff00::',
-      8,
-    )
-  ) {
-    return true;
-  }
-
-  if (
-    isIpv6InPrefix(
-      address,
-      '2001:db8::',
-      32,
-    )
-  ) {
-    return true;
-  }
-
-  return false;
-};
-
-const isIpv4MappedIpv6 = (
-  address,
-) => {
-  const normalized =
-    normalizeIpv6(address);
-
-  if (!normalized) {
-    return false;
-  }
-
-  return normalized.startsWith(
-    '00000000000000000000ffff',
-  );
-};
-
-const getMappedIpv4 = (
-  address,
-) => {
-  const normalized =
-    normalizeIpv6(address);
-
-  if (!normalized) {
+  if (!normalized || !normalized.startsWith("00000000000000000000ffff")) {
     return null;
   }
 
-  if (
-    !normalized.startsWith(
-      '00000000000000000000ffff',
-    )
-  ) {
-    return null;
-  }
+  const hex = normalized.slice(-8);
 
-  const ipv4Hex =
-    normalized.slice(-8);
+  return [
+    Number.parseInt(hex.slice(0, 2), 16),
+    Number.parseInt(hex.slice(2, 4), 16),
+    Number.parseInt(hex.slice(4, 6), 16),
+    Number.parseInt(hex.slice(6, 8), 16),
+  ].join(".");
+};
 
-  const octets = [
-    Number.parseInt(
-      ipv4Hex.slice(0, 2),
-      16,
-    ),
-    Number.parseInt(
-      ipv4Hex.slice(2, 4),
-      16,
-    ),
-    Number.parseInt(
-      ipv4Hex.slice(4, 6),
-      16,
-    ),
-    Number.parseInt(
-      ipv4Hex.slice(6, 8),
-      16,
-    ),
+const isBlockedIpv4 = (address) =>
+  privateIpv4Ranges.some((range) => isIpv4InRange(address, range));
+
+const isBlockedIpv6 = (address) => {
+  const blockedPrefixes = [
+    ["::", 128], // Unspecified
+    ["::1", 128], // Loopback
+    ["fc00::", 7], // Unique-local
+    ["fe80::", 10], // Link-local
+    ["ff00::", 8], // Multicast
+    ["2001:db8::", 32], // Documentation
+    ["2001::", 23], // Special-purpose range
+    ["2002::", 16], // 6to4 transition addresses
+    ["64:ff9b:1::", 48], // Local-use translation
   ];
 
-  return octets.join('.');
+  return blockedPrefixes.some(([prefix, length]) =>
+    isIpv6InPrefix(address, prefix, length),
+  );
 };
 
-const isBlockedAddress = (
-  address,
-) => {
-  const version =
-    net.isIP(address);
+const isBlockedAddress = (address) => {
+  const version = net.isIP(address);
 
   if (version === 4) {
-    return isBlockedIpv4(
-      address,
-    );
+    return isBlockedIpv4(address);
   }
 
-  if (version === 6) {
-    if (
-      isBlockedIpv6(address)
-    ) {
-      return true;
-    }
+  if (version !== 6) {
+    return true;
+  }
 
-    if (
-      isIpv4MappedIpv6(
-        address,
-      )
-    ) {
-      const mappedIpv4 =
-        getMappedIpv4(
-          address,
-        );
+  if (isBlockedIpv6(address)) {
+    return true;
+  }
 
-      if (mappedIpv4) {
-        return isBlockedIpv4(
-          mappedIpv4,
-        );
-      }
-    }
+  if (isIpv4MappedIpv6(address)) {
+    const mappedIpv4 = getMappedIpv4(address);
+
+    return mappedIpv4 === null || isBlockedIpv4(mappedIpv4);
   }
 
   return false;
 };
 
-const assertSafeAddress = (
-  address,
-) => {
+const assertSafeAddress = (address) => {
   if (
+    typeof address !== "string" ||
+    net.isIP(address) === 0 ||
     isBlockedAddress(address)
   ) {
     throw new SsrfProtectionError(
-      `Resolved address is not permitted for security assessment: ${address}`,
+      "Resolved address is not permitted for security assessment.",
     );
   }
 
   return address;
 };
 
-const assertSafeHostname = (
-  hostname,
-) => {
-  const normalizedHostname =
-    hostname
-      .trim()
-      .toLowerCase();
+const assertSafeHostname = (hostname) => {
+  if (typeof hostname !== "string" || !hostname.trim()) {
+    throw new SsrfProtectionError("Hostname is required.");
+  }
 
-  if (!normalizedHostname) {
+  const normalized = hostname.trim().toLowerCase().replace(/\.$/, "");
+
+  if (!normalized || blockedHostnames.has(normalized)) {
     throw new SsrfProtectionError(
-      'Hostname is required.',
+      "Hostname is not permitted for security assessment.",
     );
   }
+
+  // A literal IP must be validated as an address, not treated as a DNS name.
+  if (net.isIP(normalized)) {
+    assertSafeAddress(normalized);
+    return normalized;
+  }
+
+  // Reject ambiguous hostnames, URL syntax, and malformed DNS labels.
+  if (
+    normalized.length > 253 ||
+    normalized.includes("://") ||
+    normalized.includes("/") ||
+    normalized.includes("@") ||
+    normalized.includes(":") ||
+    /\s/.test(normalized)
+  ) {
+    throw new SsrfProtectionError("Hostname format is not permitted.");
+  }
+
+  const labels = normalized.split(".");
 
   if (
-    blockedHostnames.has(
-      normalizedHostname,
+    labels.some(
+      (label) =>
+        !label ||
+        label.length > 63 ||
+        !/^[a-z0-9](?:[a-z0-9-]*[a-z0-9])?$/.test(label),
     )
   ) {
-    throw new SsrfProtectionError(
-      `Hostname is not permitted for security assessment: ${normalizedHostname}`,
-    );
+    throw new SsrfProtectionError("Hostname format is not permitted.");
   }
 
-  return normalizedHostname;
+  return normalized;
 };
 
-const resolveHostname = async (
-  hostname,
-) => {
-  const normalizedHostname =
-    assertSafeHostname(
-      hostname,
-    );
+const resolveHostname = async (hostname) => {
+  const normalizedHostname = assertSafeHostname(hostname);
 
-  if (
-    net.isIP(
-      normalizedHostname,
-    )
-  ) {
+  if (net.isIP(normalizedHostname)) {
     return {
-      hostname:
-        normalizedHostname,
-
-      addresses: [
-        assertSafeAddress(
-          normalizedHostname,
-        ),
-      ],
+      hostname: normalizedHostname,
+      addresses: [assertSafeAddress(normalizedHostname)],
     };
   }
 
-  const records =
-    await dns.lookup(
-      normalizedHostname,
-      {
-        all: true,
-        verbatim: true,
-      },
-    );
+  let records;
 
-  if (
-    !Array.isArray(records) ||
-    records.length === 0
-  ) {
-    throw new SsrfProtectionError(
-      `Hostname did not resolve to an address: ${normalizedHostname}`,
-    );
+  try {
+    records = await dns.lookup(normalizedHostname, {
+      all: true,
+      verbatim: true,
+    });
+  } catch {
+    throw new SsrfProtectionError("Hostname could not be resolved safely.");
   }
 
-  const addresses = [
-    ...new Set(
-      records.map(
-        (record) =>
-          record.address,
-      ),
-    ),
-  ].map(
-    (address) =>
-      assertSafeAddress(
-        address,
-      ),
-  );
+  if (!Array.isArray(records) || records.length === 0) {
+    throw new SsrfProtectionError("Hostname did not resolve to an address.");
+  }
 
-  if (addresses.length === 0) {
-    throw new SsrfProtectionError(
-      `Hostname did not resolve to a permitted address: ${normalizedHostname}`,
-    );
+  const addresses = [...new Set(records.map((record) => record.address))];
+
+  // Fail closed if even one returned address is prohibited.
+  for (const address of addresses) {
+    assertSafeAddress(address);
   }
 
   return {
-    hostname:
-      normalizedHostname,
+    hostname: normalizedHostname,
     addresses,
   };
 };
 
-const resolveAndValidateHostname =
-  async (hostname) =>
-    resolveHostname(hostname);
+const resolveAndValidateHostname = async (hostname) =>
+  resolveHostname(hostname);
 
-const resolveDnsRecords = async (
-  hostname,
-) => {
-  const normalizedHostname =
-    assertSafeHostname(
-      hostname,
-    );
+const resolveDnsRecords = async (hostname) => {
+  const normalizedHostname = assertSafeHostname(hostname);
 
-  const resolveRecord =
-    async (resolver) => {
-      try {
-        return await resolver();
-      } catch (error) {
-        if (
-          error?.code ===
-            'ENODATA' ||
-          error?.code ===
-            'ENOTFOUND' ||
-          error?.code ===
-            'ENODEV'
-        ) {
-          return [];
-        }
-
-        throw error;
+  const resolveRecord = async (resolver) => {
+    try {
+      return await resolver();
+    } catch (error) {
+      if (["ENODATA", "ENOTFOUND", "ENODEV"].includes(error?.code)) {
+        return [];
       }
-    };
 
-  const [
-    a,
-    aaaa,
-    cname,
-    mx,
-    ns,
-    txt,
-  ] = await Promise.all([
-    resolveRecord(() =>
-      dns.resolve4(
-        normalizedHostname,
-      ),
-    ),
+      throw error;
+    }
+  };
 
-    resolveRecord(() =>
-      dns.resolve6(
-        normalizedHostname,
-      ),
-    ),
-
-    resolveRecord(() =>
-      dns.resolveCname(
-        normalizedHostname,
-      ),
-    ),
-
-    resolveRecord(() =>
-      dns.resolveMx(
-        normalizedHostname,
-      ),
-    ),
-
-    resolveRecord(() =>
-      dns.resolveNs(
-        normalizedHostname,
-      ),
-    ),
-
-    resolveRecord(() =>
-      dns.resolveTxt(
-        normalizedHostname,
-      ),
-    ),
+  const [a, aaaa, cname, mx, ns, txt] = await Promise.all([
+    resolveRecord(() => dns.resolve4(normalizedHostname)),
+    resolveRecord(() => dns.resolve6(normalizedHostname)),
+    resolveRecord(() => dns.resolveCname(normalizedHostname)),
+    resolveRecord(() => dns.resolveMx(normalizedHostname)),
+    resolveRecord(() => dns.resolveNs(normalizedHostname)),
+    resolveRecord(() => dns.resolveTxt(normalizedHostname)),
   ]);
 
+  // DNS record collection is informational. The outbound request path
+  // must still use resolveHostname() and enforce connection-time checks.
   return {
-    hostname:
-      normalizedHostname,
-
-    A: a.filter(
-      (address) =>
-        !isBlockedAddress(
-          address,
-        ),
-    ),
-
-    AAAA: aaaa.filter(
-      (address) =>
-        !isBlockedAddress(
-          address,
-        ),
-    ),
-
+    hostname: normalizedHostname,
+    A: a.filter((address) => !isBlockedAddress(address)),
+    AAAA: aaaa.filter((address) => !isBlockedAddress(address)),
     CNAME: cname,
     MX: mx,
     NS: ns,
@@ -616,45 +344,31 @@ const resolveDnsRecords = async (
   };
 };
 
-const assertSafeUrl = async (
-  value,
-) => {
+const assertSafeUrl = async (value) => {
   let parsedUrl;
 
   try {
-    parsedUrl = new URL(
-      value,
-    );
+    parsedUrl = new URL(value);
   } catch {
+    throw new SsrfProtectionError("Invalid target URL.");
+  }
+
+  if (!["http:", "https:"].includes(parsedUrl.protocol)) {
+    throw new SsrfProtectionError("Only HTTP and HTTPS URLs are permitted.");
+  }
+
+  if (parsedUrl.username || parsedUrl.password) {
     throw new SsrfProtectionError(
-      'Invalid target URL.',
+      "URLs containing embedded credentials are not permitted.",
     );
   }
 
-  if (
-    ![
-      'http:',
-      'https:',
-    ].includes(
-      parsedUrl.protocol,
-    )
-  ) {
-    throw new SsrfProtectionError(
-      `Unsupported target protocol: ${parsedUrl.protocol}`,
-    );
-  }
-
-  const resolved =
-    await resolveHostname(
-      parsedUrl.hostname,
-    );
+  const resolved = await resolveHostname(parsedUrl.hostname);
 
   return {
     url: parsedUrl,
-    hostname:
-      resolved.hostname,
-    addresses:
-      resolved.addresses,
+    hostname: resolved.hostname,
+    addresses: resolved.addresses,
   };
 };
 

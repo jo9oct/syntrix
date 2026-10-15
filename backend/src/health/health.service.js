@@ -1,39 +1,24 @@
-import {
-  checkDatabaseHealth
-} from "./database.health.js";
-import {
-  checkScannerHealth
-} from "./scanner.health.js";
+import { checkDatabaseHealth } from "./database.health.js";
+import { checkScannerHealth } from "./scanner.health.js";
 
 const getHealth = async () => {
-  const [
-    database,
-    scanners
-  ] = await Promise.all([
+  const [database, scanners] = await Promise.all([
     checkDatabaseHealth(),
-    checkScannerHealth()
+    checkScannerHealth(),
   ]);
 
-  const healthy =
-    database.healthy &&
-    scanners.healthy;
+  const healthy = database.healthy && scanners.healthy;
 
   return {
-    status:
-      healthy
-        ? "healthy"
-        : "degraded",
+    status: healthy ? "healthy" : "degraded",
 
-    timestamp:
-      new Date().toISOString(),
+    timestamp: new Date().toISOString(),
 
     checks: {
       database,
-      scanners
-    }
+      scanners,
+    },
   };
 };
 
-export {
-  getHealth
-};
+export { getHealth };

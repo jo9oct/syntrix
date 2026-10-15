@@ -1,6 +1,6 @@
-import mongoose from 'mongoose';
+import mongoose from "mongoose";
 
-import { getDatabaseConfig } from '../config/database.js';
+import { getDatabaseConfig } from "../config/database.js";
 
 let connectionPromise = null;
 
@@ -43,8 +43,4 @@ const getDatabaseState = () => ({
   disconnecting: mongoose.connection.readyState === 3,
 });
 
-export {
-  connectDatabase,
-  disconnectDatabase,
-  getDatabaseState,
-};
+export { connectDatabase, disconnectDatabase, getDatabaseState };

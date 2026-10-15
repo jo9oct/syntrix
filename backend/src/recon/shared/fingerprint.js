@@ -1,105 +1,65 @@
-import crypto from 'node:crypto';
+import crypto from "node:crypto";
 
-const stableStringify = (
-  value,
-) => {
-  if (
-    value === null ||
-    typeof value !== 'object'
-  ) {
+const stableStringify = (value) => {
+  if (value === null || typeof value !== "object") {
     return JSON.stringify(value);
   }
 
   if (Array.isArray(value)) {
-    return `[${value
-      .map(stableStringify)
-      .join(',')}]`;
+    return `[${value.map(stableStringify).join(",")}]`;
   }
 
-  const keys =
-    Object.keys(value).sort();
+  const keys = Object.keys(value).sort();
 
   return `{${keys
-    .map(
-      (key) =>
-        `${JSON.stringify(
-          key,
-        )}:${stableStringify(
-          value[key],
-        )}`,
-    )
-    .join(',')}}`;
+    .map((key) => `${JSON.stringify(key)}:${stableStringify(value[key])}`)
+    .join(",")}}`;
 };
 
-const createHash = (
-  value,
-) =>
-  crypto
-    .createHash('sha256')
-    .update(value)
-    .digest('hex');
+const createHash = (value) =>
+  crypto.createHash("sha256").update(value).digest("hex");
 
 const createFingerprint = ({
   type,
   name,
   version = null,
-  confidence = 'medium',
+  confidence = "medium",
   source,
   evidence = {},
   value = null,
 }) => {
-  const normalizedName =
-    String(name ?? '')
-      .trim();
+  const normalizedName = String(name ?? "").trim();
 
-  const normalizedSource =
-    String(source ?? '')
-      .trim();
+  const normalizedSource = String(source ?? "").trim();
 
   if (!normalizedName) {
-    throw new TypeError(
-      'Fingerprint name is required.',
-    );
+    throw new TypeError("Fingerprint name is required.");
   }
 
   if (!normalizedSource) {
-    throw new TypeError(
-      'Fingerprint source is required.',
-    );
+    throw new TypeError("Fingerprint source is required.");
   }
 
-  const material =
-    stableStringify({
-      type,
-      name:
-        normalizedName
-          .toLowerCase(),
-      version:
-        version ?? null,
-      source:
-        normalizedSource
-          .toLowerCase(),
-      value,
-    });
+  const material = stableStringify({
+    type,
+    name: normalizedName.toLowerCase(),
+    version: version ?? null,
+    source: normalizedSource.toLowerCase(),
+    value,
+  });
 
-  const fingerprint =
-    createHash(
-      material,
-    );
+  const fingerprint = createHash(material);
 
   return {
     type,
 
-    name:
-      normalizedName,
+    name: normalizedName,
 
-    version:
-      version ?? null,
+    version: version ?? null,
 
     confidence,
 
-    source:
-      normalizedSource,
+    source: normalizedSource,
 
     evidence,
 
@@ -110,13 +70,12 @@ const createFingerprint = ({
 const createTechnologyFingerprint = ({
   name,
   version = null,
-  source = 'technology',
-  confidence = 'medium',
+  source = "technology",
+  confidence = "medium",
   evidence = {},
 }) =>
   createFingerprint({
-    type:
-      'technology',
+    type: "technology",
 
     name,
 
@@ -134,27 +93,18 @@ const createServiceFingerprint = ({
   port,
   protocol,
   version = null,
-  confidence = 'medium',
-  source = 'serviceDetection',
+  confidence = "medium",
+  source = "serviceDetection",
   evidence = {},
 }) => {
-  const normalizedService =
-    String(
-      service ??
-        'unknown',
-    ).trim();
+  const normalizedService = String(service ?? "unknown").trim();
 
-  const serviceName =
-    port
-      ? `${normalizedService}:${port}`
-      : normalizedService;
+  const serviceName = port ? `${normalizedService}:${port}` : normalizedService;
 
   return createFingerprint({
-    type:
-      'service',
+    type: "service",
 
-    name:
-      serviceName,
+    name: serviceName,
 
     version,
 
@@ -165,25 +115,19 @@ const createServiceFingerprint = ({
     evidence: {
       ...evidence,
 
-      service:
-        normalizedService,
+      service: normalizedService,
 
-      port:
-        port ?? null,
+      port: port ?? null,
 
-      protocol:
-        protocol ?? null,
+      protocol: protocol ?? null,
     },
 
     value: {
-      service:
-        normalizedService,
+      service: normalizedService,
 
-      port:
-        port ?? null,
+      port: port ?? null,
 
-      protocol:
-        protocol ?? null,
+      protocol: protocol ?? null,
 
       version,
     },

@@ -1,31 +1,19 @@
-import {
-  getResponseSignature,
-} from './responseDetector.js';
+import { getResponseSignature } from "./responseDetector.js";
 
-const compareResponses = (
-  baseline,
-  candidate,
-) => {
-  const baselineSignature =
-    getResponseSignature(baseline);
+const compareResponses = (baseline, candidate) => {
+  const baselineSignature = getResponseSignature(baseline);
 
-  const candidateSignature =
-    getResponseSignature(candidate);
+  const candidateSignature = getResponseSignature(candidate);
 
   return {
     changed:
-      baselineSignature.status !==
-        candidateSignature.status ||
-      baselineSignature.contentType !==
-        candidateSignature.contentType ||
-      baselineSignature.contentLength !==
-        candidateSignature.contentLength,
+      baselineSignature.status !== candidateSignature.status ||
+      baselineSignature.contentType !== candidateSignature.contentType ||
+      baselineSignature.contentLength !== candidateSignature.contentLength,
 
     baseline: baselineSignature,
     candidate: candidateSignature,
   };
 };
 
-export {
-  compareResponses,
-};
+export { compareResponses };

@@ -1,4 +1,4 @@
-import mongoose from 'mongoose';
+import mongoose from "mongoose";
 
 const { Schema, model } = mongoose;
 
@@ -12,38 +12,27 @@ const reportSchema = new Schema(
 
     scanId: {
       type: Schema.Types.ObjectId,
-      ref: 'Scan',
+      ref: "Scan",
       required: true,
       index: true,
     },
 
     format: {
       type: String,
-      enum: [
-        'json',
-        'html',
-        'pdf',
-      ],
+      enum: ["json", "html", "pdf"],
       required: true,
     },
 
     status: {
       type: String,
-      enum: [
-        'pending',
-        'generating',
-        'completed',
-        'failed',
-      ],
-      default: 'pending',
+      enum: ["pending", "generating", "completed", "failed"],
+      default: "pending",
       index: true,
     },
 
     storageProvider: {
       type: String,
-      enum: [
-        'cloudinary',
-      ],
+      enum: ["cloudinary"],
       default: null,
     },
 
@@ -120,6 +109,6 @@ reportSchema.index({
   createdAt: -1,
 });
 
-const Report = model('Report', reportSchema);
+const Report = model("Report", reportSchema);
 
 export default Report;

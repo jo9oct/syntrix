@@ -1,4 +1,4 @@
-import mongoose from 'mongoose';
+import mongoose from "mongoose";
 
 const { Schema, model } = mongoose;
 
@@ -12,27 +12,22 @@ const aiAnalysisSchema = new Schema(
 
     scanId: {
       type: Schema.Types.ObjectId,
-      ref: 'Scan',
+      ref: "Scan",
       required: true,
       index: true,
     },
 
     findingId: {
       type: Schema.Types.ObjectId,
-      ref: 'Finding',
+      ref: "Finding",
       default: null,
       index: true,
     },
 
     status: {
       type: String,
-      enum: [
-        'pending',
-        'processing',
-        'completed',
-        'failed',
-      ],
-      default: 'pending',
+      enum: ["pending", "processing", "completed", "failed"],
+      default: "pending",
       index: true,
     },
 
@@ -52,12 +47,7 @@ const aiAnalysisSchema = new Schema(
 
     analysisType: {
       type: String,
-      enum: [
-        'finding',
-        'remediation',
-        'summary',
-        'risk',
-      ],
+      enum: ["finding", "remediation", "summary", "risk"],
       required: true,
     },
 
@@ -108,6 +98,6 @@ aiAnalysisSchema.index({
   findingId: 1,
 });
 
-const AiAnalysis = model('AiAnalysis', aiAnalysisSchema);
+const AiAnalysis = model("AiAnalysis", aiAnalysisSchema);
 
 export default AiAnalysis;

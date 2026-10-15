@@ -1,52 +1,39 @@
 // STATUS: CREATED
 
-import {
-  Router,
-} from 'express';
+import { Router } from "express";
 
 import {
-  listEvidenceByFinding,
   listEvidenceByScan,
   getEvidence,
-} from '../controllers/evidence.controller.js';
+} from "../controllers/evidence.controller.js";
 
 import {
   requireAuthorization,
   requireOwner,
-} from '../middleware/authorization.middleware.js';
+} from "../middleware/authorization.middleware.js";
 
-import {
-  validate,
-} from '../middleware/validation.middleware.js';
+import { validate } from "../middleware/validation.middleware.js";
 
 import {
   evidenceIdSchema,
-  findingIdQuerySchema,
   scanEvidenceQuerySchema,
-} from '../validators/evidence.validator.js';
+} from "../validators/evidence.validator.js";
 
-const router =
-  Router();
+const router = Router();
 
 router.get(
-  '/',
+  "/",
   requireAuthorization,
   requireOwner,
-  validate(
-    scanEvidenceQuerySchema,
-    'query',
-  ),
+  validate(scanEvidenceQuerySchema, "query"),
   listEvidenceByScan,
 );
 
 router.get(
-  '/:evidenceId',
+  "/:evidenceId",
   requireAuthorization,
   requireOwner,
-  validate(
-    evidenceIdSchema,
-    'params',
-  ),
+  validate(evidenceIdSchema, "params"),
   getEvidence,
 );
 

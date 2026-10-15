@@ -1,10 +1,7 @@
-const findReflection = (
-  body,
-  marker,
-) => {
+const findReflection = (body, marker) => {
   if (
-    typeof body !== 'string' ||
-    typeof marker !== 'string' ||
+    typeof body !== "string" ||
+    typeof marker !== "string" ||
     marker.length === 0
   ) {
     return null;
@@ -17,10 +14,7 @@ const findReflection = (
   }
 
   const start = Math.max(0, index - 150);
-  const end = Math.min(
-    body.length,
-    index + marker.length + 150,
-  );
+  const end = Math.min(body.length, index + marker.length + 150);
 
   return {
     index,
@@ -28,6 +22,4 @@ const findReflection = (
   };
 };
 
-export {
-  findReflection,
-};
+export { findReflection };

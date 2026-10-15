@@ -1,32 +1,17 @@
-const SAFE_MARKER = 'assessment-marker';
+const SAFE_MARKER = "assessment-marker";
 
 const PAYLOADS = Object.freeze({
-  xss: [
-    `<${SAFE_MARKER}>`,
-    `"${SAFE_MARKER}"`,
-  ],
+  xss: [`<${SAFE_MARKER}>`, `"${SAFE_MARKER}"`],
 
-  sqli: [
-    `'`,
-    `"`,
-  ],
+  sqli: [`'`, `"`],
 
-  pathTraversal: [
-    '../',
-    '..\\',
-  ],
+  pathTraversal: ["../", "..\\"],
 
-  openRedirect: [
-    'https://example.invalid/',
-  ],
+  openRedirect: ["https://example.invalid/"],
 
-  commandInjection: [
-    'assessment-marker',
-  ],
+  commandInjection: ["assessment-marker"],
 
-  ssrf: [
-    'https://example.invalid/',
-  ],
+  ssrf: ["https://example.invalid/"],
 });
 
 const getPayloads = (type) => {
@@ -41,7 +26,4 @@ const getPayloads = (type) => {
 
 const getSafeMarker = () => SAFE_MARKER;
 
-export {
-  getPayloads,
-  getSafeMarker,
-};
+export { getPayloads, getSafeMarker };

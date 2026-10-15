@@ -1,293 +1,180 @@
 // STATUS: UPDATED
 
-import axios from 'axios';
+import axios from "axios";
 
-import environment from '../config/environment.js';
+import environment from "../config/environment.js";
 
-import {
-  buildFindingPrompt,
-} from './promptBuilder.js';
+import { buildFindingPrompt } from "./promptBuilder.js";
 
-import {
-  ensureRemediation,
-} from './remediation.js';
+import { ensureRemediation } from "./remediation.js";
 
-const MAX_RESPONSE_LENGTH =
-  20_000;
+const MAX_RESPONSE_LENGTH = 20_000;
 
-const parseJsonResponse = (
-  value,
-) => {
-  if (
-    typeof value !== 'string'
-  ) {
+const parseJsonResponse = (value) => {
+  if (typeof value !== "string") {
     return value;
   }
 
-  const text =
-    value
-      .trim()
-      .slice(
-        0,
-        MAX_RESPONSE_LENGTH,
-      );
+  const text = value.trim().slice(0, MAX_RESPONSE_LENGTH);
 
   try {
     return JSON.parse(text);
   } catch {
-    const fenced =
-      text
-        .replace(
-          /^```json\s*/i,
-          '',
-        )
-        .replace(
-          /^```\s*/i,
-          '',
-        )
-        .replace(
-          /```\s*$/i,
-          '',
-        )
-        .trim();
+    const fenced = text
+      .replace(/^```json\s*/i, "")
+      .replace(/^```\s*/i, "")
+      .replace(/```\s*$/i, "")
+      .trim();
 
     try {
-      return JSON.parse(
-        fenced,
-      );
+      return JSON.parse(fenced);
     } catch {
       return {
-        summary:
-          text,
+        summary: text,
 
-        impact:
-          null,
+        impact: null,
 
-        rootCause:
-          null,
+        rootCause: null,
 
-        uncertainty:
-          null,
+        uncertainty: null,
 
-        remediation:
-          null,
+        remediation: null,
       };
     }
   }
 };
 
-const normalizeAnalysis = ({
-  finding,
-  response,
-}) => {
-  const data =
-    response &&
-    typeof response === 'object'
-      ? response
-      : {};
+const normalizeAnalysis = ({ finding, response }) => {
+  const data = response && typeof response === "object" ? response : {};
 
   return {
-    summary:
-      typeof data.summary ===
-      'string'
-        ? data.summary.trim()
-        : null,
+    summary: typeof data.summary === "string" ? data.summary.trim() : null,
 
-    impact:
-      typeof data.impact ===
-      'string'
-        ? data.impact.trim()
-        : null,
+    impact: typeof data.impact === "string" ? data.impact.trim() : null,
 
     rootCause:
-      typeof data.rootCause ===
-      'string'
-        ? data.rootCause.trim()
-        : null,
+      typeof data.rootCause === "string" ? data.rootCause.trim() : null,
 
     uncertainty:
-      typeof data.uncertainty ===
-      'string'
-        ? data.uncertainty.trim()
-        : null,
+      typeof data.uncertainty === "string" ? data.uncertainty.trim() : null,
 
-    remediation:
-      ensureRemediation(
-        data.remediation,
-        finding,
-      ),
+    remediation: ensureRemediation(data.remediation, finding),
   };
 };
 
-const createProviderRequest = ({
-  system,
-  user,
-}) => {
-  if (
-    environment.ai.provider ===
-    'openai'
-  ) {
+const createProviderRequest = ({ system, user }) => {
+  if (environment.ai.provider === "openai") {
     return {
-      url:
-        'https://api.openai.com/v1/chat/completions',
+      url: "https://api.openai.com/v1/chat/completions",
 
       headers: {
-        Authorization:
-          `Bearer ${environment.ai.apiKey}`,
+        Authorization: `Bearer ${environment.ai.apiKey}`,
 
-        'Content-Type':
-          'application/json',
+        "Content-Type": "application/json",
       },
 
       data: {
-        model:
-          environment.ai.model,
+        model: environment.ai.model,
 
-        temperature:
-          0.1,
+        temperature: 0.1,
 
         response_format: {
-          type:
-            'json_object',
+          type: "json_object",
         },
 
         messages: [
           {
-            role:
-              'system',
+            role: "system",
 
-            content:
-              system,
+            content: system,
           },
 
           {
-            role:
-              'user',
+            role: "user",
 
-            content:
-              user,
+            content: user,
           },
         ],
       },
     };
   }
 
-  if (
-    environment.ai.provider ===
-    'groq'
-  ) {
+  if (environment.ai.provider === "groq") {
     return {
-      url:
-        'https://api.groq.com/openai/v1/chat/completions',
+      url: "https://api.groq.com/openai/v1/chat/completions",
 
       headers: {
-        Authorization:
-          `Bearer ${environment.ai.apiKey}`,
+        Authorization: `Bearer ${environment.ai.apiKey}`,
 
-        'Content-Type':
-          'application/json',
+        "Content-Type": "application/json",
       },
 
       data: {
-        model:
-          environment.ai.model,
+        model: environment.ai.model,
 
-        temperature:
-          0.1,
+        temperature: 0.1,
 
         response_format: {
-          type:
-            'json_object',
+          type: "json_object",
         },
 
         messages: [
           {
-            role:
-              'system',
+            role: "system",
 
-            content:
-              system,
+            content: system,
           },
 
           {
-            role:
-              'user',
+            role: "user",
 
-            content:
-              user,
+            content: user,
           },
         ],
       },
     };
   }
 
-  throw new Error(
-    `Unsupported AI provider: ${environment.ai.provider}`,
-  );
+  throw new Error(`Unsupported AI provider: ${environment.ai.provider}`);
 };
 
-const callProvider = async ({
-  system,
-  user,
-}) => {
-  const request =
-    createProviderRequest({
-      system,
-      user,
-    });
+const callProvider = async ({ system, user }) => {
+  const request = createProviderRequest({
+    system,
+    user,
+  });
 
-  const response =
-    await axios.post(
-      request.url,
+  const response = await axios.post(
+    request.url,
 
-      request.data,
+    request.data,
 
-      {
-        headers:
-          request.headers,
+    {
+      headers: request.headers,
 
-        timeout:
-          environment.http
-            .timeoutMs,
-      },
-    );
-
-  return (
-    response?.data?.choices?.[0]
-      ?.message?.content ??
-    null
+      timeout: environment.http.timeoutMs,
+    },
   );
+
+  return response?.data?.choices?.[0]?.message?.content ?? null;
 };
 
-const analyzeFinding = async ({
-  finding,
-  evidence = [],
-  target = null,
-}) => {
+const analyzeFinding = async ({ finding, evidence = [], target = null }) => {
   if (!finding) {
-    throw new Error(
-      'finding is required for AI analysis.',
-    );
+    throw new Error("finding is required for AI analysis.");
   }
 
-  if (
-    !environment.ai.enabled
-  ) {
+  if (!environment.ai.enabled) {
     return {
-      enabled:
-        false,
+      enabled: false,
 
-      status:
-        'disabled',
+      status: "disabled",
 
-      provider:
-        null,
+      provider: null,
 
-      model:
-        null,
+      model: null,
 
-      analysis:
-        null,
+      analysis: null,
     };
   }
 
@@ -297,90 +184,60 @@ const analyzeFinding = async ({
     !environment.ai.model
   ) {
     return {
-      enabled:
-        false,
+      enabled: false,
 
-      status:
-        'not_configured',
+      status: "not_configured",
 
-      provider:
-        environment.ai.provider ||
-        null,
+      provider: environment.ai.provider || null,
 
-      model:
-        environment.ai.model ||
-        null,
+      model: environment.ai.model || null,
 
-      analysis:
-        null,
+      analysis: null,
     };
   }
 
-  const prompt =
-    buildFindingPrompt({
-      finding,
-      evidence,
-      target,
-    });
+  const prompt = buildFindingPrompt({
+    finding,
+    evidence,
+    target,
+  });
 
   try {
-    const raw =
-      await callProvider(
-        prompt,
-      );
+    const raw = await callProvider(prompt);
 
-    const parsed =
-      parseJsonResponse(
-        raw,
-      );
+    const parsed = parseJsonResponse(raw);
 
-    const analysis =
-      normalizeAnalysis({
-        finding,
-        response:
-          parsed,
-      });
+    const analysis = normalizeAnalysis({
+      finding,
+      response: parsed,
+    });
 
     return {
-      enabled:
-        true,
+      enabled: true,
 
-      status:
-        'completed',
+      status: "completed",
 
-      provider:
-        environment.ai.provider,
+      provider: environment.ai.provider,
 
-      model:
-        environment.ai.model,
+      model: environment.ai.model,
 
       analysis,
     };
   } catch (error) {
     return {
-      enabled:
-        true,
+      enabled: true,
 
-      status:
-        'failed',
+      status: "failed",
 
-      provider:
-        environment.ai.provider,
+      provider: environment.ai.provider,
 
-      model:
-        environment.ai.model,
+      model: environment.ai.model,
 
-      analysis:
-        null,
+      analysis: null,
 
-      error:
-        error.message,
+      error: error.message,
     };
   }
 };
 
-export {
-  analyzeFinding,
-  normalizeAnalysis,
-  parseJsonResponse,
-};
+export { analyzeFinding, normalizeAnalysis, parseJsonResponse };

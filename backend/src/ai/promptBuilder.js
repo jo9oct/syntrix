@@ -1,175 +1,73 @@
 // STATUS: UPDATED
 
-const MAX_TEXT_LENGTH =
-  12_000;
+const MAX_TEXT_LENGTH = 12_000;
 
-const MAX_EVIDENCE_ITEMS =
-  5;
+const MAX_EVIDENCE_ITEMS = 5;
 
-const truncate = (
-  value,
-  maxLength = MAX_TEXT_LENGTH,
-) => {
-  const text =
-    String(
-      value ?? '',
-    );
+const truncate = (value, maxLength = MAX_TEXT_LENGTH) => {
+  const text = String(value ?? "");
 
-  if (
-    text.length <=
-    maxLength
-  ) {
+  if (text.length <= maxLength) {
     return text;
   }
 
-  return (
-    `${text.slice(0, maxLength)}...[truncated]`
-  );
+  return `${text.slice(0, maxLength)}...[truncated]`;
 };
 
-const sanitizeEvidence = (
-  evidence = [],
-) =>
-  evidence
-    .slice(
-      0,
-      MAX_EVIDENCE_ITEMS,
-    )
-    .map(
-      (item) => ({
-        type:
-          item?.type ??
-          null,
+const sanitizeEvidence = (evidence = []) =>
+  evidence.slice(0, MAX_EVIDENCE_ITEMS).map((item) => ({
+    type: item?.type ?? null,
 
-        request:
-          item?.request
-            ? truncate(
-                JSON.stringify(
-                  item.request,
-                ),
-                5_000,
-              )
-            : null,
-
-        response:
-          item?.response
-            ? truncate(
-                JSON.stringify(
-                  item.response,
-                ),
-                5_000,
-              )
-            : null,
-
-        observation:
-          item?.observation
-            ? truncate(
-                JSON.stringify(
-                  item.observation,
-                ),
-                5_000,
-              )
-            : null,
-
-        summary:
-          item?.summary
-            ? truncate(
-                item.summary,
-                2_000,
-              )
-            : null,
-
-        metadata:
-          item?.metadata
-            ? truncate(
-                JSON.stringify(
-                  item.metadata,
-                ),
-                3_000,
-              )
-            : null,
-      }),
-    );
-
-const buildFindingContext = ({
-  finding,
-  evidence = [],
-  target = null,
-}) => ({
-  scannerId:
-    finding?.scannerId ??
-    null,
-
-  category:
-    finding?.category ??
-    null,
-
-  title:
-    truncate(
-      finding?.title,
-      1_000,
-    ),
-
-  description:
-    truncate(
-      finding?.description,
-      5_000,
-    ),
-
-  impact:
-    truncate(
-      finding?.impact,
-      3_000,
-    ),
-
-  severity:
-    finding?.severity ??
-    'info',
-
-  confidence:
-    finding?.confidence ??
-    'low',
-
-  status:
-    finding?.status ??
-    'detected',
-
-  verificationStatus:
-    finding?.verificationStatus ??
-    'pending',
-
-  remediation:
-    truncate(
-      finding?.remediation,
-      5_000,
-    ),
-
-  target:
-    target
-      ? truncate(
-          target,
-          2_000,
-        )
+    request: item?.request
+      ? truncate(JSON.stringify(item.request), 5_000)
       : null,
 
-  parameter:
-    finding?.parameter ||
-    finding?.metadata?.parameter ||
-    null,
+    response: item?.response
+      ? truncate(JSON.stringify(item.response), 5_000)
+      : null,
 
-  location:
-    finding?.location ||
-    finding?.metadata?.location ||
-    null,
+    observation: item?.observation
+      ? truncate(JSON.stringify(item.observation), 5_000)
+      : null,
 
-  evidence:
-    sanitizeEvidence(
-      evidence,
-    ),
+    summary: item?.summary ? truncate(item.summary, 2_000) : null,
+
+    metadata: item?.metadata
+      ? truncate(JSON.stringify(item.metadata), 3_000)
+      : null,
+  }));
+
+const buildFindingContext = ({ finding, evidence = [], target = null }) => ({
+  scannerId: finding?.scannerId ?? null,
+
+  category: finding?.category ?? null,
+
+  title: truncate(finding?.title, 1_000),
+
+  description: truncate(finding?.description, 5_000),
+
+  impact: truncate(finding?.impact, 3_000),
+
+  severity: finding?.severity ?? "info",
+
+  confidence: finding?.confidence ?? "low",
+
+  status: finding?.status ?? "detected",
+
+  verificationStatus: finding?.verificationStatus ?? "pending",
+
+  remediation: truncate(finding?.remediation, 5_000),
+
+  target: target ? truncate(target, 2_000) : null,
+
+  parameter: finding?.parameter || finding?.metadata?.parameter || null,
+
+  location: finding?.location || finding?.metadata?.location || null,
+
+  evidence: sanitizeEvidence(evidence),
 });
 
-const buildSystemPrompt =
-  () => `
+const buildSystemPrompt = () => `
 You are a defensive application-security analysis assistant.
 
 You analyze findings produced by an authorized web security
@@ -241,160 +139,105 @@ STRICT RULES:
    are known from the supplied information, return [].
 `;
 
-const buildFindingPrompt = ({
-  finding,
-  evidence = [],
-  target = null,
-}) => {
-  const context =
-    buildFindingContext({
-      finding,
-      evidence,
-      target,
-    });
+const buildFindingPrompt = ({ finding, evidence = [], target = null }) => {
+  const context = buildFindingContext({
+    finding,
+    evidence,
+    target,
+  });
 
   return {
-    system:
-      buildSystemPrompt(),
+    system: buildSystemPrompt(),
 
-    user:
-      JSON.stringify(
-        {
-          task:
-            'Perform a defensive security analysis of the supplied finding.',
+    user: JSON.stringify(
+      {
+        task: "Perform a defensive security analysis of the supplied finding.",
 
-          requiredOutput:
-            {
-              summary:
-                'Explain what the finding means using the supplied evidence.',
+        requiredOutput: {
+          summary:
+            "Explain what the finding means using the supplied evidence.",
 
-              impact:
-                'Explain the realistic security impact supported by the evidence.',
+          impact:
+            "Explain the realistic security impact supported by the evidence.",
 
-              rootCause:
-                'Identify the most likely technical cause. Mark it as inference when it is not directly observed.',
+          rootCause:
+            "Identify the most likely technical cause. Mark it as inference when it is not directly observed.",
 
-              uncertainty:
-                'Explain what the evidence does not prove and what should be verified manually.',
+          uncertainty:
+            "Explain what the evidence does not prove and what should be verified manually.",
 
-              remediation:
-                {
-                  summary:
-                    'Give a finding-specific defensive remediation summary.',
+          remediation: {
+            summary: "Give a finding-specific defensive remediation summary.",
 
-                  actions:
-                    [
-                      'Provide concrete defensive remediation steps specific to the finding.'
-                    ],
-
-                  references:
-                    [
-                      'Include only references supported by the supplied information.'
-                    ],
-                },
-            },
-
-          outputRules:
-            [
-              'Return valid JSON only.',
-              'Do not return Markdown.',
-              'Do not invent evidence.',
-              'Use null when a field cannot be determined.',
-              'Use an empty array when no references are available.',
-              'Keep remediation specific to the actual finding.',
+            actions: [
+              "Provide concrete defensive remediation steps specific to the finding.",
             ],
 
-          finding:
-            context,
+            references: [
+              "Include only references supported by the supplied information.",
+            ],
+          },
         },
-        null,
-        2,
-      ),
+
+        outputRules: [
+          "Return valid JSON only.",
+          "Do not return Markdown.",
+          "Do not invent evidence.",
+          "Use null when a field cannot be determined.",
+          "Use an empty array when no references are available.",
+          "Keep remediation specific to the actual finding.",
+        ],
+
+        finding: context,
+      },
+      null,
+      2,
+    ),
   };
 };
 
-const buildScanSummaryPrompt = ({
-  findings = [],
-  risk = null,
-}) => {
-  const safeFindings =
-    findings
-      .slice(
-        0,
-        100,
-      )
-      .map(
-        (finding) => ({
-          fingerprint:
-            finding?.fingerprint ??
-            null,
+const buildScanSummaryPrompt = ({ findings = [], risk = null }) => {
+  const safeFindings = findings.slice(0, 100).map((finding) => ({
+    fingerprint: finding?.fingerprint ?? null,
 
-          scannerId:
-            finding?.scannerId ??
-            null,
+    scannerId: finding?.scannerId ?? null,
 
-          category:
-            finding?.category ??
-            null,
+    category: finding?.category ?? null,
 
-          title:
-            truncate(
-              finding?.title,
-              1_000,
-            ),
+    title: truncate(finding?.title, 1_000),
 
-          severity:
-            finding?.severity ??
-            'info',
+    severity: finding?.severity ?? "info",
 
-          confidence:
-            finding?.confidence ??
-            'low',
+    confidence: finding?.confidence ?? "low",
 
-          status:
-            finding?.status ??
-            'detected',
-        }),
-      );
+    status: finding?.status ?? "detected",
+  }));
 
   return {
-    system:
-      buildSystemPrompt(),
+    system: buildSystemPrompt(),
 
-    user:
-      JSON.stringify(
-        {
-          task:
-            'Summarize the security posture represented by the supplied findings.',
+    user: JSON.stringify(
+      {
+        task: "Summarize the security posture represented by the supplied findings.",
 
-          requirements:
-            {
-              summarizeMajorRisks:
-                true,
+        requirements: {
+          summarizeMajorRisks: true,
 
-              identifyPatterns:
-                true,
+          identifyPatterns: true,
 
-              prioritizeRemediation:
-                true,
+          prioritizeRemediation: true,
 
-              preserveScannerEvidenceBoundaries:
-                true,
-            },
-
-          risk,
-
-          findings:
-            safeFindings,
+          preserveScannerEvidenceBoundaries: true,
         },
-        null,
-        2,
-      ),
+
+        risk,
+
+        findings: safeFindings,
+      },
+      null,
+      2,
+    ),
   };
 };
 
-export {
-  buildFindingContext,
-  buildFindingPrompt,
-  buildScanSummaryPrompt,
-};
+export { buildFindingContext, buildFindingPrompt, buildScanSummaryPrompt };

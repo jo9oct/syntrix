@@ -1,154 +1,82 @@
 // STATUS: UPDATED
 
-import {
-  calculateFindingCounts,
-  normalizeScannerFindings,
-} from './finding.js';
+import { calculateFindingCounts, normalizeScannerFindings } from "./finding.js";
 
-import {
-  createPendingVerification,
-} from './verification.js';
+import { createPendingVerification } from "./verification.js";
 
-const normalizeEvidence = (
-  scannerId,
-  evidence,
-) => {
+const normalizeEvidence = (scannerId, evidence) => {
   if (!Array.isArray(evidence)) {
     return [];
   }
 
   return evidence
-    .filter(
-      (item) =>
-        item &&
-        typeof item === 'object',
-    )
+    .filter((item) => item && typeof item === "object")
     .map((item) => ({
       scannerId,
 
-      type:
-        item.type ??
-        'metadata',
+      type: item.type ?? "metadata",
 
-      findingId:
-        item.findingId ??
-        null,
+      findingId: item.findingId ?? null,
 
-      findingFingerprint:
-        item.findingFingerprint ??
-        null,
+      findingFingerprint: item.findingFingerprint ?? null,
 
-      findingKey:
-        item.findingKey ??
-        null,
+      findingKey: item.findingKey ?? null,
 
-      fingerprint:
-        item.fingerprint ??
-        null,
+      fingerprint: item.fingerprint ?? null,
 
-      request:
-        item.request ??
-        undefined,
+      request: item.request ?? undefined,
 
-      response:
-        item.response ??
-        undefined,
+      response: item.response ?? undefined,
 
-      observation:
-        item.observation ??
-        undefined,
+      observation: item.observation ?? undefined,
 
-      metadata:
-        item.metadata ??
-        {},
+      metadata: item.metadata ?? {},
 
-      method:
-        item.method ??
-        undefined,
+      method: item.method ?? undefined,
 
-      url:
-        item.url ??
-        undefined,
+      url: item.url ?? undefined,
 
-      statusCode:
-        item.statusCode ??
-        undefined,
+      statusCode: item.statusCode ?? undefined,
 
-      bodyExcerpt:
-        item.bodyExcerpt ??
-        undefined,
+      bodyExcerpt: item.bodyExcerpt ?? undefined,
 
-      summary:
-        item.summary ??
-        undefined,
+      summary: item.summary ?? undefined,
 
-      sensitiveDataRedacted:
-        item.sensitiveDataRedacted ??
-        true,
+      sensitiveDataRedacted: item.sensitiveDataRedacted ?? true,
     }));
 };
 
-const processScannerResult = ({
-  scanner,
-  result,
-}) => {
-  if (
-    !result ||
-    typeof result !== 'object'
-  ) {
-    throw new TypeError(
-      `Scanner ${scanner.id} returned an invalid result.`,
-    );
+const processScannerResult = ({ scanner, result }) => {
+  if (!result || typeof result !== "object") {
+    throw new TypeError(`Scanner ${scanner.id} returned an invalid result.`);
   }
 
-  const findings =
-    normalizeScannerFindings(
-      scanner.id,
-      result.findings,
-    );
+  const findings = normalizeScannerFindings(scanner.id, result.findings);
 
-  const evidence =
-    normalizeEvidence(
-      scanner.id,
-      result.evidence,
-    );
+  const evidence = normalizeEvidence(scanner.id, result.evidence);
 
-  const fingerprints =
-    Array.isArray(
-      result.fingerprints,
-    )
-      ? result.fingerprints.map(
-          (fingerprint) => ({
-            scannerId:
-              scanner.id,
+  const fingerprints = Array.isArray(result.fingerprints)
+    ? result.fingerprints.map((fingerprint) => ({
+        scannerId: scanner.id,
 
-            ...fingerprint,
-          }),
-        )
-      : [];
+        ...fingerprint,
+      }))
+    : [];
 
-  const verificationRecords =
-    findings.map(
-      (finding) =>
-        createPendingVerification({
-          finding,
-        }),
-    );
+  const verificationRecords = findings.map((finding) =>
+    createPendingVerification({
+      finding,
+    }),
+  );
 
   return {
-    scannerId:
-      scanner.id,
+    scannerId: scanner.id,
 
-    category:
-      scanner.category,
+    category: scanner.category,
 
-    status:
-      result.status ??
-      'completed',
+    status: result.status ?? "completed",
 
-    data:
-      result.data ??
-      {},
+    data: result.data ?? {},
 
     findings,
 
@@ -158,42 +86,23 @@ const processScannerResult = ({
 
     verificationRecords,
 
-    metadata:
-      result.metadata ??
-      {},
+    metadata: result.metadata ?? {},
   };
 };
 
-const mergeResults = (
-  results,
-) => {
-  const findings =
-    results.flatMap(
-      (result) =>
-        result.findings,
-    );
+const mergeResults = (results) => {
+  const findings = results.flatMap((result) => result.findings);
 
-  const evidence =
-    results.flatMap(
-      (result) =>
-        result.evidence,
-    );
+  const evidence = results.flatMap((result) => result.evidence);
 
-  const fingerprints =
-    results.flatMap(
-      (result) =>
-        result.fingerprints,
-    );
+  const fingerprints = results.flatMap((result) => result.fingerprints);
 
-  const verificationRecords =
-    results.flatMap(
-      (result) =>
-        result.verificationRecords,
-    );
+  const verificationRecords = results.flatMap(
+    (result) => result.verificationRecords,
+  );
 
   return {
-    scannerResults:
-      results,
+    scannerResults: results,
 
     findings,
 
@@ -203,14 +112,8 @@ const mergeResults = (
 
     verificationRecords,
 
-    counts:
-      calculateFindingCounts(
-        findings,
-      ),
+    counts: calculateFindingCounts(findings),
   };
 };
 
-export {
-  mergeResults,
-  processScannerResult,
-};
+export { mergeResults, processScannerResult };

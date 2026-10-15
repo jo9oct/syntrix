@@ -1,37 +1,21 @@
-const SEVERITIES = new Set([
-  'critical',
-  'high',
-  'medium',
-  'low',
-  'info',
-]);
+const SEVERITIES = new Set(["critical", "high", "medium", "low", "info"]);
 
-const CONFIDENCES = new Set([
-  'low',
-  'medium',
-  'high',
-]);
+const CONFIDENCES = new Set(["low", "medium", "high"]);
 
 const normalizeFinding = ({
   scannerId,
   title,
   description,
-  severity = 'info',
-  confidence = 'low',
+  severity = "info",
+  confidence = "low",
   category,
   remediation,
   evidenceIds = [],
   metadata = {},
 }) => {
-  const normalizedSeverity =
-    SEVERITIES.has(severity)
-      ? severity
-      : 'info';
+  const normalizedSeverity = SEVERITIES.has(severity) ? severity : "info";
 
-  const normalizedConfidence =
-    CONFIDENCES.has(confidence)
-      ? confidence
-      : 'low';
+  const normalizedConfidence = CONFIDENCES.has(confidence) ? confidence : "low";
 
   return {
     scannerId,
@@ -39,18 +23,12 @@ const normalizeFinding = ({
     description: String(description).slice(0, 5000),
     severity: normalizedSeverity,
     confidence: normalizedConfidence,
-    category: category ?? 'security',
+    category: category ?? "security",
     remediation:
-      typeof remediation === 'string'
-        ? remediation.slice(0, 5000)
-        : undefined,
-    evidenceIds: Array.isArray(evidenceIds)
-      ? evidenceIds
-      : [],
+      typeof remediation === "string" ? remediation.slice(0, 5000) : undefined,
+    evidenceIds: Array.isArray(evidenceIds) ? evidenceIds : [],
     metadata,
   };
 };
 
-export {
-  normalizeFinding,
-};
+export { normalizeFinding };
