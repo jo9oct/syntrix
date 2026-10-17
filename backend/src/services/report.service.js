@@ -1,10 +1,11 @@
 // STATUS: UPDATED
-// File: src/services/report.service.js
+// FILE: src/services/report.service.js
 
 import * as reportRepository from "../database/repositories/report.repository.js";
 import * as scanRepository from "../database/repositories/scan.repository.js";
 
 import { getPlan } from "../access/plan.service.js";
+import { resolveEffectivePlanName } from "../access/subscription.service.js";
 
 import { enqueueReportJob } from "../jobs/report.job.js";
 
@@ -12,8 +13,10 @@ import { SUPPORTED_FORMATS } from "../reports/reportBuilder.js";
 
 const createServiceError = (message, statusCode, code) => {
   const error = new Error(message);
+
   error.statusCode = statusCode;
   error.code = code;
+
   return error;
 };
 
@@ -27,7 +30,11 @@ const assertReportAccess = ({ ownerId, userType }) => {
   }
 
   if (!ownerId) {
-    throw createServiceError("ownerId is required.", 400, "OWNER_ID_REQUIRED");
+    throw createServiceError(
+      "ownerId is required.",
+      400,
+      "OWNER_ID_REQUIRED",
+    );
   }
 };
 
@@ -71,10 +78,19 @@ const createReport = async ({
   assertReportAccess({ ownerId, userType });
 
   if (!scanId) {
-    throw createServiceError("scanId is required.", 400, "SCAN_ID_REQUIRED");
+    throw createServiceError(
+      "scanId is required.",
+      400,
+      "SCAN_ID_REQUIRED",
+    );
   }
 
-  const plan = getPlan();
+  // Resolve the current plan from the trusted user record.
+  const planName = await resolveEffectivePlanName({
+    userId: ownerId,
+  });
+
+  const plan = getPlan(planName);
 
   assertReportFormatAccess({
     format,
@@ -84,7 +100,11 @@ const createReport = async ({
   const scan = await scanRepository.findById(ownerId, scanId);
 
   if (!scan) {
-    throw createServiceError("Scan was not found.", 404, "SCAN_NOT_FOUND");
+    throw createServiceError(
+      "Scan was not found.",
+      404,
+      "SCAN_NOT_FOUND",
+    );
   }
 
   // Reuse an active or completed report before checking the limit.
@@ -172,23 +192,39 @@ const getReport = async ({ ownerId, userType = "user", reportId }) => {
   const report = await reportRepository.findById(ownerId, reportId);
 
   if (!report) {
-    throw createServiceError("Report was not found.", 404, "REPORT_NOT_FOUND");
+    throw createServiceError(
+      "Report was not found.",
+      404,
+      "REPORT_NOT_FOUND",
+    );
   }
 
   return report;
 };
 
-const getReportsByScan = async ({ ownerId, userType = "user", scanId }) => {
+const getReportsByScan = async ({
+  ownerId,
+  userType = "user",
+  scanId,
+}) => {
   assertReportAccess({ ownerId, userType });
 
   if (!scanId) {
-    throw createServiceError("scanId is required.", 400, "SCAN_ID_REQUIRED");
+    throw createServiceError(
+      "scanId is required.",
+      400,
+      "SCAN_ID_REQUIRED",
+    );
   }
 
   const scan = await scanRepository.findById(ownerId, scanId);
 
   if (!scan) {
-    throw createServiceError("Scan was not found.", 404, "SCAN_NOT_FOUND");
+    throw createServiceError(
+      "Scan was not found.",
+      404,
+      "SCAN_NOT_FOUND",
+    );
   }
 
   const reports = await reportRepository.listByScan(ownerId, scanId, {

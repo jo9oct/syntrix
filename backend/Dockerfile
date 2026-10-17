@@ -1,6 +1,15 @@
-# STATUS: UPDATED
 
-FROM node:20-alpine
+FROM node:22-alpine AS production-dependencies
+
+WORKDIR /app
+
+COPY package.json package-lock.json ./
+
+RUN npm ci --omit=dev \
+    && npm cache clean --force
+
+
+FROM node:22-alpine AS runtime
 
 WORKDIR /app
 
@@ -13,16 +22,21 @@ RUN apk add --no-cache \
     freetype \
     harfbuzz \
     ca-certificates \
-    ttf-freefont
+    ttf-freefont \
+    dumb-init
 
-COPY package*.json ./
+COPY --from=production-dependencies /app/node_modules ./node_modules
 
-RUN npm ci --omit=dev
+COPY package.json package-lock.json ./
 
-COPY . .
+COPY server.js ./server.js
+COPY worker.js ./worker.js
+COPY src ./src
 
 USER node
 
-EXPOSE 5000
+EXPOSE 3001
+
+ENTRYPOINT ["dumb-init", "--"]
 
 CMD ["node", "server.js"]

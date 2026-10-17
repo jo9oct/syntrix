@@ -1,4 +1,5 @@
-// STATUS: CREATED
+// STATUS: UPDATED
+// FILE: src/routes/crawl.routes.js
 
 import { Router } from "express";
 
@@ -7,6 +8,8 @@ import {
   getCrawlPages,
   getCrawlInputs,
 } from "../controllers/crawl.controller.js";
+
+import { protect } from "../middleware/auth.js";
 
 import {
   requireAuthorization,
@@ -21,8 +24,27 @@ import { crawlPaginationSchema } from "../validators/crawl.validator.js";
 
 const router = Router();
 
+/**
+ * Verify a supplied Bearer token before authorization.
+ * Requests without a Bearer token may continue through the
+ * existing guest-session authorization flow.
+ */
+const verifyBearerTokenIfPresent = (req, res, next) => {
+  const authorization = req.headers.authorization;
+
+  if (
+    typeof authorization === "string" &&
+    /^Bearer\b/i.test(authorization)
+  ) {
+    return protect(req, res, next);
+  }
+
+  return next();
+};
+
 router.get(
   "/:scanId",
+  verifyBearerTokenIfPresent,
   requireAuthorization,
   requireOwner,
   validate(scanIdSchema, "params"),
@@ -31,6 +53,7 @@ router.get(
 
 router.get(
   "/:scanId/pages",
+  verifyBearerTokenIfPresent,
   requireAuthorization,
   requireOwner,
   validate(scanIdSchema, "params"),
@@ -40,6 +63,7 @@ router.get(
 
 router.get(
   "/:scanId/inputs",
+  verifyBearerTokenIfPresent,
   requireAuthorization,
   requireOwner,
   validate(scanIdSchema, "params"),

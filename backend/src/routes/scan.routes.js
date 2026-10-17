@@ -1,4 +1,5 @@
 ﻿// STATUS: UPDATED
+// FILE: src/routes/scan.routes.js
 
 import { Router } from "express";
 
@@ -17,6 +18,8 @@ import {
   requireOwner,
 } from "../middleware/authorization.middleware.js";
 
+import { protect } from "../middleware/auth.js";
+
 import { validate } from "../middleware/validation.middleware.js";
 
 import {
@@ -34,7 +37,29 @@ import { targetIdSchema } from "../validators/target.validator.js";
 
 const router = Router();
 
-router.use(requireAuthorization, requireOwner);
+const verifyBearerIfPresent = (req, res, next) => {
+  const authorization = req.headers.authorization;
+
+  if (authorization === undefined) {
+    return next();
+  }
+
+  if (
+    typeof authorization !== "string" ||
+    !/^Bearer\s+\S+$/i.test(authorization)
+  ) {
+    return res.status(401).json({
+      success: false,
+      error: "Invalid Authorization header.",
+    });
+  }
+
+  return protect(req, res, next);
+};
+
+// Verify registered users before authorization.
+// Requests without a token retain the existing guest-session flow.
+router.use(verifyBearerIfPresent, requireAuthorization, requireOwner);
 
 router.post("/", validate(createScanSchema, "body"), createScanController);
 
@@ -46,7 +71,6 @@ router.get(
   listDeletedScansController,
 );
 
-// GET /api/v1/scans/compare/:targetId/result
 router.get(
   "/compare/:targetId/result",
   validate(targetIdSchema, "params"),
@@ -70,7 +94,6 @@ router.get("/:scanId", validate(scanIdSchema, "params"), getScanController);
 router.post(
   "/:scanId/cancel",
   validate(scanIdSchema, "params"),
-  validate(cancelScanSchema, "body"),
   cancelScanController,
 );
 

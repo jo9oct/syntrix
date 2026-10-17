@@ -46,8 +46,8 @@ coverage/
 # Uploaded / Generated Files
 # ==========================================
 uploads/
-storage/
-reports/
+/storage/
+/reports/
 generated/
 artifacts/
 

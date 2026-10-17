@@ -1,6 +1,5 @@
-/* STATUS: UPDATED
- * FILE: src/middleware/authorization.middleware.js
- */
+// STATUS: UPDATED
+// File: src/middleware/authorization.middleware.js
 
 import mongoose from "mongoose";
 
@@ -10,44 +9,44 @@ const GUEST_COOKIE_NAME = "guest-id";
 
 const GUEST_COOKIE_MAX_AGE = guestSessionService.getGuestSessionTtlMs();
 
-/*
- * Normalize an owner ID without trusting its source.
+/**
+ * Normalize an owner ID without trusting client-supplied identity.
  */
 const normalizeOwnerId = (value) => {
-  if (typeof value !== "string" || value.trim().length === 0) {
+  if (value === undefined || value === null) {
     return null;
   }
 
-  const normalized = value.trim();
+  const normalized = String(value).trim();
 
-  if (normalized.length > 256) {
+  if (!normalized || normalized.length > 256) {
     return null;
   }
 
   return normalized;
 };
 
-/*
- * Retained for compatibility with existing integrations.
- *
- * IMPORTANT:
- * An x-owner-id header is not proof of authentication.
- * Never use it alone to establish a registered user's identity.
+/**
+ * Obtain the registered user's ID from the authenticated user object.
+ * The protect middleware must verify the JWT before setting req.user.
  */
-const getExternalOwnerId = (req) => {
-  const headerValue = req.headers["x-owner-id"];
+const getAuthenticatedUserId = (req) => {
+  const userId = req.user?._id;
 
-  if (typeof headerValue !== "string") {
+  if (!userId || !mongoose.isValidObjectId(String(userId))) {
     return null;
   }
 
-  return normalizeOwnerId(headerValue);
+  return String(userId);
 };
 
+/**
+ * Parse the guest session ID from the guest-id cookie.
+ */
 const getGuestIdFromCookie = (req) => {
   const cookieHeader = req.headers.cookie;
 
-  if (typeof cookieHeader !== "string" || cookieHeader.trim().length === 0) {
+  if (typeof cookieHeader !== "string" || !cookieHeader.trim()) {
     return null;
   }
 
@@ -69,7 +68,11 @@ const getGuestIdFromCookie = (req) => {
     const value = cookie.slice(separatorIndex + 1).trim();
 
     try {
-      return normalizeOwnerId(decodeURIComponent(value));
+      const guestId = normalizeOwnerId(decodeURIComponent(value));
+
+      return guestId && mongoose.isValidObjectId(guestId)
+        ? guestId
+        : null;
     } catch {
       return null;
     }
@@ -78,9 +81,15 @@ const getGuestIdFromCookie = (req) => {
   return null;
 };
 
+/**
+ * Create a temporary guest owner ID.
+ */
 const createTemporaryGuestOwnerId = () =>
   new mongoose.Types.ObjectId().toString();
 
+/**
+ * Set the guest session cookie.
+ */
 const setGuestCookie = (res, guestOwnerId) => {
   const encodedGuestId = encodeURIComponent(guestOwnerId);
 
@@ -96,9 +105,15 @@ const setGuestCookie = (res, guestOwnerId) => {
   );
 };
 
+/**
+ * Check whether a guest owner ID is a valid MongoDB ObjectId.
+ */
 const isValidGuestOwnerId = (ownerId) =>
   typeof ownerId === "string" && mongoose.isValidObjectId(ownerId);
 
+/**
+ * Create a new guest session and set its cookie.
+ */
 const createNewGuestSession = async (res) => {
   const guestOwnerId = createTemporaryGuestOwnerId();
 
@@ -111,26 +126,45 @@ const createNewGuestSession = async (res) => {
   return guestOwnerId;
 };
 
-/*
+/**
  * General authorization middleware.
  *
- * Existing verified authentication middleware should run before
- * this middleware when a Bearer token is supplied.
+ * Registered users:
+ *   Uses req.user._id from the verified protect middleware.
  *
- * Existing guest-cookie behavior is preserved for routes that
- * allow guest access, including eligible scan routes.
+ * Guests:
+ *   Uses the existing guest-id cookie and guest session.
+ *
+ * IMPORTANT:
+ *   Routes must explicitly run protect before this middleware
+ *   when they require registered-user authentication.
  */
 const requireAuthorization = async (req, res, next) => {
   try {
-    // An upstream authentication middleware has already
-    // established the request identity.
-    if (req.auth?.ownerId) {
+    // Prefer the registered user identity established by protect.
+    const authenticatedUserId = getAuthenticatedUserId(req);
+
+    if (authenticatedUserId) {
+      req.auth = {
+        ownerId: authenticatedUserId,
+        userType: "user",
+      };
+
       return next();
     }
 
-    // Do not treat x-owner-id as authenticated identity.
-    // It is client-controlled and can be spoofed.
+    // Do not silently downgrade a request with an invalid user
+    // identity to a guest session.
+    if (req.user) {
+      const error = new Error("Authenticated user identity is invalid.");
 
+      error.statusCode = 401;
+      error.code = "INVALID_USER_IDENTITY";
+
+      return next(error);
+    }
+
+    // A supplied Bearer token must be verified by protect.
     const authorization = req.headers.authorization;
 
     if (
@@ -138,7 +172,7 @@ const requireAuthorization = async (req, res, next) => {
       /^Bearer\s+\S+$/i.test(authorization)
     ) {
       const error = new Error(
-        "The Bearer token has not been verified by the authentication middleware.",
+        "The Bearer token must be verified by authentication middleware.",
       );
 
       error.statusCode = 401;
@@ -147,6 +181,7 @@ const requireAuthorization = async (req, res, next) => {
       return next(error);
     }
 
+    // Guest identity is supported only on routes that permit guests.
     const cookieGuestOwnerId = getGuestIdFromCookie(req);
 
     if (!isValidGuestOwnerId(cookieGuestOwnerId)) {
@@ -164,10 +199,6 @@ const requireAuthorization = async (req, res, next) => {
       guestOwnerId: cookieGuestOwnerId,
     });
 
-    /*
-     * Never restore an expired guest identity.
-     * Create a fresh guest session instead.
-     */
     if (
       !existingSession ||
       !existingSession.expiresAt ||
@@ -194,23 +225,19 @@ const requireAuthorization = async (req, res, next) => {
   }
 };
 
-/*
- * Registered-user-only authorization.
+/**
+ * Require a verified registered user.
  *
- * Use this for saved scopes and other resources that must
- * never be available to guest identities.
- *
- * This function checks the verified request identity;
- * it does not independently verify JWT signatures.
+ * The protect middleware verifies the JWT and sets req.user.
+ * This middleware must not be used as a replacement for protect.
  */
 const requireAuthenticatedUser = (req, res, next) => {
-  const authorization = req.headers.authorization;
+  const authenticatedUserId = getAuthenticatedUserId(req);
 
-  if (
-    typeof authorization !== "string" ||
-    !/^Bearer\s+\S+$/i.test(authorization)
-  ) {
-    const error = new Error("A Bearer access token is required.");
+  if (!authenticatedUserId) {
+    const error = new Error(
+      "A verified registered-user identity is required.",
+    );
 
     error.statusCode = 401;
     error.code = "AUTHENTICATION_REQUIRED";
@@ -218,18 +245,17 @@ const requireAuthenticatedUser = (req, res, next) => {
     return next(error);
   }
 
-  if (!req.auth?.ownerId || req.auth.userType === "guest") {
-    const error = new Error("A verified registered-user identity is required.");
-
-    error.statusCode = 401;
-    error.code = "REGISTERED_USER_REQUIRED";
-
-    return next(error);
-  }
+  req.auth = {
+    ownerId: authenticatedUserId,
+    userType: "user",
+  };
 
   return next();
 };
 
+/**
+ * Require an owner identity.
+ */
 const requireOwner = (req, res, next) => {
   const ownerId = normalizeOwnerId(req.auth?.ownerId);
 
@@ -247,6 +273,9 @@ const requireOwner = (req, res, next) => {
   return next();
 };
 
+/**
+ * Reject attempts to access resources belonging to another owner.
+ */
 const requireOwnerMatch = (req, res, next) => {
   const authenticatedOwnerId = normalizeOwnerId(req.auth?.ownerId);
 
@@ -277,21 +306,37 @@ const requireOwnerMatch = (req, res, next) => {
   return next();
 };
 
+/**
+ * Get the current request's owner ID.
+ */
 const getOwnerId = (req) => normalizeOwnerId(req.auth?.ownerId);
 
+/**
+ * Get the current request's user type.
+ */
 const getUserType = (req) =>
   req.auth?.userType === "guest" ? "guest" : "user";
 
+/**
+ * Check whether this is a guest request.
+ */
 const isGuestRequest = (req) => getUserType(req) === "guest";
 
+/**
+ * Check whether a verified registered-user identity is established.
+ */
 const isAuthenticatedRequest = (req) =>
-  Boolean(req.auth?.ownerId && req.auth.userType !== "guest");
+  Boolean(
+    getAuthenticatedUserId(req) &&
+      req.auth?.ownerId === getAuthenticatedUserId(req) &&
+      req.auth?.userType === "user",
+  );
 
 export {
   GUEST_COOKIE_NAME,
   GUEST_COOKIE_MAX_AGE,
   normalizeOwnerId,
-  getExternalOwnerId,
+  getAuthenticatedUserId,
   getGuestIdFromCookie,
   createTemporaryGuestOwnerId,
   setGuestCookie,

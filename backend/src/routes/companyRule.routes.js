@@ -1,8 +1,10 @@
-// STATUS: CREATED
+// STATUS: UPDATED
+// FILE: src/routes/companyRule.routes.js
 
 import { Router } from "express";
-
 import Joi from "joi";
+
+import { protect } from "../middleware/auth.js";
 
 import {
   requireAuthorization,
@@ -21,21 +23,23 @@ import {
 
 const router = Router();
 
+const categories = [
+  "cors",
+  "transport",
+  "authentication",
+  "authorization",
+  "security-headers",
+  "csrf",
+  "session",
+  "api-security",
+  "general",
+];
+
 const ruleSchema = Joi.object({
   name: Joi.string().trim().min(1).max(256).required(),
 
   category: Joi.string()
-    .valid(
-      "cors",
-      "transport",
-      "authentication",
-      "authorization",
-      "security-headers",
-      "csrf",
-      "session",
-      "api-security",
-      "general",
-    )
+    .valid(...categories)
     .required(),
 
   description: Joi.string().trim().min(1).max(2000).required(),
@@ -52,21 +56,17 @@ const ruleSchema = Joi.object({
 const updateRuleSchema = Joi.object({
   name: Joi.string().trim().min(1).max(256),
 
-  category: Joi.string().valid(
-    "cors",
-    "transport",
-    "authentication",
-    "authorization",
-    "security-headers",
-    "csrf",
-    "session",
-    "api-security",
-    "general",
-  ),
+  category: Joi.string().valid(...categories),
 
   description: Joi.string().trim().min(1).max(2000),
 
-  severity: Joi.string().valid("critical", "high", "medium", "low", "info"),
+  severity: Joi.string().valid(
+    "critical",
+    "high",
+    "medium",
+    "low",
+    "info",
+  ),
 
   rule: Joi.object(),
 
@@ -78,17 +78,7 @@ const ruleParamsSchema = Joi.object({
 });
 
 const listQuerySchema = Joi.object({
-  category: Joi.string().valid(
-    "cors",
-    "transport",
-    "authentication",
-    "authorization",
-    "security-headers",
-    "csrf",
-    "session",
-    "api-security",
-    "general",
-  ),
+  category: Joi.string().valid(...categories),
 
   enabled: Joi.boolean(),
 
@@ -97,13 +87,30 @@ const listQuerySchema = Joi.object({
   skip: Joi.number().integer().min(0).default(0),
 });
 
-router.use(requireAuthorization, requireOwner);
+// Verify the Bearer token before authorization checks.
+router.use(
+  protect,
+  requireAuthorization,
+  requireOwner,
+);
 
-router.post("/", validate(ruleSchema, "body"), createRule);
+router.post(
+  "/",
+  validate(ruleSchema, "body"),
+  createRule,
+);
 
-router.get("/", validate(listQuerySchema, "query"), listRules);
+router.get(
+  "/",
+  validate(listQuerySchema, "query"),
+  listRules,
+);
 
-router.get("/:ruleId", validate(ruleParamsSchema, "params"), getRule);
+router.get(
+  "/:ruleId",
+  validate(ruleParamsSchema, "params"),
+  getRule,
+);
 
 router.patch(
   "/:ruleId",
@@ -112,6 +119,10 @@ router.patch(
   updateRule,
 );
 
-router.delete("/:ruleId", validate(ruleParamsSchema, "params"), deleteRule);
+router.delete(
+  "/:ruleId",
+  validate(ruleParamsSchema, "params"),
+  deleteRule,
+);
 
 export default router;

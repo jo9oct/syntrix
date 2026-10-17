@@ -1,4 +1,5 @@
-﻿// STATUS: CREATED
+﻿// STATUS: UPDATED
+// FILE: src/routes/target.routes.js
 
 import { Router } from "express";
 
@@ -8,6 +9,8 @@ import {
   getTargetScansController,
   getTargetTrendsController,
 } from "../controllers/target.controller.js";
+
+import { protect } from "../middleware/auth.js";
 
 import {
   requireAuthorization,
@@ -24,7 +27,25 @@ import {
 
 const router = Router();
 
-router.use(requireAuthorization, requireOwner);
+/**
+ * Verify a supplied Bearer token before authorization.
+ * Requests without a Bearer token retain the existing
+ * guest-session authorization flow.
+ */
+const verifyBearerTokenIfPresent = (req, res, next) => {
+  const authorization = req.headers.authorization;
+
+  if (
+    typeof authorization === "string" &&
+    /^Bearer\b/i.test(authorization)
+  ) {
+    return protect(req, res, next);
+  }
+
+  return next();
+};
+
+router.use(verifyBearerTokenIfPresent, requireAuthorization, requireOwner);
 
 router.get(
   "/",

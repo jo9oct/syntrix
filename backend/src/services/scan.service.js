@@ -8,6 +8,7 @@ import * as targetRepository from "../database/repositories/target.repository.js
 import * as companyRuleRepository from "../database/repositories/companyRule.repository.js";
 
 import { getPlan } from "../access/plan.service.js";
+import { resolveEffectivePlanName } from "../access/subscription.service.js";
 
 import {
   getSelectedScannerIds,
@@ -40,7 +41,11 @@ const getHostname = (url) => {
 
 const assertOwnerId = (ownerId) => {
   if (!ownerId) {
-    throw createServiceError("OWNER_ID_REQUIRED", "Owner ID is required.", 401);
+    throw createServiceError(
+      "OWNER_ID_REQUIRED",
+      "Owner ID is required.",
+      401,
+    );
   }
 
   if (!mongoose.isValidObjectId(ownerId)) {
@@ -75,13 +80,17 @@ const createServiceError = (code, message, statusCode) => {
   return error;
 };
 
-const resolvePlan = (isGuest) => {
-  if (isGuest) {
-    return getPlan("free");
-  }
+const resolvePlan = async ({ ownerId, isGuest }) => {
+  const planName = await resolveEffectivePlanName({
+    userId: ownerId,
+    isGuest,
+  });
 
-  return getPlan();
+  return getPlan(planName);
 };
+
+// STATUS: UPDATED
+// FILE: src/services/scan.service.js
 
 const resolveSelectedScope = async ({
   ownerId,
@@ -102,7 +111,7 @@ const resolveSelectedScope = async ({
   if (selectedScopes.length > 1) {
     throw createServiceError(
       "MULTIPLE_SCOPES_NOT_SUPPORTED",
-      "Select exactly one saved scope per scan.",
+      "Select at most one saved scope per scan.",
       400,
     );
   }
@@ -122,14 +131,15 @@ const resolveSelectedScope = async ({
     };
   }
 
+  // Authenticated users may scan without selecting a saved scope.
   if (selectedScopes.length === 0) {
-    throw createServiceError(
-      "SCOPE_SELECTION_REQUIRED",
-      "Select one saved scope before creating an authenticated scan.",
-      400,
-    );
+    return {
+      scopeId: null,
+      scopeSnapshot: null,
+    };
   }
 
+  // A selected scope must still be valid and authorized.
   const selectedScopeId = selectedScopes[0];
 
   if (!mongoose.isValidObjectId(selectedScopeId)) {
@@ -403,7 +413,11 @@ const createScan = async ({
 }) => {
   const normalizedOwnerId = assertOwnerId(ownerId);
 
-  const plan = resolvePlan(isGuest);
+  // Guests use Free; registered users use their current database subscription.
+  const plan = await resolvePlan({
+    ownerId: normalizedOwnerId,
+    isGuest,
+  });
 
   // Return an existing idempotent request before storing new credentials.
   if (idempotencyKey) {
@@ -547,6 +561,7 @@ const createScan = async ({
 
         isGuest: Boolean(isGuest),
 
+        // Transitional only: the worker must resolve the current plan itself.
         plan: plan.name,
       },
       {

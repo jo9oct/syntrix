@@ -4,9 +4,7 @@
 import { Worker } from "bullmq";
 
 import environment from "../config/environment.js";
-
 import { redisConnection, scanQueue } from "../config/queue.js";
-
 import { executeScan } from "../engine/scanEngine.js";
 
 import {
@@ -16,27 +14,25 @@ import {
 } from "../analysis/fingerprint/fingerprint.js";
 
 import { calculateRisk, sortFindingsByRisk } from "../analysis/risk/risk.js";
-
 import { evaluateCompanyRules } from "../analysis/companyRules/companyRuleEvaluator.js";
 
 import { getPlan } from "../access/plan.service.js";
+import { resolveEffectivePlanName } from "../access/subscription.service.js";
 
 import * as scanRepository from "../database/repositories/scan.repository.js";
-
 import * as targetRepository from "../database/repositories/target.repository.js";
-
 import * as findingRepository from "../database/repositories/finding.repository.js";
-
 import * as evidenceRepository from "../database/repositories/evidence.repository.js";
-
 import * as fingerprintRepository from "../database/repositories/fingerprint.repository.js";
-
 import * as verificationRepository from "../database/repositories/verification.repository.js";
-
 import * as guestSessionRepository from "../database/repositories/guestSession.repository.js";
 
-import { analyzeAndPersistFindings } from "../services/aiAnalysis.service.js";
+import {
+  getCredentials,
+  deleteCredentials,
+} from "../services/credentialVault.service.js";
 
+import { analyzeAndPersistFindings } from "../services/aiAnalysis.service.js";
 import { createAndPersistComparisonForScan } from "../services/scanComparison.service.js";
 
 import {
@@ -69,7 +65,9 @@ import {
 
 const SCAN_JOB_NAME = "security-scan";
 
-const sanitizeCredentials = () => null;
+/*
+ * Error factories
+ */
 
 const createGuestSessionExpiredError = () => {
   const error = new Error("The guest session has expired.");
@@ -87,11 +85,44 @@ const createComparisonRetryError = (cause) => {
   );
 
   error.code = cause?.code ?? "SCAN_COMPARISON_FAILED";
-
   error.scanComparisonRetry = true;
 
   return error;
 };
+
+const createWorkerError = (message, statusCode, code) => {
+  const error = new Error(message);
+
+  error.statusCode = statusCode;
+  error.code = code;
+
+  return error;
+};
+
+/*
+ * Errors that retrying will not fix.
+ *
+ * These include invalid credentials configuration, missing credential
+ * references, unavailable authentication features, and invalid or
+ * inactive subscription ownership.
+ */
+
+const TERMINAL_SCAN_ERROR_CODES = new Set([
+  "SCAN_CREDENTIALS_EXPIRED",
+  "SCAN_CREDENTIAL_REFERENCE_MISSING",
+  "AUTHENTICATION_SCANNING_NOT_AVAILABLE",
+  "CREDENTIAL_ENCRYPTION_KEY_INVALID",
+  "SUBSCRIPTION_USER_REQUIRED",
+  "SUBSCRIPTION_USER_NOT_FOUND",
+  "SUBSCRIPTION_ACCOUNT_INACTIVE",
+  "SCAN_TARGET_NOT_FOUND",
+  "NO_SCANNERS_SELECTED",
+  "GUEST_SESSION_EXPIRED",
+]);
+
+/*
+ * Guest-session validation
+ */
 
 const assertGuestSessionActive = async ({ ownerId, isGuest }) => {
   if (!isGuest) {
@@ -112,10 +143,10 @@ const assertGuestSessionActive = async ({ ownerId, isGuest }) => {
 /*
  * A worker must not start or continue processing a deleted scan.
  *
- * This check is intentionally repeated around long-running stages.
  * Repository writes must also reject deleted scans to handle races
- * between a guard check and the subsequent write.
+ * between a guard check and a subsequent write.
  */
+
 const assertWorkerCanContinue = async ({
   ownerId,
   scanId,
@@ -132,31 +163,53 @@ const assertWorkerCanContinue = async ({
   });
 };
 
+/*
+ * Resolve the plan from the authoritative user record.
+ *
+ * Never trust a plan included in BullMQ job data.
+ * Guest scans always resolve to Free.
+ */
+
+const resolveWorkerPlan = async ({ ownerId, isGuest }) => {
+  const planName = await resolveEffectivePlanName({
+    userId: ownerId,
+    isGuest,
+  });
+
+  return getPlan(planName);
+};
+
+/*
+ * Scanner selection
+ */
+
 const buildEngineSelection = (selection) => {
   const normalizedSelection = normalizeSelection(selection);
 
   const selectedScannerIds = getSelectedScannerIds(normalizedSelection);
 
   if (selectedScannerIds.length === 0) {
-    const error = new Error(
+    throw createWorkerError(
       "Scan selection is mandatory. At least one scanner must be selected.",
+      400,
+      "NO_SCANNERS_SELECTED",
     );
-
-    error.code = "NO_SCANNERS_SELECTED";
-
-    throw error;
   }
 
   return {
     mode: "selected",
-
     recon: [...normalizedSelection.recon],
-
     security: [...normalizedSelection.security],
-
     selectedScannerIds,
   };
 };
+
+/*
+ * Enqueue a scan.
+ *
+ * Plaintext credentials must never be included in job data.
+ * Only the temporary credential-vault reference may be queued.
+ */
 
 const enqueueScanJob = async ({
   ownerId,
@@ -192,35 +245,33 @@ const enqueueScanJob = async ({
   }
 
   const engineSelection = buildEngineSelection(selection);
-
   const normalizedCompanyRuleIds = normalizeCompanyRuleIds(companyRuleIds);
 
   /*
-   * Missing plan values default to Free.
-   * Guest scans always use Free.
+   * This validates company-rule availability at queue acceptance.
+   * The worker independently resolves the current plan from the database.
+   *
+   * The supplied plan is not saved in the queue payload.
    */
-  const normalizedPlan = getPlan(isGuest ? "free" : plan).name;
+  const acceptedPlan = getPlan(isGuest ? "free" : plan);
 
   if (isGuest && normalizedCompanyRuleIds.length > 0) {
-    const error = new Error(
+    throw createWorkerError(
       "Company security rules are available only on the Enterprise plan.",
+      403,
+      "FEATURE_NOT_AVAILABLE",
     );
-
-    error.code = "FEATURE_NOT_AVAILABLE";
-    error.statusCode = 403;
-
-    throw error;
   }
 
-  if (normalizedCompanyRuleIds.length > 0 && normalizedPlan !== "enterprise") {
-    const error = new Error(
+  if (
+    normalizedCompanyRuleIds.length > 0 &&
+    acceptedPlan.integrations?.companyRules !== true
+  ) {
+    throw createWorkerError(
       "Company security rules are available only on the Enterprise plan.",
+      403,
+      "FEATURE_NOT_AVAILABLE",
     );
-
-    error.code = "FEATURE_NOT_AVAILABLE";
-    error.statusCode = 403;
-
-    throw error;
   }
 
   return scanQueue.add(
@@ -239,7 +290,6 @@ const enqueueScanJob = async ({
       selection: engineSelection,
       companyRuleIds: normalizedCompanyRuleIds,
 
-      // Immutable saved-scope snapshot captured when the scan was created.
       scopeSnapshot: scopeSnapshot
         ? {
             ...scopeSnapshot,
@@ -250,13 +300,18 @@ const enqueueScanJob = async ({
       options,
       credentialReference,
       isGuest: Boolean(isGuest),
-      plan: normalizedPlan,
+
+      // Never place the subscription plan or plaintext credentials here.
     },
     {
       jobId: `scan:${scanId}`,
     },
   );
 };
+
+/*
+ * Finding and evidence matching
+ */
 
 const normalizeFindingKey = (value) => {
   if (typeof value !== "string") {
@@ -270,7 +325,9 @@ const normalizeFindingKey = (value) => {
 
 const getFindingKey = (finding) =>
   normalizeFindingKey(finding?.fingerprint) ??
-  normalizeFindingKey(`${finding?.scannerId ?? ""}:${finding?.title ?? ""}`);
+  normalizeFindingKey(
+    `${finding?.scannerId ?? ""}:${finding?.title ?? ""}`,
+  );
 
 const extractFindingTitleFromKey = (findingKey) => {
   const normalizedKey = normalizeFindingKey(findingKey);
@@ -339,9 +396,7 @@ const findMatchingFindingIds = ({ item, findings, findingIds }) => {
   }
 
   const findingKey = normalizeFindingKey(item?.findingKey);
-
   const findingFingerprint = normalizeFindingKey(item?.findingFingerprint);
-
   const evidenceFingerprint = normalizeFindingKey(item?.fingerprint);
 
   const evidenceTitle =
@@ -429,11 +484,8 @@ const findMatchingFindingIds = ({ item, findings, findingIds }) => {
   }
 
   if (item?.scannerId) {
-    const scannerFindings = findings.filter(
-      (finding) => finding.scannerId === item.scannerId,
-    );
-
-    return scannerFindings
+    return findings
+      .filter((finding) => finding.scannerId === item.scannerId)
       .map((finding) => findingIds.get(getFindingKey(finding)))
       .filter(Boolean);
   }
@@ -447,6 +499,10 @@ const getFindingIdsForEvidence = ({ item, findings, findingIds }) =>
     findings,
     findingIds,
   });
+
+/*
+ * Evidence normalization and persistence
+ */
 
 const normalizeHeaders = (headers) => {
   if (!headers || typeof headers !== "object" || Array.isArray(headers)) {
@@ -527,7 +583,6 @@ const buildPersistedEvidence = ({ item, findingId, scannerId, targetId }) => {
       : null;
 
   const requestMethod = item?.method ?? sourceRequest?.method ?? null;
-
   const requestUrl = item?.url ?? sourceRequest?.url ?? null;
 
   const requestHeaders = normalizeHeaders(
@@ -572,10 +627,10 @@ const buildPersistedEvidence = ({ item, findingId, scannerId, targetId }) => {
   const observationExpected =
     item?.observation?.expected ?? item?.expected ?? null;
 
-  const observationActual = item?.observation?.actual ?? item?.actual ?? null;
+  const observationActual =
+    item?.observation?.actual ?? item?.actual ?? null;
 
   const effectiveMethod = requestMethod ?? sourceResponse?.method ?? null;
-
   const effectiveUrl = requestUrl ?? sourceResponse?.url ?? null;
 
   const effectiveHeaders =
@@ -592,13 +647,9 @@ const buildPersistedEvidence = ({ item, findingId, scannerId, targetId }) => {
     targetId,
 
     ...(item?.parameter != null ? { parameter: item.parameter } : {}),
-
     ...(item?.payload != null ? { payload: item.payload } : {}),
-
     ...(item?.confidence != null ? { confidence: item.confidence } : {}),
-
     ...(item?.cwe != null ? { cwe: item.cwe } : {}),
-
     ...(item?.owasp != null ? { owasp: item.owasp } : {}),
   };
 
@@ -614,7 +665,9 @@ const buildPersistedEvidence = ({ item, findingId, scannerId, targetId }) => {
     "metadata",
   ]);
 
-  const evidenceType = validTypes.has(item?.type) ? item.type : "http_exchange";
+  const evidenceType = validTypes.has(item?.type)
+    ? item.type
+    : "http_exchange";
 
   return {
     ownerId: undefined,
@@ -710,29 +763,18 @@ const persistEvidenceForFinding = async ({
       null,
 
     requestMethod: evidence.request?.method ?? evidence.method ?? null,
-
     requestUrl: evidence.request?.url ?? evidence.url ?? null,
-
     responseStatus:
       evidence.response?.statusCode ?? evidence.statusCode ?? null,
-
     evidenceType: evidence.type,
-
     parameter: evidence.metadata?.parameter ?? item?.parameter ?? null,
-
     observation: evidence.observation?.description ?? evidence.summary ?? null,
-
     expected: evidence.observation?.expected ?? null,
-
     actual: evidence.observation?.actual ?? null,
-
     requestParameters: evidence.request?.parameters ?? null,
-
     requestBody: evidence.request?.body ?? null,
-
     responseBodySnippet:
       evidence.response?.bodySnippet ?? evidence.bodyExcerpt ?? null,
-
     payload: evidence.metadata?.payload ?? null,
   });
 
@@ -763,6 +805,10 @@ const persistEvidenceForFinding = async ({
   return persistedEvidence;
 };
 
+/*
+ * Persist findings, evidence, fingerprints, and verification records.
+ */
+
 const persistScanResults = async ({
   ownerId,
   scanId,
@@ -784,7 +830,6 @@ const persistScanResults = async ({
   });
 
   const normalizedFindings = attachFindingFingerprints(findings);
-
   const orderedFindings = sortFindingsByRisk(normalizedFindings);
 
   console.info(
@@ -819,7 +864,6 @@ const persistScanResults = async ({
     });
 
     const findingKey = getFindingKey(finding);
-
     const fingerprint = normalizeFindingKey(finding.fingerprint);
 
     if (!fingerprint) {
@@ -894,10 +938,6 @@ const persistScanResults = async ({
       findingIds,
     });
 
-    /*
-     * Evidence can be valid even if it does not
-     * match a vulnerability finding.
-     */
     const evidenceFindingIds =
       findingIdList.length > 0 ? findingIdList : [null];
 
@@ -980,6 +1020,10 @@ const persistScanResults = async ({
   };
 };
 
+/*
+ * Enterprise company-rule evaluation
+ */
+
 const evaluateEnterpriseCompanyRules = async ({
   ownerId,
   isGuest,
@@ -999,7 +1043,7 @@ const evaluateEnterpriseCompanyRules = async ({
 
   const planDefinition = getPlan(plan ?? "free");
 
-  const enabled = Boolean(planDefinition?.integrations?.companyRules);
+  const enabled = planDefinition.integrations?.companyRules === true;
 
   if (
     !enabled ||
@@ -1034,7 +1078,14 @@ const buildDeletedScanResult = ({ scanId, ownerId, targetId }) => ({
   status: "deleted",
 });
 
+/*
+ * Main scan worker
+ */
+
 const processScanJob = async (job) => {
+  /*
+   * Never destructure or trust a plan from job.data.
+   */
   const {
     ownerId,
     scanId,
@@ -1044,18 +1095,20 @@ const processScanJob = async (job) => {
     companyRuleIds = [],
     scopeSnapshot = null,
     options = {},
+    credentialReference = null,
     isGuest = false,
-    plan = "free",
   } = job.data;
 
   const startedAt = Date.now();
+
+  let credentialsForScan = null;
+  let retainCredentialsForRetry = false;
 
   recordScanStarted();
 
   try {
     /*
-     * Check before changing status. A job left in Redis after
-     * deletion must not transition the scan back to running.
+     * Do not transition a deleted scan back to running.
      */
     await assertWorkerCanContinue({
       ownerId,
@@ -1087,10 +1140,8 @@ const processScanJob = async (job) => {
       }
 
       /*
-       * Retry comparison persistence when a previous attempt
-       * completed the scan but failed to save the comparison.
-       *
-       * Do not rerun scanners or change the completed status.
+       * Retry comparison persistence without rerunning scanners or
+       * changing the status of an already-completed scan.
        */
       if (currentScan?.status === "completed" && currentScan?.completedAt) {
         try {
@@ -1125,11 +1176,66 @@ const processScanJob = async (job) => {
         };
       }
 
-      const error = new Error("The scan could not transition to running.");
+      throw createWorkerError(
+        "The scan could not transition to running.",
+        409,
+        "SCAN_STATUS_TRANSITION_FAILED",
+      );
+    }
 
-      error.code = "SCAN_STATUS_TRANSITION_FAILED";
+    /*
+     * Resolve the current subscription after confirming that this is
+     * a scan execution rather than a comparison-only retry.
+     */
+    const effectivePlan = await resolveWorkerPlan({
+      ownerId,
+      isGuest,
+    });
 
-      throw error;
+    const effectivePlanName = effectivePlan.name;
+
+    /*
+     * Fail closed if the scan record says credentials were provided
+     * but the queue payload has no vault reference.
+     *
+     * This prevents an intended authenticated scan from silently
+     * continuing as an unauthenticated scan.
+     */
+    const credentialsWereProvided =
+      runningScan.credentials?.credentialProvided === true;
+
+    if (credentialsWereProvided && !credentialReference) {
+      throw createWorkerError(
+        "The temporary credential reference is missing. Submit the scan again.",
+        410,
+        "SCAN_CREDENTIAL_REFERENCE_MISSING",
+      );
+    }
+
+    /*
+     * Retrieve credentials only from the encrypted Redis vault.
+     *
+     * Guests cannot use authenticated scanning. A subscription change
+     * between queue acceptance and execution is enforced here.
+     */
+    if (credentialReference) {
+      if (isGuest || effectivePlan.authenticationScanning !== true) {
+        throw createWorkerError(
+          "Authentication scanning is not available on the current plan.",
+          403,
+          "AUTHENTICATION_SCANNING_NOT_AVAILABLE",
+        );
+      }
+
+      credentialsForScan = await getCredentials(credentialReference);
+
+      if (!credentialsForScan) {
+        throw createWorkerError(
+          "Temporary scan credentials are missing or expired. Submit the scan again.",
+          410,
+          "SCAN_CREDENTIALS_EXPIRED",
+        );
+      }
     }
 
     await notifyScanStarted({
@@ -1146,11 +1252,11 @@ const processScanJob = async (job) => {
     const storedTarget = await targetRepository.findById(ownerId, targetId);
 
     if (!storedTarget) {
-      const error = new Error("Scan target was not found.");
-
-      error.code = "SCAN_TARGET_NOT_FOUND";
-
-      throw error;
+      throw createWorkerError(
+        "Scan target was not found.",
+        404,
+        "SCAN_TARGET_NOT_FOUND",
+      );
     }
 
     const scanTarget = {
@@ -1164,8 +1270,7 @@ const processScanJob = async (job) => {
     const engineSelection = buildEngineSelection(selection);
 
     /*
-     * Crawl results are stored separately. If crawling fails,
-     * selected security scanners may still run.
+     * Crawl failures are non-fatal to the selected security scanners.
      */
     let crawlResult = null;
 
@@ -1180,15 +1285,11 @@ const processScanJob = async (job) => {
         ownerId,
         scanId,
         targetUrl: scanTarget.url,
-        plan: isGuest ? "free" : plan,
+        plan: effectivePlanName,
         headers: {},
         scopeSnapshot,
       });
     } catch (error) {
-      /*
-       * A deletion error must stop the worker immediately.
-       * Other crawl errors are non-fatal for the selected scanners.
-       */
       if (isDeletedScanError(error)) {
         return buildDeletedScanResult({
           scanId,
@@ -1214,6 +1315,10 @@ const processScanJob = async (job) => {
       isGuest,
     });
 
+    /*
+     * Plaintext credentials are passed directly to the scan engine.
+     * They are not copied into the BullMQ payload or worker logs.
+     */
     const result = await executeScan({
       scan: {
         id: scanId,
@@ -1224,7 +1329,8 @@ const processScanJob = async (job) => {
       target: scanTarget,
       selection: engineSelection,
       ownerId,
-      credentials: sanitizeCredentials(),
+      credentials: credentialsForScan,
+
       options,
       scopeSnapshot,
 
@@ -1246,18 +1352,10 @@ const processScanJob = async (job) => {
       isGuest,
     });
 
-    let companyRuleAnalysis = {
-      enabled: false,
-      rulesEvaluated: 0,
-      violatedRules: 0,
-      findings: [],
-      evaluations: [],
-    };
-
-    companyRuleAnalysis = await evaluateEnterpriseCompanyRules({
+    const companyRuleAnalysis = await evaluateEnterpriseCompanyRules({
       ownerId,
       isGuest,
-      plan,
+      plan: effectivePlanName,
       companyRuleIds,
       scannerResults: result.scannerResults || [],
     });
@@ -1280,7 +1378,7 @@ const processScanJob = async (job) => {
         event: "scan.company_rules.completed",
         scanId,
         ownerId,
-        plan,
+        plan: effectivePlanName,
         companyRuleIds,
         enabled: companyRuleAnalysis.enabled,
         rulesEvaluated: companyRuleAnalysis.rulesEvaluated,
@@ -1289,7 +1387,6 @@ const processScanJob = async (job) => {
     );
 
     const analyzedFindings = attachFindingFingerprints(result.findings || []);
-
     const risk = calculateRisk(analyzedFindings);
 
     await assertWorkerCanContinue({
@@ -1316,8 +1413,7 @@ const processScanJob = async (job) => {
     });
 
     /*
-     * AI failure does not fail a completed scan.
-     * AI processing is skipped if the scan has been deleted.
+     * AI failure is non-fatal to the scan.
      */
     let aiAnalysis = {
       enabled: false,
@@ -1445,10 +1541,9 @@ const processScanJob = async (job) => {
       },
 
       /*
-       * Preserve per-scanner outcomes so comparisons and trends
-       * can exclude scanners that failed or were not run.
+       * Per-scanner outcomes allow comparisons and trends to exclude
+       * scanners that failed or were not run.
        */
-
       scannerOutcomes: buildScannerOutcomes({
         selection: engineSelection,
         scannerResults: result.scannerResults || [],
@@ -1463,11 +1558,6 @@ const processScanJob = async (job) => {
       statusFields.completedAt = finishedAt;
     }
 
-    /*
-     * Check that the scan is still running immediately before
-     * finalization. The repository update must use a conditional
-     * MongoDB update that cannot overwrite status "deleted".
-     */
     await assertScanCanFinish({
       ownerId,
       scanId,
@@ -1491,18 +1581,15 @@ const processScanJob = async (job) => {
         });
       }
 
-      const error = new Error(
+      throw createWorkerError(
         "The scan could not be finalized because its status changed.",
+        409,
+        "SCAN_STATUS_TRANSITION_FAILED",
       );
-
-      error.code = "SCAN_STATUS_TRANSITION_FAILED";
-
-      throw error;
     }
 
     /*
-     * Update target counters only after a successful transition
-     * to completed. updateLastScanned is timestamp-only.
+     * Update target counters only after a successful completion.
      */
     if (finalStatus === "completed") {
       await targetRepository.incrementScanCount(ownerId, targetId);
@@ -1521,12 +1608,8 @@ const processScanJob = async (job) => {
       }).catch(() => {});
 
       /*
-       * Automatically compare this completed scan against
-       * the immediately previous eligible completed scan.
-       *
-       * If comparison persistence fails, the scan remains
-       * completed and BullMQ retries through the comparison-only
-       * branch. The scanners are not executed again.
+       * If comparison persistence fails, leave the scan completed.
+       * BullMQ can retry comparison without rerunning the scanners.
        */
       try {
         await createAndPersistComparisonForScan({
@@ -1588,19 +1671,14 @@ const processScanJob = async (job) => {
     };
   } catch (error) {
     /*
-     * A comparison retry must not enter the ordinary scan-failure
-     * path. Rethrow it so BullMQ can retry without changing the
-     * already-completed scan to failed.
+     * Comparison-only retries must not mark an already-completed scan
+     * as failed. They do not need the scan credentials.
      */
     if (error?.scanComparisonRetry === true) {
+      retainCredentialsForRetry = false;
       throw error;
     }
 
-    /*
-     * Deletion is an intentional lifecycle action, not a scan
-     * failure. Do not overwrite deleted status, send failure
-     * notifications, or retry the job as a failed scan.
-     */
     if (isDeletedScanError(error)) {
       return buildDeletedScanResult({
         scanId,
@@ -1609,10 +1687,6 @@ const processScanJob = async (job) => {
       });
     }
 
-    /*
-     * If the scan was deleted while another operation was running,
-     * do not mark it failed.
-     */
     const currentScan = await scanRepository
       .findAnyById(ownerId, scanId)
       .catch(() => null);
@@ -1626,7 +1700,6 @@ const processScanJob = async (job) => {
     }
 
     const errorCode = error?.code || "SCAN_EXECUTION_FAILED";
-
     const errorMessage = error?.message || "Scan execution failed.";
 
     if (errorCode === "GUEST_SESSION_EXPIRED") {
@@ -1640,9 +1713,33 @@ const processScanJob = async (job) => {
     }
 
     /*
-     * The repository must conditionally update only non-deleted
-     * scans. A null result means the status changed or the scan
-     * is no longer eligible for this transition.
+     * BullMQ attemptsMade counts previous failed attempts.
+     * The next attempt number is therefore attemptsMade + 1.
+     */
+    const configuredAttempts = Math.max(
+      1,
+      Number(job.opts?.attempts) || 1,
+    );
+
+    const nextAttemptNumber = Number(job.attemptsMade ?? 0) + 1;
+
+    const retryExpected =
+      nextAttemptNumber < configuredAttempts &&
+      !TERMINAL_SCAN_ERROR_CODES.has(errorCode);
+
+    /*
+     * Keep the vault reference only when a retry is expected and
+     * the failure is potentially recoverable.
+     *
+     * The vault's TTL remains a fallback if the worker crashes.
+     */
+    if (credentialReference && retryExpected) {
+      retainCredentialsForRetry = true;
+    }
+
+    /*
+     * Never overwrite a deleted scan.
+     * The repository must enforce valid status transitions.
      */
     const failedScan = await scanRepository
       .updateStatus(ownerId, scanId, "failed", {
@@ -1675,8 +1772,38 @@ const processScanJob = async (job) => {
     }).catch(() => {});
 
     throw error;
+  } finally {
+    /*
+     * Drop the worker's local reference to the plaintext credentials.
+     *
+     * Delete the Redis vault entry after success, cancellation, expiry,
+     * permanent failure, or the final failed attempt.
+     *
+     * Retain it only when another BullMQ attempt is expected.
+     */
+    credentialsForScan = null;
+
+    if (credentialReference && !retainCredentialsForRetry) {
+      try {
+        await deleteCredentials(credentialReference);
+      } catch (cleanupError) {
+        console.error(
+          JSON.stringify({
+            event: "scan.credentials.cleanup_failed",
+            scanId,
+            ownerId,
+            errorCode:
+              cleanupError?.code ?? "CREDENTIAL_CLEANUP_FAILED",
+          }),
+        );
+      }
+    }
   }
 };
+
+/*
+ * Worker factory
+ */
 
 const createScanWorker = () =>
   new Worker(environment.queue.scanName, processScanJob, {
@@ -1684,4 +1811,9 @@ const createScanWorker = () =>
     concurrency: environment.queue.scanConcurrency,
   });
 
-export { SCAN_JOB_NAME, enqueueScanJob, processScanJob, createScanWorker };
+export {
+  SCAN_JOB_NAME,
+  enqueueScanJob,
+  processScanJob,
+  createScanWorker,
+};

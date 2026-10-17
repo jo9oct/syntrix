@@ -1,14 +1,19 @@
 // STATUS: UPDATED
-// File: src/services/companyRule.service.js
+// FILE: src/services/companyRule.service.js
 
 import mongoose from "mongoose";
 
 import { getPlan } from "../access/plan.service.js";
+import { resolveEffectivePlanName } from "../access/subscription.service.js";
 
 import * as companyRuleRepository from "../database/repositories/companyRule.repository.js";
 
-const assertCompanyRulesAccess = () => {
-  const plan = getPlan();
+const assertCompanyRulesAccess = async ({ ownerId } = {}) => {
+  const planName = await resolveEffectivePlanName({
+    userId: ownerId,
+  });
+
+  const plan = getPlan(planName);
 
   if (plan.integrations?.companyRules !== true) {
     const error = new Error(
@@ -112,9 +117,12 @@ const handleRepositoryError = (error) => {
 };
 
 const createRule = async ({ ownerId, data }) => {
-  assertCompanyRulesAccess();
-
   const normalizedOwnerId = assertOwnerId(ownerId);
+
+  await assertCompanyRulesAccess({
+    ownerId: normalizedOwnerId,
+  });
+
   const preparedData = prepareRuleData(data);
 
   try {
@@ -128,9 +136,12 @@ const createRule = async ({ ownerId, data }) => {
 };
 
 const getRule = async ({ ownerId, ruleId }) => {
-  assertCompanyRulesAccess();
-
   const normalizedOwnerId = assertOwnerId(ownerId);
+
+  await assertCompanyRulesAccess({
+    ownerId: normalizedOwnerId,
+  });
+
   const normalizedRuleId = assertRuleId(ruleId);
 
   const rule = await companyRuleRepository.findById(
@@ -151,17 +162,22 @@ const getRule = async ({ ownerId, ruleId }) => {
 };
 
 const listRules = async ({ ownerId, options = {} }) => {
-  assertCompanyRulesAccess();
-
   const normalizedOwnerId = assertOwnerId(ownerId);
+
+  await assertCompanyRulesAccess({
+    ownerId: normalizedOwnerId,
+  });
 
   return companyRuleRepository.list(normalizedOwnerId, options);
 };
 
 const updateRule = async ({ ownerId, ruleId, data }) => {
-  assertCompanyRulesAccess();
-
   const normalizedOwnerId = assertOwnerId(ownerId);
+
+  await assertCompanyRulesAccess({
+    ownerId: normalizedOwnerId,
+  });
+
   const normalizedRuleId = assertRuleId(ruleId);
   const preparedData = prepareRuleData(data);
 
@@ -188,9 +204,12 @@ const updateRule = async ({ ownerId, ruleId, data }) => {
 };
 
 const deleteRule = async ({ ownerId, ruleId }) => {
-  assertCompanyRulesAccess();
-
   const normalizedOwnerId = assertOwnerId(ownerId);
+
+  await assertCompanyRulesAccess({
+    ownerId: normalizedOwnerId,
+  });
+
   const normalizedRuleId = assertRuleId(ruleId);
 
   const result = await companyRuleRepository.deleteById(

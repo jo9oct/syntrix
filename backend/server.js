@@ -1,8 +1,11 @@
 // STATUS: UPDATED
+// FILE: backend/server.js
+// PURPOSE: Unified Web Security Assessment + Sentrix Core API
 
 import http from "node:http";
 import express from "express";
 import crypto from "node:crypto";
+import cors from "cors";
 
 import environment from "./src/config/environment.js";
 import { connectDatabase } from "./src/config/database.js";
@@ -10,16 +13,26 @@ import { securityHeaders } from "./src/config/security.js";
 import { createRateLimiter } from "./src/middleware/rateLimit.middleware.js";
 import { notFoundMiddleware } from "./src/middleware/notFound.middleware.js";
 import { errorMiddleware } from "./src/middleware/error.middleware.js";
+
+//auth 
+import authRoutes from "./src/routes/auth.routes.js";
+
+// Existing Web Security Assessment routes.
 import healthRoutes from "./src/routes/health.routes.js";
 import scanRoutes from "./src/routes/scan.routes.js";
 import scannerRoutes from "./src/routes/scanner.routes.js";
 import findingRoutes from "./src/routes/finding.routes.js";
 import evidenceRoutes from "./src/routes/evidence.routes.js";
-import reportRoutes from "./src/routes/report.routes.js";
 import companyRuleRoutes from "./src/routes/companyRule.routes.js";
 import crawlRoutes from "./src/routes/crawl.routes.js";
 import targetRoutes from "./src/routes/target.routes.js";
 import scopeRoutes from "./src/routes/scope.routes.js";
+import reportRoutes from "./src/routes/report.routes.js";
+
+import paymentRoutes from "./src/routes/payment.routes.js";
+
+// Sentrix Core routes.
+import sentrixRoutes from "./src/routes/index.js";
 
 const app = express();
 
@@ -27,6 +40,7 @@ app.disable("x-powered-by");
 
 app.set("trust proxy", environment.isProduction ? 1 : false);
 
+// Request ID middleware.
 app.use((request, response, next) => {
   const requestId = request.headers["x-request-id"] || crypto.randomUUID();
 
@@ -37,6 +51,7 @@ app.use((request, response, next) => {
   next();
 });
 
+// Security headers from the existing Web Security Assessment server.
 app.use((request, response, next) => {
   response.setHeader(
     "X-Content-Type-Options",
@@ -74,6 +89,7 @@ app.use((request, response, next) => {
   next();
 });
 
+// Preserve the existing global rate-limiting policy.
 app.use(
   createRateLimiter({
     windowMs: 60_000,
@@ -86,6 +102,7 @@ app.use(
   }),
 );
 
+// Shared request-body parsing.
 app.use(
   express.json({
     limit: "1mb",
@@ -100,6 +117,7 @@ app.use(
   }),
 );
 
+// Preserve the first server's root response.
 app.get("/", (request, response) => {
   response.status(200).json({
     name: environment.appName,
@@ -109,28 +127,41 @@ app.get("/", (request, response) => {
   });
 });
 
+// Existing Web Security Assessment API routes.
+// These routes retain priority and their existing paths.
 app.use("/api/v1/health", healthRoutes);
-
 app.use("/api/v1/scans", scanRoutes);
-
 app.use("/api/v1/scanners", scannerRoutes);
-
 app.use("/api/v1/findings", findingRoutes);
-
 app.use("/api/v1/evidence", evidenceRoutes);
-
+app.use("/api/v1/company-rules", companyRuleRoutes);
+app.use("/api/v1/crawls", crawlRoutes);
+app.use("/api/v1/targets", targetRoutes);
+app.use("/api/v1/scopes", scopeRoutes);
+app.use("/api/v1/payment", paymentRoutes);
 app.use("/api/v1/reports", reportRoutes);
 
-app.use("/api/v1/company-rules", companyRuleRoutes);
+// Authentication routes
+app.use("/api/v1/auth", authRoutes);
 
-app.use("/api/v1/crawls", crawlRoutes);
-
-app.use("/api/v1/targets", targetRoutes);
-
-app.use("/api/v1/scopes", scopeRoutes);
+// Sentrix health endpoint.
+// The existing server's / root and /api/v1/health remain unchanged.
+app.get("/api/health", (request, response) => {
+  response.status(200).json({
+    status: "ok",
+    service: "sentrix-api",
+  });
+});
 
 app.use(notFoundMiddleware);
+app.use(errorMiddleware);
 
+// Sentrix Core API.
+// Mount only at /api to avoid collisions with the existing /api/v1 routes.
+app.use("/api", cors(), sentrixRoutes);
+
+// Keep the existing error handling and not-found middleware.
+app.use(notFoundMiddleware);
 app.use(errorMiddleware);
 
 const server = http.createServer(app);
@@ -180,8 +211,10 @@ const shutdown = async (signal) => {
 };
 
 const start = async () => {
+  // One MongoDB connection shared by both sets of Mongoose models.
   await connectDatabase();
 
+  // One HTTP server and one listening port.
   server.listen(environment.port, () => {
     console.info(
       JSON.stringify({

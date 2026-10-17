@@ -1,15 +1,21 @@
 // STATUS: UPDATED
+// FILE: worker.js
 
 import mongoose from "mongoose";
 
 import environment from "./src/config/environment.js";
 import { connectDatabase } from "./src/config/database.js";
 import { closeQueues } from "./src/config/queue.js";
+
 import { createScanWorker } from "./src/jobs/scan.job.js";
-import { createReportWorker } from "./src/jobs/report.job.js";
 import { createCleanupWorker } from "./src/jobs/cleanup.job.js";
 import { createNotificationWorker } from "./src/jobs/notification.job.js";
-import { startScheduler, stopScheduler } from "./src/scheduler/scheduler.js";
+import { createReportWorker } from "./src/jobs/report.job.js";
+
+import {
+  startScheduler,
+  stopScheduler,
+} from "./src/scheduler/scheduler.js";
 
 const workers = [];
 
@@ -74,22 +80,21 @@ const startWorker = async () => {
   await connectDatabase();
 
   const scanWorker = createScanWorker();
-
+  const cleanupWorker = createCleanupWorker();
+  const notificationWorker = createNotificationWorker();
   const reportWorker = createReportWorker();
 
-  const cleanupWorker = createCleanupWorker();
-
-  const notificationWorker = createNotificationWorker();
-
-  workers.push(scanWorker, reportWorker, cleanupWorker, notificationWorker);
+  workers.push(
+    scanWorker,
+    cleanupWorker,
+    notificationWorker,
+    reportWorker,
+  );
 
   registerWorkerLogging(scanWorker, "scan");
-
-  registerWorkerLogging(reportWorker, "report");
-
   registerWorkerLogging(cleanupWorker, "cleanup");
-
   registerWorkerLogging(notificationWorker, "notification");
+  registerWorkerLogging(reportWorker, "report");
 
   startScheduler();
 
@@ -99,9 +104,9 @@ const startWorker = async () => {
       environment: environment.nodeEnv,
       workers: [
         environment.queue.scanName,
-        environment.queue.reportName,
         environment.queue.cleanupName,
         environment.queue.notificationName,
+        environment.queue.reportName,
       ],
     }),
   );
@@ -124,7 +129,9 @@ const shutdown = async (signal) => {
   try {
     stopScheduler();
 
-    await Promise.all(workers.map((worker) => worker.close()));
+    await Promise.all(
+      workers.map((worker) => worker.close()),
+    );
 
     await closeQueues();
 
@@ -177,9 +184,15 @@ process.on("uncaughtException", (error) => {
 });
 
 process.on("unhandledRejection", (reason) => {
-  const message = reason instanceof Error ? reason.message : String(reason);
+  const message =
+    reason instanceof Error
+      ? reason.message
+      : String(reason);
 
-  const stack = reason instanceof Error ? reason.stack : null;
+  const stack =
+    reason instanceof Error
+      ? reason.stack
+      : null;
 
   console.error(
     JSON.stringify({

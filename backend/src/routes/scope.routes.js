@@ -1,4 +1,9 @@
+// STATUS: UPDATED
+// File: src/routes/scope.routes.js
+
 import { Router } from "express";
+
+import { protect } from "../middleware/auth.js";
 
 import {
   requireOwner,
@@ -15,31 +20,36 @@ import {
 
 const router = Router();
 
-// Scope management requires an explicit owner identity.
-// Do not run guest-session authorization on these routes.
-router.use((req, res, next) => {
-  const ownerId = req.headers["x-owner-id"];
+// Require a verified, authenticated, active registered user.
+router.use(protect);
 
-  if (typeof ownerId !== "string" || !ownerId.trim()) {
+// Derive the owner identity from the authenticated user.
+// Never trust x-owner-id or other client-supplied owner IDs.
+router.use((req, res, next) => {
+  const ownerId = req.user?._id;
+
+  if (!ownerId) {
     return res.status(401).json({
       error: {
         code: "AUTHENTICATION_REQUIRED",
-        message: "The x-owner-id header is required.",
+        message: "Authentication is required.",
       },
     });
   }
 
   req.auth = {
-    ownerId: ownerId.trim(),
+    ownerId: String(ownerId),
     userType: "user",
   };
 
   return next();
 });
 
+// Enforce authenticated owner identity and ownership matching.
 router.use(requireOwner);
 router.use(requireOwnerMatch);
 
+// Scope endpoints.
 router.post("/", createScopeController);
 router.get("/", listScopesController);
 router.get("/:scopeId", getScopeController);

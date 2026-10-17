@@ -1,0 +1,57 @@
+﻿<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta
+    name="viewport"
+    content="width=device-width, initial-scale=1.0"
+  />
+  <title>Security Assessment PDF</title>
+
+  <style>
+    body {
+      font-family: Arial, sans-serif;
+      font-size: 12px;
+      line-height: 1.5;
+      margin: 32px;
+    }
+
+    h1 {
+      font-size: 24px;
+    }
+
+    h2 {
+      font-size: 18px;
+      margin-top: 24px;
+    }
+
+    .finding {
+      margin-bottom: 18px;
+      padding-bottom: 12px;
+      border-bottom: 1px solid #ddd;
+    }
+
+    .severity {
+      font-weight: bold;
+      text-transform: uppercase;
+    }
+  </style>
+</head>
+
+<body>
+  <h1>Web Security Assessment Report</h1>
+
+  <h2>Target</h2>
+  <p>{{targetUrl}}</p>
+
+  <h2>Risk Score</h2>
+  <p>{{riskScore}}</p>
+
+  <h2>Risk Level</h2>
+  <p>{{riskLevel}}</p>
+
+  <h2>Findings</h2>
+
+  {{findings}}
+</body>
+</html>
