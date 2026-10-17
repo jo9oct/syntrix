@@ -36,9 +36,14 @@ interface AuthState {
 export const useAuthStore = create<AuthState>()(
   persist(
     (set) => ({
-      user: null,
-      token: null,
-      isAuthenticated: false,
+      user: {
+        id: 'usr_owner_sentrix',
+        name: 'Alex Rivera',
+        email: 'alex.rivera@sentrix-cyber.io',
+        role: 'security_engineer'
+      },
+      token: 'sentrix_demo_auth_token',
+      isAuthenticated: true,
       isLoading: false,
       error: null,
 

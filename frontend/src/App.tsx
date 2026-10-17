@@ -22,6 +22,9 @@ import { Remediation } from './pages/dashboard/remediation/Remediation';
 import { RetestPage } from './pages/dashboard/remediation/RetestPage';
 import { Admin } from './pages/dashboard/admin/Admin';
 import { Billing } from './pages/dashboard/billing/Billing';
+import { Scopes } from './pages/dashboard/scopes/Scopes';
+import { CompanyRules } from './pages/dashboard/rules/CompanyRules';
+import { DeletedScans } from './pages/dashboard/scans/DeletedScans';
 import { useAuthStore } from './store/authStore';
 
 const ProtectedRoute: React.FC<{ children: React.ReactNode }> = ({ children }) => {
@@ -57,6 +60,9 @@ function App() {
           <Route path="assessment/new" element={<AssessmentWizard />} />
           <Route path="assessment/:id/progress" element={<ScanProgress />} />
           <Route path="assessment/:id/results" element={<ScanResults />} />
+          <Route path="scopes" element={<Scopes />} />
+          <Route path="rules" element={<CompanyRules />} />
+          <Route path="scans/deleted" element={<DeletedScans />} />
           <Route path="remediation" element={<Remediation />} />
           <Route path="retest" element={<RetestPage />} />
           <Route path="admin" element={<Admin />} />

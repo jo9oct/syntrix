@@ -5,7 +5,7 @@ import {
   FileText, Settings, LogOut, Bell, ChevronDown,
   ShieldCheck, ArrowRightLeft, RotateCcw, Search, Globe,
   CheckCircle2, AlertTriangle, Shield, UserCheck, Code,
-  CreditCard, Menu, X, Sparkles
+  CreditCard, Menu, X, Sparkles, Network, Sliders, Trash2
 } from 'lucide-react';
 import { useAuthStore, type UserRole } from '../../store/authStore';
 
@@ -19,12 +19,15 @@ interface NavItemDef {
 
 const navItems: NavItemDef[] = [
   { to: '/dashboard', label: 'Dashboard', icon: LayoutDashboard, end: true },
-  { to: '/dashboard/projects', label: 'Projects', icon: FolderKanban },
+  { to: '/dashboard/projects', label: 'Targets & Inventory', icon: Globe },
   { to: '/dashboard/assessment/new', label: 'New Assessment', icon: ShieldCheck, roles: ['admin', 'security_engineer'] },
   { to: '/dashboard/findings', label: 'Findings', icon: ShieldAlert, roles: ['admin', 'security_engineer', 'client_owner', 'developer'] },
+  { to: '/dashboard/scopes', label: 'Security Scopes', icon: Network, roles: ['admin', 'security_engineer'] },
+  { to: '/dashboard/rules', label: 'Company Policies', icon: Sliders, roles: ['admin', 'security_engineer'] },
+  { to: '/dashboard/reports', label: 'Reports', icon: FileText, roles: ['admin', 'security_engineer', 'client_owner', 'malware_analyst'] },
+  { to: '/dashboard/scans/deleted', label: 'Deleted Scans', icon: Trash2, roles: ['admin', 'security_engineer'] },
   { to: '/dashboard/remediation', label: 'Remediation', icon: ArrowRightLeft, roles: ['admin', 'developer', 'security_engineer'] },
   { to: '/dashboard/retest', label: 'Retesting', icon: RotateCcw, roles: ['admin', 'security_engineer', 'developer'] },
-  { to: '/dashboard/reports', label: 'Reports', icon: FileText, roles: ['admin', 'security_engineer', 'client_owner', 'malware_analyst'] },
   { to: '/dashboard/malware', label: 'Malware Analysis', icon: Bug, roles: ['admin', 'malware_analyst', 'security_engineer'] },
   { to: '/dashboard/billing', label: 'Billing & Plans', icon: CreditCard, roles: ['admin', 'client_owner'] },
   { to: '/dashboard/admin', label: 'Administration', icon: Settings, roles: ['admin'] },
