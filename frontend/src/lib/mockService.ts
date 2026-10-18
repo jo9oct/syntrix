@@ -51,6 +51,25 @@ function saveToStorage<T>(key: string, value: T): void {
   }
 }
 
+export interface MockUserRecord {
+  id: string;
+  name: string;
+  email: string;
+  role: string;
+  org: string;
+  status: 'active' | 'suspended';
+  lastLogin?: string;
+  createdAt?: string;
+}
+
+const INITIAL_MOCK_USERS: MockUserRecord[] = [
+  { id: 'u-1', name: 'System Admin', email: 'admin@sentrix.local', role: 'admin', org: 'Sentrix Ops', status: 'active', lastLogin: '10 min ago', createdAt: '2026-03-01T10:00:00Z' },
+  { id: 'u-2', name: 'Jane Smith', email: 'jane@sentrix.local', role: 'security_engineer', org: 'Sentrix Ops', status: 'active', lastLogin: '25 min ago', createdAt: '2026-03-02T11:00:00Z' },
+  { id: 'u-3', name: 'Sarah Connor', email: 'sarah@sentrix.local', role: 'malware_analyst', org: 'Sentrix Lab', status: 'active', lastLogin: '3 hours ago', createdAt: '2026-03-03T12:00:00Z' },
+  { id: 'u-4', name: 'John Doe', email: 'john@acmecorp.local', role: 'client_owner', org: 'Acme Corp', status: 'active', lastLogin: '1 day ago', createdAt: '2026-03-04T13:00:00Z' },
+  { id: 'u-5', name: 'Alex Rivera', email: 'dev@sentrix.local', role: 'developer', org: 'Acme Corp', status: 'active', lastLogin: '2 days ago', createdAt: '2026-03-05T14:00:00Z' },
+];
+
 class MockService {
   private scopes: Scope[] = loadFromStorage('scopes', INITIAL_MOCK_SCOPES);
   private rules: CompanySecurityRule[] = loadFromStorage('rules', INITIAL_MOCK_RULES);
@@ -60,6 +79,7 @@ class MockService {
   private evidence: Evidence[] = loadFromStorage('evidence', INITIAL_MOCK_EVIDENCE);
   private reports: Report[] = loadFromStorage('reports', INITIAL_MOCK_REPORTS);
   private crawledPages: CrawledPage[] = loadFromStorage('crawledPages', INITIAL_MOCK_CRAWLED_PAGES);
+  private adminUsers: MockUserRecord[] = loadFromStorage('admin_users', INITIAL_MOCK_USERS);
 
   // ==========================================
   // 1. SCANNERS (API 1)
@@ -531,6 +551,53 @@ class MockService {
 
   public getAllReports(): Report[] {
     return [...this.reports];
+  }
+
+  // ==========================================
+  // 10. ADMIN USERS (Platform Governance)
+  // ==========================================
+  public getAdminUsers(): MockUserRecord[] {
+    return [...this.adminUsers];
+  }
+
+  public createAdminUser(data: { name: string; email: string; password?: string; role: string; organization?: string }): MockUserRecord {
+    const cleanEmail = (data.email || '').trim().toLowerCase();
+    const existingIndex = this.adminUsers.findIndex(u => u.email.toLowerCase() === cleanEmail);
+    if (existingIndex !== -1) {
+      const updated: MockUserRecord = {
+        ...this.adminUsers[existingIndex],
+        name: data.name,
+        role: data.role,
+        org: data.organization || this.adminUsers[existingIndex].org,
+        status: 'active'
+      };
+      this.adminUsers[existingIndex] = updated;
+      saveToStorage('admin_users', this.adminUsers);
+      return updated;
+    }
+
+    const newUser: MockUserRecord = {
+      id: `u-${Date.now()}`,
+      name: data.name,
+      email: cleanEmail,
+      role: data.role,
+      org: data.organization || 'Sentrix Operations',
+      status: 'active',
+      lastLogin: 'Never',
+      createdAt: new Date().toISOString()
+    };
+
+    this.adminUsers = [newUser, ...this.adminUsers];
+    saveToStorage('admin_users', this.adminUsers);
+    return newUser;
+  }
+
+  public toggleAdminUserStatus(userId: string): MockUserRecord | null {
+    const user = this.adminUsers.find(u => u.id === userId);
+    if (!user) return null;
+    user.status = user.status === 'active' ? 'suspended' : 'active';
+    saveToStorage('admin_users', this.adminUsers);
+    return user;
   }
 
   // Reset to factory defaults

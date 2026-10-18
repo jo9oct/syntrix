@@ -429,6 +429,38 @@ api.interceptors.request.use(async (config) => {
     }
   }
 
+  // 10. Admin Users & Platform Governance
+  const adminUserStatusMatch = url.match(/admin\/users\/([^/]+)\/status$/i);
+  if (adminUserStatusMatch && (method === 'put' || method === 'patch')) {
+    const updated = mockService.toggleAdminUserStatus(adminUserStatusMatch[1]);
+    config.adapter = async () => mockResponse({
+      success: true,
+      data: updated
+    });
+    return config;
+  }
+
+  if (url.match(/admin\/users/i)) {
+    if (method === 'get') {
+      const users = mockService.getAdminUsers();
+      config.adapter = async () => mockResponse({
+        success: true,
+        count: users.length,
+        data: users
+      });
+      return config;
+    }
+    if (method === 'post') {
+      const body = typeof config.data === 'string' ? JSON.parse(config.data) : config.data;
+      const newUser = mockService.createAdminUser(body);
+      config.adapter = async () => mockResponse({
+        success: true,
+        data: newUser
+      }, 201);
+      return config;
+    }
+  }
+
   // Auth mock endpoints (so login & register always work)
   if (url.match(/auth\/login/i) && method === 'post') {
     let email = '';

@@ -66,13 +66,19 @@ export const createUser = async (req, res) => {
       if (!org) {
         org = await Organization.create({
           name: organization,
-          ownerId: req.user._id,
+          ownerId: req.user?._id,
         });
       }
 
       orgId = org._id;
     } else {
-      const defaultOrg = await Organization.findOne();
+      let defaultOrg = await Organization.findOne();
+      if (!defaultOrg) {
+        defaultOrg = await Organization.create({
+          name: "Sentrix Operations",
+          ownerId: req.user?._id,
+        });
+      }
       orgId = defaultOrg?._id;
     }
 
