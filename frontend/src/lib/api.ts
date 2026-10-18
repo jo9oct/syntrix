@@ -431,15 +431,50 @@ api.interceptors.request.use(async (config) => {
 
   // Auth mock endpoints (so login & register always work)
   if (url.match(/auth\/login/i) && method === 'post') {
+    let email = '';
+    try {
+      const parsed = typeof config.data === 'string' ? JSON.parse(config.data) : config.data;
+      email = (parsed?.email || '').toLowerCase().trim();
+    } catch {
+      // ignore
+    }
+
+    let role = 'security_engineer';
+    let name = 'Jane Smith';
+    let id = 'usr_sec';
+
+    if (email.includes('admin')) {
+      role = 'admin';
+      name = 'System Admin';
+      id = 'usr_admin';
+    } else if (email.includes('dev')) {
+      role = 'developer';
+      name = 'Alex Rivera';
+      id = 'usr_dev';
+    } else if (email.includes('malware') || email.includes('sarah') || email.includes('analyst')) {
+      role = 'malware_analyst';
+      name = 'Sarah Connor';
+      id = 'usr_malware';
+    } else if (email.includes('john') || email.includes('owner') || email.includes('acmecorp')) {
+      role = 'client_owner';
+      name = 'John Doe';
+      id = 'usr_client';
+    } else if (email.includes('member')) {
+      role = 'client_member';
+      name = 'Team Member';
+      id = 'usr_member';
+    }
+
     config.adapter = async () => mockResponse({
       success: true,
       data: {
-        token: 'sentrix_jwt_demo_token_xyz',
+        token: `sentrix_jwt_${role}_token`,
         user: {
-          id: 'usr_owner_sentrix',
-          name: 'Security Engineer',
-          email: 'engineer@sentrix-cyber.io',
-          role: 'security_engineer'
+          id,
+          name,
+          email: email || `${role}@sentrix.local`,
+          role,
+          organizationId: 'org_acme_corp'
         }
       }
     });

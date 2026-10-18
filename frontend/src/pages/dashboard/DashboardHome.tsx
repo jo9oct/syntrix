@@ -24,6 +24,17 @@ export const DashboardHome: React.FC = () => {
   const [selectedEvidence, setSelectedEvidence] = useState<Evidence | null>(null);
 
   useEffect(() => {
+    if (user?.role === 'developer') {
+      navigate('/dashboard/remediation', { replace: true });
+      return;
+    }
+    if (user?.role === 'malware_analyst') {
+      navigate('/dashboard/malware', { replace: true });
+      return;
+    }
+  }, [user?.role, navigate]);
+
+  useEffect(() => {
     const fetchTelemetry = async () => {
       try {
         setLoading(true);

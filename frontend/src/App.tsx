@@ -25,12 +25,21 @@ import { Billing } from './pages/dashboard/billing/Billing';
 import { Scopes } from './pages/dashboard/scopes/Scopes';
 import { CompanyRules } from './pages/dashboard/rules/CompanyRules';
 import { DeletedScans } from './pages/dashboard/scans/DeletedScans';
-import { useAuthStore } from './store/authStore';
+import { useAuthStore, getRoleLandingPath, type UserRole } from './store/authStore';
 
 const ProtectedRoute: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const { isAuthenticated } = useAuthStore();
   if (!isAuthenticated) {
     return <Navigate to="/login" replace />;
+  }
+  return <>{children}</>;
+};
+
+const RoleGuard: React.FC<{ allowedRoles: UserRole[]; children: React.ReactNode }> = ({ allowedRoles, children }) => {
+  const { user } = useAuthStore();
+  const role = (user?.role || 'security_engineer') as UserRole;
+  if (!allowedRoles.includes(role)) {
+    return <Navigate to={getRoleLandingPath(role)} replace />;
   }
   return <>{children}</>;
 };
@@ -49,24 +58,79 @@ function App() {
         <Route path="/login" element={<Login />} />
         <Route path="/register" element={<Register />} />
 
-        {/* Authenticated routes strictly protected */}
+        {/* Authenticated routes strictly protected & role-guarded */}
         <Route path="/dashboard" element={<ProtectedRoute><AppShell /></ProtectedRoute>}>
           <Route index element={<DashboardHome />} />
           <Route path="projects" element={<Projects />} />
           <Route path="projects/:id" element={<ProjectDetail />} />
           <Route path="findings" element={<Findings />} />
-          <Route path="malware" element={<MalwareAnalysis />} />
           <Route path="reports" element={<Reports />} />
-          <Route path="assessment/new" element={<AssessmentWizard />} />
+
+          {/* Platform Administration (Admin only) */}
+          <Route path="admin" element={
+            <RoleGuard allowedRoles={['admin']}>
+              <Admin />
+            </RoleGuard>
+          } />
+
+          {/* Malware Analysis Lab (Malware Analyst, Security Engineer, Admin) */}
+          <Route path="malware" element={
+            <RoleGuard allowedRoles={['admin', 'malware_analyst', 'security_engineer']}>
+              <MalwareAnalysis />
+            </RoleGuard>
+          } />
+
+          {/* Remediation Kanban Board (Developer, Security Engineer, Admin) */}
+          <Route path="remediation" element={
+            <RoleGuard allowedRoles={['admin', 'developer', 'security_engineer']}>
+              <Remediation />
+            </RoleGuard>
+          } />
+
+          {/* Retesting Queue (Developer, Security Engineer, Admin) */}
+          <Route path="retest" element={
+            <RoleGuard allowedRoles={['admin', 'developer', 'security_engineer']}>
+              <RetestPage />
+            </RoleGuard>
+          } />
+
+          {/* Assessment Wizard (Security Engineer, Admin) */}
+          <Route path="assessment/new" element={
+            <RoleGuard allowedRoles={['admin', 'security_engineer']}>
+              <AssessmentWizard />
+            </RoleGuard>
+          } />
+
+          {/* Security Scopes & Company Policies (Security Engineer, Admin) */}
+          <Route path="scopes" element={
+            <RoleGuard allowedRoles={['admin', 'security_engineer']}>
+              <Scopes />
+            </RoleGuard>
+          } />
+
+          <Route path="rules" element={
+            <RoleGuard allowedRoles={['admin', 'security_engineer']}>
+              <CompanyRules />
+            </RoleGuard>
+          } />
+
+          {/* Deleted Scans Archive (Security Engineer, Admin) */}
+          <Route path="scans/deleted" element={
+            <RoleGuard allowedRoles={['admin', 'security_engineer']}>
+              <DeletedScans />
+            </RoleGuard>
+          } />
+
+          {/* Subscription & Billing (Client Owner, Admin) */}
+          <Route path="billing" element={
+            <RoleGuard allowedRoles={['admin', 'client_owner']}>
+              <Billing />
+            </RoleGuard>
+          } />
+
+          {/* Telemetry and Results */}
           <Route path="assessment/:id/progress" element={<ScanProgress />} />
           <Route path="assessment/:id/results" element={<ScanResults />} />
-          <Route path="scopes" element={<Scopes />} />
-          <Route path="rules" element={<CompanyRules />} />
-          <Route path="scans/deleted" element={<DeletedScans />} />
-          <Route path="remediation" element={<Remediation />} />
-          <Route path="retest" element={<RetestPage />} />
-          <Route path="admin" element={<Admin />} />
-          <Route path="billing" element={<Billing />} />
         </Route>
 
         <Route path="*" element={<Navigate to="/" replace />} />
