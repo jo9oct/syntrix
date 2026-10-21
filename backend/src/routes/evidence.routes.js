@@ -47,22 +47,10 @@ const verifyBearerIfPresent = (req, res, next) => {
   return protect(req, res, next);
 };
 
-router.use(
-  verifyBearerIfPresent,
-  requireAuthorization,
-  requireOwner,
-);
+router.use(verifyBearerIfPresent, requireAuthorization, requireOwner);
 
-router.get(
-  "/",
-  validate(scanEvidenceQuerySchema, "query"),
-  listEvidenceByScan,
-);
+router.get("/", validate(scanEvidenceQuerySchema, "query"), listEvidenceByScan);
 
-router.get(
-  "/:evidenceId",
-  validate(evidenceIdSchema, "params"),
-  getEvidence,
-);
+router.get("/:evidenceId", validate(evidenceIdSchema, "params"), getEvidence);
 
 export default router;

@@ -1,6 +1,13 @@
-// STATUS: UPDATED
 
-import { calculateFindingCounts, normalizeScannerFindings } from "./finding.js";
+/*
+ * STATUS: UPDATED
+ * File: src/engine/resultProcessor.js
+ */
+
+import {
+  calculateFindingCounts,
+  normalizeScannerFindings,
+} from "./finding.js";
 
 import { createPendingVerification } from "./verification.js";
 
@@ -23,6 +30,8 @@ const normalizeEvidence = (scannerId, evidence) => {
       findingKey: item.findingKey ?? null,
 
       fingerprint: item.fingerprint ?? null,
+
+      description: item.description ?? undefined,
 
       request: item.request ?? undefined,
 
@@ -51,50 +60,43 @@ const processScannerResult = ({ scanner, result }) => {
     throw new TypeError(`Scanner ${scanner.id} returned an invalid result.`);
   }
 
-  const findings = normalizeScannerFindings(scanner.id, result.findings);
+  const findings = normalizeScannerFindings(
+    scanner.id,
+    result.findings,
+  );
 
-  const evidence = normalizeEvidence(scanner.id, result.evidence);
+  const evidence = normalizeEvidence(
+    scanner.id,
+    result.evidence,
+  );
 
   const fingerprints = Array.isArray(result.fingerprints)
     ? result.fingerprints.map((fingerprint) => ({
         scannerId: scanner.id,
-
         ...fingerprint,
       }))
     : [];
 
   const verificationRecords = findings.map((finding) =>
-    createPendingVerification({
-      finding,
-    }),
+    createPendingVerification({ finding }),
   );
 
   return {
     scannerId: scanner.id,
-
     category: scanner.category,
-
     status: result.status ?? "completed",
-
     data: result.data ?? {},
-
     findings,
-
     evidence,
-
     fingerprints,
-
     verificationRecords,
-
     metadata: result.metadata ?? {},
   };
 };
 
 const mergeResults = (results) => {
   const findings = results.flatMap((result) => result.findings);
-
   const evidence = results.flatMap((result) => result.evidence);
-
   const fingerprints = results.flatMap((result) => result.fingerprints);
 
   const verificationRecords = results.flatMap(
@@ -103,15 +105,10 @@ const mergeResults = (results) => {
 
   return {
     scannerResults: results,
-
     findings,
-
     evidence,
-
     fingerprints,
-
     verificationRecords,
-
     counts: calculateFindingCounts(findings),
   };
 };

@@ -70,9 +70,7 @@ const getGuestIdFromCookie = (req) => {
     try {
       const guestId = normalizeOwnerId(decodeURIComponent(value));
 
-      return guestId && mongoose.isValidObjectId(guestId)
-        ? guestId
-        : null;
+      return guestId && mongoose.isValidObjectId(guestId) ? guestId : null;
     } catch {
       return null;
     }
@@ -235,9 +233,7 @@ const requireAuthenticatedUser = (req, res, next) => {
   const authenticatedUserId = getAuthenticatedUserId(req);
 
   if (!authenticatedUserId) {
-    const error = new Error(
-      "A verified registered-user identity is required.",
-    );
+    const error = new Error("A verified registered-user identity is required.");
 
     error.statusCode = 401;
     error.code = "AUTHENTICATION_REQUIRED";
@@ -328,8 +324,8 @@ const isGuestRequest = (req) => getUserType(req) === "guest";
 const isAuthenticatedRequest = (req) =>
   Boolean(
     getAuthenticatedUserId(req) &&
-      req.auth?.ownerId === getAuthenticatedUserId(req) &&
-      req.auth?.userType === "user",
+    req.auth?.ownerId === getAuthenticatedUserId(req) &&
+    req.auth?.userType === "user",
   );
 
 export {

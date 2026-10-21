@@ -2,7 +2,7 @@ import React, { useState } from 'react';
 import { GlassCard } from '../../components/ui/GlassCard';
 import { ShieldCheck, Mail, Lock, ArrowRight, CheckCircle2 } from 'lucide-react';
 import { Link, useNavigate, useLocation } from 'react-router-dom';
-import { useAuthStore } from '../../store/authStore';
+import { useAuthStore, getRoleLandingPath } from '../../store/authStore';
 import { PublicHeader } from '../../components/layout/PublicHeader';
 
 export const Login: React.FC = () => {
@@ -24,15 +24,15 @@ export const Login: React.FC = () => {
     setError(null);
 
     try {
-      await login(email, password);
-      const currentUser = useAuthStore.getState().user;
-      if (currentUser) {
-        navigate('/dashboard');
+      const user = await login(email, password);
+      if (user) {
+        const destination = getRoleLandingPath(user.role);
+        navigate(destination, { replace: true });
       } else {
-        setError(useAuthStore.getState().error || 'Invalid email or password.');
+        setError('Invalid email or password.');
       }
     } catch (err: any) {
-      setError(err?.response?.data?.error || 'Invalid email or password.');
+      setError(err?.message || 'Invalid email or password.');
     } finally {
       setLoading(false);
     }
@@ -45,12 +45,12 @@ export const Login: React.FC = () => {
 
       <div className="w-full max-w-lg relative z-10 pt-20">
         <GlassCard className="p-8 border-brand-cyan/20 shadow-2xl backdrop-blur-3xl">
-          <div className="flex flex-col items-center mb-6">
+          <div className="flex flex-col items-center mb-6 text-center">
             <div className="w-12 h-12 rounded-xl bg-gradient-brand flex items-center justify-center mb-3 shadow-lg shadow-brand-cyan/20">
               <ShieldCheck size={24} className="text-white" />
             </div>
-            <h2 className="text-2xl font-bold text-white">Sign In to Sentrix</h2>
-            <p className="text-text-muted mt-1 text-sm text-center">
+            <h2 className="text-2xl font-bold text-white tracking-tight">Sign In to Sentrix</h2>
+            <p className="text-text-muted mt-1 text-sm">
               Authenticate with your assigned role credentials
             </p>
           </div>

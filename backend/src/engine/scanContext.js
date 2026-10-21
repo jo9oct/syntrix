@@ -1,75 +1,144 @@
-/* STATUS: UPDATED
- * File: src/engine/scanContext.js
- */
-
+﻿
 import { createSession } from "../core/session.js";
 import { createScope, isInScope } from "../core/scope.js";
 import { createRateLimiter } from "../core/rateLimiter.js";
 import { createProgressTracker } from "../core/progress.js";
-import { createLogger } from "../core/logger.js";
+import { logger } from "../core/logger.js";
 
-const MAX_DISCOVERED_TARGETS = 10;
+const MAX_DISCOVERED_URLS = 10;
+const MAX_DISCOVERED_URL_LENGTH = 2048;
 
-const normalizeDiscoveredUrls = ({ urls = [], scope }) => {
-  if (!Array.isArray(urls)) {
+const isPlainObject = (value) =>
+  value !== null &&
+  typeof value === "object" &&
+  !Array.isArray(value);
+
+const createContextError = (message, code) => {
+  const error = new Error(message);
+  error.code = code;
+  return error;
+};
+
+const normalizeAuthenticatedRequest = ({
+  authenticatedRequest,
+  targetUrl,
+}) => {
+  if (
+    authenticatedRequest === null ||
+    authenticatedRequest === undefined
+  ) {
+    return null;
+  }
+
+  if (
+    !isPlainObject(authenticatedRequest) ||
+    typeof authenticatedRequest.authOrigin !== "string" ||
+    typeof authenticatedRequest.resolveHeaders !== "function"
+  ) {
+    throw createContextError(
+      "The authenticated request configuration is invalid.",
+      "INVALID_AUTHENTICATED_REQUEST",
+    );
+  }
+
+  let parsedTargetUrl;
+  let parsedAuthOrigin;
+
+  try {
+    parsedTargetUrl = new URL(targetUrl);
+    parsedAuthOrigin = new URL(authenticatedRequest.authOrigin);
+  } catch {
+    throw createContextError(
+      "The authenticated request origin is invalid.",
+      "INVALID_AUTHENTICATED_REQUEST",
+    );
+  }
+
+  const authOrigin = authenticatedRequest.authOrigin;
+
+  if (
+    !["http:", "https:"].includes(parsedAuthOrigin.protocol) ||
+    parsedAuthOrigin.username ||
+    parsedAuthOrigin.password ||
+    parsedAuthOrigin.origin !== authOrigin
+  ) {
+    throw createContextError(
+      "The authenticated origin must be a normalized HTTP or HTTPS origin.",
+      "INVALID_AUTHENTICATED_REQUEST",
+    );
+  }
+
+  if (parsedTargetUrl.origin !== authOrigin) {
+    throw createContextError(
+      "The authenticated origin must match the scan target origin.",
+      "AUTHENTICATED_ORIGIN_MISMATCH",
+    );
+  }
+
+  return Object.freeze({
+    authOrigin,
+    resolveHeaders: authenticatedRequest.resolveHeaders,
+  });
+};
+
+const normalizeDiscoveredUrls = ({ discoveredUrls, scope }) => {
+  if (!Array.isArray(discoveredUrls)) {
     return [];
   }
 
+  const normalizedUrls = [];
   const seen = new Set();
-  const normalized = [];
 
-  for (const value of urls) {
+  for (const value of discoveredUrls) {
     if (
-      normalized.length >= MAX_DISCOVERED_TARGETS ||
-      typeof value !== "string"
+      typeof value !== "string" ||
+      value.length === 0 ||
+      value.length > MAX_DISCOVERED_URL_LENGTH
     ) {
-      break;
+      continue;
     }
 
+    let parsedUrl;
+
     try {
-      const url = new URL(value);
-
-      if (
-        !["http:", "https:"].includes(url.protocol) ||
-        url.username ||
-        url.password
-      ) {
-        continue;
-      }
-
-      url.hash = "";
-
-      const candidate = url.toString();
-
-      if (seen.has(candidate)) {
-        continue;
-      }
-
-      /*
-       * Discovered URLs must belong to the effective scope.
-       * Do not rely on same-origin checks: a saved scope may
-       * explicitly authorize additional hostnames or ports.
-       */
-      if (!isInScope(candidate, scope)) {
-        continue;
-      }
-
-      /*
-       * Preserve the existing behavior of accepting only
-       * discovered URLs with query parameters.
-       */
-      if (!url.searchParams.size) {
-        continue;
-      }
-
-      seen.add(candidate);
-      normalized.push(candidate);
+      parsedUrl = new URL(value);
     } catch {
-      // Ignore malformed or out-of-scope discovered URLs.
+      continue;
+    }
+
+    if (!["http:", "https:"].includes(parsedUrl.protocol)) {
+      continue;
+    }
+
+    if (parsedUrl.username || parsedUrl.password) {
+      continue;
+    }
+
+    parsedUrl.hash = "";
+
+    const normalizedUrl = parsedUrl.toString();
+
+    if (seen.has(normalizedUrl)) {
+      continue;
+    }
+
+    if (!isInScope(normalizedUrl, scope)) {
+      continue;
+    }
+
+    if (parsedUrl.searchParams.size === 0) {
+      continue;
+    }
+
+    seen.add(normalizedUrl);
+    normalizedUrls.push(normalizedUrl);
+
+    if (normalizedUrls.length >= MAX_DISCOVERED_URLS) {
+      break;
     }
   }
 
-  return normalized;
+  return normalizedUrls;
 };
 
 const createScanContext = ({
@@ -78,108 +147,130 @@ const createScanContext = ({
   selection,
   signal,
   ownerId,
-  credentials,
   options = {},
   discoveredUrls = [],
   scopeSnapshot = null,
+  authenticatedRequest = null,
 }) => {
   if (!scan?.id) {
-    throw new Error("Scan context requires a scan ID.");
-  }
-
-  if (!target?.url) {
-    throw new Error("Scan context requires a target URL.");
-  }
-
-  let parsedTarget;
-
-  try {
-    parsedTarget = new URL(target.url);
-  } catch {
-    throw new Error("Scan context requires a valid target URL.");
-  }
-
-  if (
-    !["http:", "https:"].includes(parsedTarget.protocol) ||
-    parsedTarget.username ||
-    parsedTarget.password
-  ) {
-    throw new Error(
-      "Scan context requires an HTTP or HTTPS URL without embedded credentials.",
+    throw createContextError(
+      "A scan ID is required.",
+      "INVALID_SCAN_CONTEXT",
     );
   }
 
-  /*
-   * Use the immutable snapshot captured when the scan was created.
-   * This prevents later saved-scope edits from silently changing
-   * the authorization boundary of an already queued scan.
-   */
+  if (typeof target?.url !== "string" || !target.url) {
+    throw createContextError(
+      "A target URL is required.",
+      "INVALID_SCAN_TARGET",
+    );
+  }
+
+  if (!ownerId) {
+    throw createContextError(
+      "An owner ID is required.",
+      "INVALID_SCAN_CONTEXT",
+    );
+  }
+
+  let parsedTargetUrl;
+
+  try {
+    parsedTargetUrl = new URL(target.url);
+  } catch {
+    throw createContextError(
+      "The target URL is invalid.",
+      "INVALID_SCAN_TARGET",
+    );
+  }
+
+  if (!["http:", "https:"].includes(parsedTargetUrl.protocol)) {
+    throw createContextError(
+      "Only HTTP and HTTPS targets are supported.",
+      "INVALID_SCAN_TARGET_PROTOCOL",
+    );
+  }
+
+  if (parsedTargetUrl.username || parsedTargetUrl.password) {
+    throw createContextError(
+      "Target URLs must not contain embedded credentials.",
+      "INVALID_SCAN_TARGET",
+    );
+  }
+
+  if (
+    !selection ||
+    !Array.isArray(selection.selectedScannerIds) ||
+    selection.selectedScannerIds.length === 0
+  ) {
+    throw createContextError(
+      "At least one scanner must be selected.",
+      "NO_SCANNERS_SELECTED",
+    );
+  }
+
   const scope = createScope(target.url, scopeSnapshot);
 
   if (!isInScope(target.url, scope)) {
-    const error = new Error("The scan target is outside the effective scope.");
-
-    error.code = "SCAN_TARGET_OUT_OF_SCOPE";
-    error.statusCode = 403;
-
-    throw error;
+    throw createContextError(
+      "The target URL is outside the effective scan scope.",
+      "TARGET_OUT_OF_SCOPE",
+    );
   }
 
-  const safeDiscoveredUrls = normalizeDiscoveredUrls({
-    urls: discoveredUrls,
+  const normalizedAuthRequest = normalizeAuthenticatedRequest({
+    authenticatedRequest,
+    targetUrl: target.url,
+  });
+
+  const normalizedDiscoveredUrls = normalizeDiscoveredUrls({
+    discoveredUrls,
     scope,
   });
 
+  const safeOptions = isPlainObject(options) ? options : {};
+
+  /*
+   * Authentication headers and cookies must come from the
+   * worker-owned authenticated request resolver.
+   */
   const session = createSession({
-    headers: options.headers ?? {},
-    cookies: options.cookies ?? {},
+    headers: {},
+    cookies: {},
   });
 
-  const rateLimiter = createRateLimiter({
-    requestsPerSecond: Number(options.requestsPerSecond ?? 2),
-  });
+  const rateLimiter = createRateLimiter();
 
+  // The tracker expects an options object, not a number.
   const progress = createProgressTracker({
     total: selection.selectedScannerIds.length,
   });
 
-  const logger = createLogger({
-    component: "scan-engine",
-    scanId: scan.id,
+  const request = Object.freeze({
+    authenticated: normalizedAuthRequest,
+    scope,
+    signal,
   });
 
   return {
-    scan: {
-      id: scan.id,
-      ownerId: scan.ownerId ?? ownerId,
-    },
-
-    target: {
-      id: target.id,
-      url: target.url,
-      normalizedUrl: target.normalizedUrl ?? target.url,
-      hostname: target.hostname ?? parsedTarget.hostname,
-    },
-
-    discoveredUrls: safeDiscoveredUrls,
-
-    selection: {
-      mode: selection.mode,
-      recon: [...selection.recon],
-      security: [...selection.security],
-      selectedScannerIds: [...selection.selectedScannerIds],
-    },
-
+    scan,
+    target,
+    selection,
     ownerId,
-    credentials: credentials ?? null,
-    options: { ...options },
+    options: safeOptions,
     signal,
+
     session,
     scope,
+    discoveredUrls: normalizedDiscoveredUrls,
+
+    authenticatedRequest: normalizedAuthRequest,
+    request,
+
     rateLimiter,
     progress,
     logger,
   };
 };
 
-export { createScanContext, MAX_DISCOVERED_TARGETS };
+export { createScanContext, normalizeDiscoveredUrls };

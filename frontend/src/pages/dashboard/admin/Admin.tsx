@@ -96,7 +96,7 @@ export const Admin: React.FC = () => {
       });
 
       if (data?.data) {
-        setUsers(prev => [data.data, ...prev]);
+        setUsers(prev => [data.data, ...prev.filter(u => u.id !== data.data.id && u.email !== data.data.email)]);
         setShowInviteModal(false);
         setInviteName('');
         setInviteEmail('');

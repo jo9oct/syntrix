@@ -1,16 +1,15 @@
+// STATUS: UPDATED
+// File: src/scanners/csrf/scanner.js
+
 import { get } from "../../request/request.js";
-
+import { getAuthenticatedRequestOptions } from "../../request/authenticatedRequestOptions.js";
 import { createSecurityEvidence } from "../shared/evidenceBuilder.js";
-
 import { calculateConfidence } from "../shared/confidence.js";
-
 import { normalizeFinding } from "../shared/findingNormalizer.js";
-
 import {
   createSecurityScanner,
   getTargetUrl,
 } from "../shared/scannerContract.js";
-
 import { assertSafeUrl } from "../../recon/shared/resolver.js";
 
 const getForms = (body) => {
@@ -31,9 +30,7 @@ const hasStateChangingMethod = (form) =>
 
 const scanner = createSecurityScanner({
   id: "security.csrf",
-
   name: "CSRF Protection",
-
   description: "Performs a passive assessment of form-based CSRF protections.",
 
   async run(context) {
@@ -41,10 +38,14 @@ const scanner = createSecurityScanner({
 
     await assertSafeUrl(targetUrl);
 
+    const requestHeaders = context?.session?.getHeaders?.() ?? {};
+
+    const authenticatedRequestOptions = getAuthenticatedRequestOptions(context);
+
     const response = await get(targetUrl, {
       signal: context?.signal,
-
-      headers: context?.session?.getHeaders?.() ?? {},
+      headers: requestHeaders,
+      ...authenticatedRequestOptions,
     });
 
     const forms = getForms(response.data);
@@ -61,26 +62,18 @@ const scanner = createSecurityScanner({
       findings.push(
         normalizeFinding({
           scannerId: "security.csrf",
-
           title: "Potential Missing CSRF Protection",
-
           description:
             "A state-changing form was identified without an apparent CSRF token.",
-
           severity: "medium",
-
           confidence: calculateConfidence({
             confirmed: true,
           }),
-
           remediation:
             "Use framework-provided CSRF protection or an equivalent anti-CSRF mechanism for state-changing requests.",
-
           category: "csrf",
-
           metadata: {
             stateChangingForms: stateChangingForms.length,
-
             unprotectedForms: unprotectedForms.length,
           },
         }),
@@ -90,9 +83,7 @@ const scanner = createSecurityScanner({
     return {
       data: {
         forms: forms.length,
-
         stateChangingForms: stateChangingForms.length,
-
         unprotectedForms: unprotectedForms.length,
       },
 
@@ -102,21 +93,15 @@ const scanner = createSecurityScanner({
         createSecurityEvidence({
           request: {
             method: "GET",
-
             url: targetUrl,
-
-            headers: context?.session?.getHeaders?.() ?? {},
+            headers: requestHeaders,
           },
 
           response: {
             status: response.status,
-
             statusText: response.statusText,
-
             headers: response.headers,
-
             body: response.data,
-
             contentType: response.headers?.["content-type"],
           },
         }),

@@ -1,4 +1,8 @@
+// STATUS: UPDATED
+// File: src/scanners/openRedirect/scanner.js
+
 import { get } from "../../request/request.js";
+import { getAuthenticatedRequestOptions } from "../../request/authenticatedRequestOptions.js";
 import { createSecurityEvidence } from "../shared/evidenceBuilder.js";
 import { calculateConfidence } from "../shared/confidence.js";
 import { normalizeFinding } from "../shared/findingNormalizer.js";
@@ -9,6 +13,8 @@ import {
 import { getParameters, setParameter } from "../shared/parameterTester.js";
 import { getPayloads } from "../shared/payloadManager.js";
 import { assertSafeUrl } from "../../recon/shared/resolver.js";
+
+const MAX_TESTED_PARAMETERS = 5;
 
 const scanner = createSecurityScanner({
   id: "security.open-redirect",
@@ -21,13 +27,18 @@ const scanner = createSecurityScanner({
 
     await assertSafeUrl(targetUrl);
 
-    const parameters = getParameters(targetUrl);
+    const parameters = getParameters(targetUrl).slice(0, MAX_TESTED_PARAMETERS);
+
     const payload = getPayloads("openRedirect")[0];
+
+    const requestHeaders = context?.session?.getHeaders?.() ?? {};
+
+    const authenticatedRequestOptions = getAuthenticatedRequestOptions(context);
 
     const findings = [];
     const evidence = [];
 
-    for (const parameter of parameters.slice(0, 5)) {
+    for (const parameter of parameters) {
       if (context?.signal?.aborted) {
         break;
       }
@@ -38,9 +49,10 @@ const scanner = createSecurityScanner({
 
       const response = await get(testUrl, {
         signal: context?.signal,
-        headers: context?.session?.getHeaders?.() ?? {},
+        headers: requestHeaders,
         maxRedirects: 0,
         validateStatus: () => true,
+        ...authenticatedRequestOptions,
       });
 
       const location = response.headers?.location;
@@ -50,17 +62,17 @@ const scanner = createSecurityScanner({
           normalizeFinding({
             scannerId: "security.open-redirect",
             title: "Potential Open Redirect",
-            description: `The parameter "${parameter}" influenced a redirect toward a controlled external domain.`,
+            description: `The parameter "${parameter}" influenced a redirect toward the controlled external test domain.`,
             severity: "medium",
             confidence: calculateConfidence({
-              confirmed: true,
+              confirmed: false,
             }),
             remediation:
-              "Use allowlisted redirect destinations or server-side route identifiers.",
+              "Use allowlisted redirect destinations or server-side route identifiers. Validate redirect destinations after resolving relative URLs.",
             category: "open-redirect",
             metadata: {
               parameter,
-              location,
+              redirectLocationRedacted: true,
             },
           }),
         );
@@ -70,12 +82,17 @@ const scanner = createSecurityScanner({
             request: {
               method: "GET",
               url: testUrl,
-              headers: context?.session?.getHeaders?.() ?? {},
+              headers: {
+                ...requestHeaders,
+              },
             },
             response: {
               status: response.status,
               statusText: response.statusText,
               headers: response.headers,
+            },
+            metadata: {
+              redirectLocationRedacted: true,
             },
           }),
         );
@@ -84,11 +101,17 @@ const scanner = createSecurityScanner({
 
     return {
       data: {
-        testedParameters: parameters.slice(0, 5),
+        testedParameters: parameters,
         redirectDetected: findings.length > 0,
       },
       findings,
       evidence,
+      fingerprints: [],
+      verificationRecords: [],
+      metadata: {
+        cancelled: context?.signal?.aborted === true,
+        requestsTested: evidence.length,
+      },
     };
   },
 });

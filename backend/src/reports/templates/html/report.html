@@ -1,35 +1,32 @@
-﻿<!DOCTYPE html>
+﻿<!doctype html>
 <html lang="en">
-<head>
-  <meta charset="UTF-8" />
-  <meta
-    name="viewport"
-    content="width=device-width, initial-scale=1.0"
-  />
-  <title>Web Security Assessment Report</title>
-</head>
-<body>
-  <main>
-    <header>
-      <h1>Web Security Assessment Report</h1>
-      <p>{{generatedAt}}</p>
-    </header>
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Web Security Assessment Report</title>
+  </head>
+  <body>
+    <main>
+      <header>
+        <h1>Web Security Assessment Report</h1>
+        <p>{{generatedAt}}</p>
+      </header>
 
-    <section>
-      <h2>Target</h2>
-      <p>{{targetUrl}}</p>
-    </section>
+      <section>
+        <h2>Target</h2>
+        <p>{{targetUrl}}</p>
+      </section>
 
-    <section>
-      <h2>Risk</h2>
-      <p>Score: {{riskScore}}</p>
-      <p>Level: {{riskLevel}}</p>
-    </section>
+      <section>
+        <h2>Risk</h2>
+        <p>Score: {{riskScore}}</p>
+        <p>Level: {{riskLevel}}</p>
+      </section>
 
-    <section>
-      <h2>Findings</h2>
-      {{findings}}
-    </section>
-  </main>
-</body>
+      <section>
+        <h2>Findings</h2>
+        {{findings}}
+      </section>
+    </main>
+  </body>
 </html>

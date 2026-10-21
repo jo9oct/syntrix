@@ -1,7 +1,9 @@
-// STATUS: UPDATED
-// File: src/jobs/scan.job.js
 
-import { Worker } from "bullmq";
+/* STATUS: UPDATED
+ * File: src/jobs/scan.job.js
+ */
+
+import { UnrecoverableError, Worker } from "bullmq";
 
 import environment from "../config/environment.js";
 import { redisConnection, scanQueue } from "../config/queue.js";
@@ -13,7 +15,11 @@ import {
   createEvidenceFingerprint,
 } from "../analysis/fingerprint/fingerprint.js";
 
-import { calculateRisk, sortFindingsByRisk } from "../analysis/risk/risk.js";
+import {
+  calculateRisk,
+  sortFindingsByRisk,
+} from "../analysis/risk/risk.js";
+
 import { evaluateCompanyRules } from "../analysis/companyRules/companyRuleEvaluator.js";
 
 import { getPlan } from "../access/plan.service.js";
@@ -32,8 +38,15 @@ import {
   deleteCredentials,
 } from "../services/credentialVault.service.js";
 
+import {
+  createAuthenticatedBrowserSession,
+} from "../services/authenticatedBrowserSession.service.js";
+
 import { analyzeAndPersistFindings } from "../services/aiAnalysis.service.js";
-import { createAndPersistComparisonForScan } from "../services/scanComparison.service.js";
+
+import {
+  createAndPersistComparisonForScan,
+} from "../services/scanComparison.service.js";
 
 import {
   normalizeSelection,
@@ -65,18 +78,70 @@ import {
 
 const SCAN_JOB_NAME = "security-scan";
 
-/*
- * Error factories
- */
+const TERMINAL_SCAN_ERROR_CODES = new Set([
+  "SCAN_CREDENTIALS_EXPIRED",
+  "SCAN_CREDENTIAL_REFERENCE_MISSING",
+  "AUTHENTICATION_SCANNING_NOT_AVAILABLE",
+  "CREDENTIAL_ENCRYPTION_KEY_INVALID",
+  "SUBSCRIPTION_USER_REQUIRED",
+  "SUBSCRIPTION_USER_NOT_FOUND",
+  "SUBSCRIPTION_ACCOUNT_INACTIVE",
+  "SCAN_TARGET_NOT_FOUND",
+  "NO_SCANNERS_SELECTED",
+  "GUEST_SESSION_EXPIRED",
+  "SCAN_STATUS_TRANSITION_FAILED",
+]);
 
-const createGuestSessionExpiredError = () => {
-  const error = new Error("The guest session has expired.");
+const AUTHENTICATION_ERROR_CODES = new Set([
+  "AUTH_INVALID_TARGET",
+  "AUTH_CREDENTIALS_INVALID",
+  "AUTH_COOKIE_INVALID",
+  "AUTH_SESSION_UNCONFIRMED",
+  "AUTH_LOGIN_FORM_NOT_FOUND",
+  "AUTH_LOGIN_UNCONFIRMED",
+  "AUTH_FORM_FILL_FAILED",
+  "AUTH_CROSS_ORIGIN_REDIRECT",
+  "AUTH_CAPTCHA_REQUIRED",
+  "AUTH_MFA_REQUIRED",
+  "AUTHENTICATION_FAILED",
+  "AUTHENTICATED_COOKIE_RESOLUTION_FAILED",
+  "AUTHENTICATED_CRAWL_FAILED",
+  "INVALID_AUTHENTICATED_SESSION",
+]);
 
-  error.code = "GUEST_SESSION_EXPIRED";
-  error.statusCode = 410;
+const REDACTED_VALUE = "[REDACTED]";
 
+const SENSITIVE_KEY_PATTERN =
+  /password|passwd|secret|token|authorization|cookie|session|credential|api[-_]?key|access[-_]?key|refresh[-_]?token|client[-_]?secret|private[-_]?key/i;
+
+const SENSITIVE_HEADER_NAMES = new Set([
+  "authorization",
+  "proxy-authorization",
+  "cookie",
+  "cookie2",
+  "set-cookie",
+  "x-api-key",
+  "x-auth-token",
+  "x-access-token",
+  "x-refresh-token",
+  "x-csrf-token",
+  "x-xsrf-token",
+  "x-forwarded-authorization",
+]);
+
+const createWorkerError = (message, statusCode, code) => {
+  const error = new Error(message);
+  error.statusCode = statusCode;
+  error.code = code;
   return error;
 };
+
+const createGuestSessionExpiredError = () =>
+  createWorkerError(
+    "The guest session has expired.",
+    410,
+    "GUEST_SESSION_EXPIRED",
+  );
 
 const createComparisonRetryError = (cause) => {
   const error = new Error(
@@ -90,38 +155,455 @@ const createComparisonRetryError = (cause) => {
   return error;
 };
 
-const createWorkerError = (message, statusCode, code) => {
-  const error = new Error(message);
+const isAuthenticationError = (error) =>
+  AUTHENTICATION_ERROR_CODES.has(error?.code) ||
+  String(error?.code ?? "").startsWith("AUTH_");
 
-  error.statusCode = statusCode;
-  error.code = code;
+const isCancellationError = (error) =>
+  error?.name === "AbortError" ||
+  error?.code === "REQUEST_CANCELLED" ||
+  error?.code === "AUTH_CANCELLED" ||
+  error?.code === "SCAN_CANCELLED";
 
-  return error;
+const getAuthenticationFailureMessage = (error) => {
+  const messages = {
+    AUTH_COOKIE_INVALID:
+      "The supplied session cookie format is invalid.",
+
+    AUTH_SESSION_UNCONFIRMED:
+      "The session cookie could not be confirmed as authenticated.",
+
+    AUTH_LOGIN_UNCONFIRMED:
+      "The login attempt could not be confirmed. Credentials may be incorrect or another login step may be required.",
+
+    AUTH_LOGIN_FORM_NOT_FOUND:
+      "The expected login form was not found.",
+
+    AUTH_CROSS_ORIGIN_REDIRECT:
+      "Authentication redirected to another origin. Authentication credentials were not forwarded to that destination.",
+
+    AUTH_CAPTCHA_REQUIRED:
+      "The target requires CAPTCHA verification.",
+
+    AUTH_MFA_REQUIRED:
+      "The target requires multi-factor authentication.",
+
+    AUTH_FORM_FILL_FAILED:
+      "The login form could not be completed automatically.",
+
+    AUTH_INVALID_TARGET:
+      "The authentication target URL is invalid or unsupported.",
+
+    AUTHENTICATED_COOKIE_RESOLUTION_FAILED:
+      "The authenticated session cookies could not be retrieved.",
+
+    AUTHENTICATED_CRAWL_FAILED:
+      "Authenticated crawling failed. Publicly accessible pages will be scanned where possible.",
+
+    AUTHENTICATION_FAILED:
+      "The authenticated session could not be established.",
+
+    INVALID_AUTHENTICATED_SESSION:
+      "The authenticated session was invalid and could not be used.",
+  };
+
+  return (
+    messages[error?.code] ??
+    "Authentication could not be confirmed. Publicly accessible pages will be scanned where possible."
+  );
+};
+
+const createAuthenticationStatus = ({
+  status,
+  message,
+  errorCode = null,
+  authenticatedCoverageConfirmed = false,
+}) => ({
+  status,
+  message,
+  errorCode,
+  authenticatedCoverageConfirmed,
+  updatedAt: new Date(),
+});
+
+const logEvent = (event, details = {}) => {
+  console.info(
+    JSON.stringify({
+      event,
+      ...details,
+    }),
+  );
+};
+
+const logFailure = (event, details = {}) => {
+  console.error(
+    JSON.stringify({
+      event,
+      ...details,
+    }),
+  );
+};
+
+const isPlainObject = (value) =>
+  value !== null &&
+  typeof value === "object" &&
+  !Array.isArray(value);
+
+const normalizeFindingKey = (value) => {
+  if (typeof value !== "string") {
+    return null;
+  }
+
+  const normalized = value.trim();
+
+  return normalized.length > 0 ? normalized : null;
 };
 
 /*
- * Errors that retrying will not fix.
+ * Authenticated request-header resolver.
  *
- * These include invalid credentials configuration, missing credential
- * references, unavailable authentication features, and invalid or
- * inactive subscription ownership.
+ * Cookies are resolved only for the exact authenticated origin.
+ * The HTTP client must independently validate scope, destination,
+ * redirects, and DNS before using this resolver.
  */
 
-const TERMINAL_SCAN_ERROR_CODES = new Set([
-  "SCAN_CREDENTIALS_EXPIRED",
-  "SCAN_CREDENTIAL_REFERENCE_MISSING",
-  "AUTHENTICATION_SCANNING_NOT_AVAILABLE",
-  "CREDENTIAL_ENCRYPTION_KEY_INVALID",
-  "SUBSCRIPTION_USER_REQUIRED",
-  "SUBSCRIPTION_USER_NOT_FOUND",
-  "SUBSCRIPTION_ACCOUNT_INACTIVE",
-  "SCAN_TARGET_NOT_FOUND",
-  "NO_SCANNERS_SELECTED",
-  "GUEST_SESSION_EXPIRED",
-]);
+const createAuthenticatedHeaderResolver = (authenticatedSession) => {
+  if (
+    !authenticatedSession?.context ||
+    typeof authenticatedSession.targetOrigin !== "string"
+  ) {
+    throw createWorkerError(
+      "The authenticated browser session is invalid.",
+      500,
+      "INVALID_AUTHENTICATED_SESSION",
+    );
+  }
+
+  let authenticatedOrigin;
+
+  try {
+    const parsedOrigin = new URL(authenticatedSession.targetOrigin);
+
+    if (
+      !["http:", "https:"].includes(parsedOrigin.protocol) ||
+      parsedOrigin.username ||
+      parsedOrigin.password ||
+      parsedOrigin.origin !== authenticatedSession.targetOrigin
+    ) {
+      throw new Error("Invalid authenticated origin.");
+    }
+
+    authenticatedOrigin = parsedOrigin.origin;
+  } catch {
+    throw createWorkerError(
+      "The authenticated browser origin is invalid.",
+      500,
+      "INVALID_AUTHENTICATED_SESSION",
+    );
+  }
+
+  return async ({ url, signal } = {}) => {
+    if (signal?.aborted) {
+      const error = new Error("Authenticated request was cancelled.");
+      error.code = "REQUEST_CANCELLED";
+      throw error;
+    }
+
+    if (typeof url !== "string" || !url) {
+      throw new TypeError("Authenticated request URL is required.");
+    }
+
+    let requestUrl;
+
+    try {
+      requestUrl = new URL(url);
+    } catch {
+      throw new TypeError("Authenticated request URL is invalid.");
+    }
+
+    if (!["http:", "https:"].includes(requestUrl.protocol)) {
+      throw new Error("Unsupported authenticated request protocol.");
+    }
+
+    // A different scheme, hostname, or port means a different origin.
+    if (requestUrl.origin !== authenticatedOrigin) {
+      return {};
+    }
+
+    let cookies;
+
+    try {
+      cookies = await authenticatedSession.context.cookies(
+        requestUrl.toString(),
+      );
+    } catch {
+      const error = new Error(
+        "Could not resolve authenticated browser cookies.",
+      );
+
+      error.code = "AUTHENTICATED_COOKIE_RESOLUTION_FAILED";
+      throw error;
+    }
+
+    if (signal?.aborted) {
+      const error = new Error("Authenticated request was cancelled.");
+      error.code = "REQUEST_CANCELLED";
+      throw error;
+    }
+
+    if (!Array.isArray(cookies)) {
+      const error = new Error("Authenticated browser cookies are invalid.");
+      error.code = "AUTHENTICATED_COOKIE_RESOLUTION_FAILED";
+      throw error;
+    }
+
+    const cookieHeader = cookies
+      .filter(
+        (cookie) =>
+          cookie &&
+          typeof cookie.name === "string" &&
+          cookie.name.length > 0 &&
+          !/[;=\r\n]/.test(cookie.name) &&
+          typeof cookie.value === "string" &&
+          !/[\r\n]/.test(cookie.value),
+      )
+      .map((cookie) => `${cookie.name}=${cookie.value}`)
+      .join("; ");
+
+    return cookieHeader ? { cookie: cookieHeader } : {};
+  };
+};
 
 /*
- * Guest-session validation
+ * Redaction helpers.
+ */
+
+const redactHeaders = (headers) => {
+  if (!isPlainObject(headers)) {
+    return {};
+  }
+
+  return Object.fromEntries(
+    Object.entries(headers).map(([name, value]) => [
+      name,
+      SENSITIVE_HEADER_NAMES.has(name.toLowerCase()) ||
+      SENSITIVE_KEY_PATTERN.test(name)
+        ? REDACTED_VALUE
+        : typeof value === "string"
+          ? value.slice(0, 8192)
+          : value,
+    ]),
+  );
+};
+
+const redactUrl = (value) => {
+  if (typeof value !== "string" || value.length === 0) {
+    return value ?? null;
+  }
+
+  try {
+    const url = new URL(value);
+
+    url.username = "";
+    url.password = "";
+
+    for (const key of [...url.searchParams.keys()]) {
+      url.searchParams.set(key, REDACTED_VALUE);
+    }
+
+    url.hash = "";
+
+    return url.toString().slice(0, 2048);
+  } catch {
+    return "[URL REDACTED]";
+  }
+};
+
+const redactText = (value) => {
+  if (typeof value !== "string") {
+    return value;
+  }
+
+  let output = value;
+
+  output = output.replace(
+    /(["']?(?:password|passwd|secret|token|authorization|cookie|credential|api[-_]?key|access[-_]?key|refresh[-_]?token|client[-_]?secret|private[-_]?key)["']?\s*[:=]\s*)(["']?)[^"',\s&}]+/gi,
+    `$1${REDACTED_VALUE}`,
+  );
+
+  output = output.replace(
+    /\b(Basic|Bearer)\s+[A-Za-z0-9._~+/=-]+/gi,
+    `$1 ${REDACTED_VALUE}`,
+  );
+
+  output = output.replace(
+    /\b(cookie|set-cookie)\s*:\s*[^\r\n]*/gi,
+    `$1: ${REDACTED_VALUE}`,
+  );
+
+  return output.slice(0, 20_000);
+};
+
+const redactValue = (value, key = "", depth = 0) => {
+  if (SENSITIVE_KEY_PATTERN.test(key)) {
+    return REDACTED_VALUE;
+  }
+
+  if (value === null || value === undefined) {
+    return value ?? null;
+  }
+
+  if (depth > 8) {
+    return "[TRUNCATED]";
+  }
+
+  if (typeof value === "string") {
+    return redactText(value);
+  }
+
+  if (Array.isArray(value)) {
+    return value
+      .slice(0, 100)
+      .map((item) => redactValue(item, key, depth + 1));
+  }
+
+  if (isPlainObject(value)) {
+    return Object.fromEntries(
+      Object.entries(value)
+        .slice(0, 200)
+        .map(([childKey, childValue]) => [
+          childKey,
+          redactValue(childValue, childKey, depth + 1),
+        ]),
+    );
+  }
+
+  if (typeof value === "number" || typeof value === "boolean") {
+    return value;
+  }
+
+  return String(value).slice(0, 1000);
+};
+
+const sanitizeJobOptions = (options) => {
+  if (!isPlainObject(options)) {
+    return {};
+  }
+
+  const sanitize = (value, depth = 0) => {
+    if (depth > 8) {
+      return undefined;
+    }
+
+    if (Array.isArray(value)) {
+      return value
+        .slice(0, 100)
+        .map((item) => sanitize(item, depth + 1))
+        .filter((item) => item !== undefined);
+    }
+
+    if (!isPlainObject(value)) {
+      if (
+        typeof value === "string" &&
+        /^(Basic|Bearer)\s+/i.test(value.trim())
+      ) {
+        return REDACTED_VALUE;
+      }
+
+      return value;
+    }
+
+    const output = {};
+
+    for (const [key, childValue] of Object.entries(value).slice(0, 200)) {
+      // Do not put credentials or session material in the queue payload.
+      if (SENSITIVE_KEY_PATTERN.test(key)) {
+        continue;
+      }
+
+      if (key.toLowerCase() === "headers" && isPlainObject(childValue)) {
+        const safeHeaders = {};
+
+        for (const [headerName, headerValue] of Object.entries(childValue)) {
+          if (
+            SENSITIVE_HEADER_NAMES.has(headerName.toLowerCase()) ||
+            SENSITIVE_KEY_PATTERN.test(headerName)
+          ) {
+            continue;
+          }
+
+          safeHeaders[headerName] = sanitize(headerValue, depth + 1);
+        }
+
+        output[key] = safeHeaders;
+        continue;
+      }
+
+      const sanitizedValue = sanitize(childValue, depth + 1);
+
+      if (sanitizedValue !== undefined) {
+        output[key] = sanitizedValue;
+      }
+    }
+
+    return output;
+  };
+
+  return sanitize(options) ?? {};
+};
+
+const normalizeBody = (body) => {
+  if (body === undefined || body === null) {
+    return null;
+  }
+
+  const sanitized = redactValue(body);
+
+  if (typeof sanitized === "string") {
+    return sanitized.slice(0, 20_000);
+  }
+
+  try {
+    return JSON.stringify(sanitized).slice(0, 20_000);
+  } catch {
+    return "[BODY REDACTED]";
+  }
+};
+
+const normalizeParameters = (parameters) =>
+  isPlainObject(parameters) ? redactValue(parameters) : {};
+
+const getContentType = (headers) => {
+  if (!isPlainObject(headers)) {
+    return null;
+  }
+
+  const value =
+    headers["content-type"] ??
+    headers["Content-Type"] ??
+    null;
+
+  return typeof value === "string" ? value.slice(0, 512) : null;
+};
+
+const getBodyLength = (body) => {
+  if (body === undefined || body === null) {
+    return null;
+  }
+
+  if (typeof body === "string") {
+    return body.length;
+  }
+
+  try {
+    return JSON.stringify(body).length;
+  } catch {
+    return null;
+  }
+};
+
+/*
+ * Guest-session and scan-state validation.
  */
 
 const assertGuestSessionActive = async ({ ownerId, isGuest }) => {
@@ -140,35 +622,14 @@ const assertGuestSessionActive = async ({ ownerId, isGuest }) => {
   }
 };
 
-/*
- * A worker must not start or continue processing a deleted scan.
- *
- * Repository writes must also reject deleted scans to handle races
- * between a guard check and a subsequent write.
- */
-
 const assertWorkerCanContinue = async ({
   ownerId,
   scanId,
   isGuest = false,
 }) => {
-  await assertGuestSessionActive({
-    ownerId,
-    isGuest,
-  });
-
-  await assertScanWritable({
-    ownerId,
-    scanId,
-  });
+  await assertGuestSessionActive({ ownerId, isGuest });
+  await assertScanWritable({ ownerId, scanId });
 };
-
-/*
- * Resolve the plan from the authoritative user record.
- *
- * Never trust a plan included in BullMQ job data.
- * Guest scans always resolve to Free.
- */
 
 const resolveWorkerPlan = async ({ ownerId, isGuest }) => {
   const planName = await resolveEffectivePlanName({
@@ -180,12 +641,11 @@ const resolveWorkerPlan = async ({ ownerId, isGuest }) => {
 };
 
 /*
- * Scanner selection
+ * Scanner selection.
  */
 
 const buildEngineSelection = (selection) => {
   const normalizedSelection = normalizeSelection(selection);
-
   const selectedScannerIds = getSelectedScannerIds(normalizedSelection);
 
   if (selectedScannerIds.length === 0) {
@@ -207,8 +667,8 @@ const buildEngineSelection = (selection) => {
 /*
  * Enqueue a scan.
  *
- * Plaintext credentials must never be included in job data.
- * Only the temporary credential-vault reference may be queued.
+ * BullMQ receives only the temporary credential reference, never the
+ * plaintext credentials or the cookie header.
  */
 
 const enqueueScanJob = async ({
@@ -224,38 +684,28 @@ const enqueueScanJob = async ({
   isGuest = false,
   plan = "free",
 }) => {
-  if (!ownerId) {
-    throw new Error("ownerId is required to enqueue a scan job.");
-  }
-
-  if (!scanId) {
-    throw new Error("scanId is required to enqueue a scan job.");
-  }
-
-  if (!targetId) {
-    throw new Error("targetId is required to enqueue a scan job.");
-  }
-
-  if (!target?.url) {
-    throw new Error("target.url is required to enqueue a scan job.");
-  }
-
-  if (!selection) {
-    throw new Error("scan selection is required to enqueue a scan job.");
+  if (!ownerId || !scanId || !targetId || !target?.url || !selection) {
+    throw new Error(
+      "ownerId, scanId, targetId, target.url, and selection are required.",
+    );
   }
 
   const engineSelection = buildEngineSelection(selection);
   const normalizedCompanyRuleIds = normalizeCompanyRuleIds(companyRuleIds);
-
-  /*
-   * This validates company-rule availability at queue acceptance.
-   * The worker independently resolves the current plan from the database.
-   *
-   * The supplied plan is not saved in the queue payload.
-   */
   const acceptedPlan = getPlan(isGuest ? "free" : plan);
 
-  if (isGuest && normalizedCompanyRuleIds.length > 0) {
+  if (isGuest && credentialReference) {
+    throw createWorkerError(
+      "Guest scans cannot use authenticated scanning.",
+      403,
+      "AUTHENTICATION_SCANNING_NOT_AVAILABLE",
+    );
+  }
+
+  if (
+    normalizedCompanyRuleIds.length > 0 &&
+    (isGuest || acceptedPlan.integrations?.companyRules !== true)
+  ) {
     throw createWorkerError(
       "Company security rules are available only on the Enterprise plan.",
       403,
@@ -264,15 +714,27 @@ const enqueueScanJob = async ({
   }
 
   if (
-    normalizedCompanyRuleIds.length > 0 &&
-    acceptedPlan.integrations?.companyRules !== true
+    credentialReference !== null &&
+    (typeof credentialReference !== "string" ||
+      credentialReference.length === 0)
   ) {
-    throw createWorkerError(
-      "Company security rules are available only on the Enterprise plan.",
-      403,
-      "FEATURE_NOT_AVAILABLE",
+    throw new TypeError(
+      "credentialReference must be a non-empty string.",
     );
   }
+
+  if (
+    credentialReference &&
+    acceptedPlan.authenticationScanning !== true
+  ) {
+    throw createWorkerError(
+      "Authentication scanning is not available on the current plan.",
+      403,
+      "AUTHENTICATION_SCANNING_NOT_AVAILABLE",
+    );
+  }
+
+  const safeOptions = sanitizeJobOptions(options);
 
   return scanQueue.add(
     SCAN_JOB_NAME,
@@ -297,11 +759,9 @@ const enqueueScanJob = async ({
           }
         : null,
 
-      options,
+      options: safeOptions,
       credentialReference,
       isGuest: Boolean(isGuest),
-
-      // Never place the subscription plan or plaintext credentials here.
     },
     {
       jobId: `scan:${scanId}`,
@@ -310,18 +770,8 @@ const enqueueScanJob = async ({
 };
 
 /*
- * Finding and evidence matching
+ * Evidence-to-finding association.
  */
-
-const normalizeFindingKey = (value) => {
-  if (typeof value !== "string") {
-    return null;
-  }
-
-  const normalized = value.trim();
-
-  return normalized.length > 0 ? normalized : null;
-};
 
 const getFindingKey = (finding) =>
   normalizeFindingKey(finding?.fingerprint) ??
@@ -330,21 +780,19 @@ const getFindingKey = (finding) =>
   );
 
 const extractFindingTitleFromKey = (findingKey) => {
-  const normalizedKey = normalizeFindingKey(findingKey);
+  const normalized = normalizeFindingKey(findingKey);
 
-  if (!normalizedKey) {
+  if (!normalized) {
     return null;
   }
 
-  const separatorIndex = normalizedKey.lastIndexOf(":");
+  const separatorIndex = normalized.lastIndexOf(":");
 
   if (separatorIndex === -1) {
     return null;
   }
 
-  const title = normalizedKey.slice(separatorIndex + 1).trim();
-
-  return title.length > 0 ? title : null;
+  return normalizeFindingKey(normalized.slice(separatorIndex + 1));
 };
 
 const resolveFindingId = ({ item, findingIds }) => {
@@ -352,33 +800,15 @@ const resolveFindingId = ({ item, findingIds }) => {
     return item.findingId;
   }
 
-  const findingFingerprint = normalizeFindingKey(item?.findingFingerprint);
+  for (const key of [
+    item?.findingFingerprint,
+    item?.findingKey,
+    item?.fingerprint,
+  ]) {
+    const normalized = normalizeFindingKey(key);
 
-  if (findingFingerprint) {
-    const findingId = findingIds.get(findingFingerprint);
-
-    if (findingId) {
-      return findingId;
-    }
-  }
-
-  const findingKey = normalizeFindingKey(item?.findingKey);
-
-  if (findingKey) {
-    const findingId = findingIds.get(findingKey);
-
-    if (findingId) {
-      return findingId;
-    }
-  }
-
-  const evidenceFingerprint = normalizeFindingKey(item?.fingerprint);
-
-  if (evidenceFingerprint) {
-    const findingId = findingIds.get(evidenceFingerprint);
-
-    if (findingId) {
-      return findingId;
+    if (normalized && findingIds.has(normalized)) {
+      return findingIds.get(normalized);
     }
   }
 
@@ -386,90 +816,90 @@ const resolveFindingId = ({ item, findingIds }) => {
 };
 
 const findMatchingFindingIds = ({ item, findings, findingIds }) => {
-  const explicitFindingId = resolveFindingId({
-    item,
-    findingIds,
-  });
+  const explicitId = resolveFindingId({ item, findingIds });
 
-  if (explicitFindingId) {
-    return [explicitFindingId];
+  if (explicitId) {
+    return [explicitId];
   }
 
-  const findingKey = normalizeFindingKey(item?.findingKey);
   const findingFingerprint = normalizeFindingKey(item?.findingFingerprint);
   const evidenceFingerprint = normalizeFindingKey(item?.fingerprint);
+  const findingKey = normalizeFindingKey(item?.findingKey);
 
   const evidenceTitle =
-    normalizeFindingKey(item?.title) ?? extractFindingTitleFromKey(findingKey);
+    normalizeFindingKey(item?.title) ??
+    extractFindingTitleFromKey(findingKey);
 
   const evidenceDescription = normalizeFindingKey(item?.description);
 
-  if (findingFingerprint) {
-    const fingerprintMatches = findings.filter(
-      (finding) =>
-        normalizeFindingKey(finding.fingerprint) === findingFingerprint,
+  if (findingFingerprint || evidenceFingerprint) {
+    const fingerprint = findingFingerprint ?? evidenceFingerprint;
+
+    const matches = findings.filter(
+      (finding) => normalizeFindingKey(finding.fingerprint) === fingerprint,
     );
 
-    if (fingerprintMatches.length > 0) {
-      return fingerprintMatches
+    if (matches.length > 0) {
+      return matches
         .map((finding) => findingIds.get(getFindingKey(finding)))
         .filter(Boolean);
     }
   }
 
   if (evidenceTitle) {
-    const titleMatches = findings.filter(
+    let matches = findings.filter(
       (finding) => normalizeFindingKey(finding.title) === evidenceTitle,
     );
 
-    if (titleMatches.length === 1) {
-      const findingId = findingIds.get(getFindingKey(titleMatches[0]));
-
-      if (findingId) {
-        return [findingId];
-      }
-    }
-
-    if (titleMatches.length > 1 && item?.scannerId) {
-      const scannerTitleMatches = titleMatches.filter(
+    if (matches.length > 1 && item?.scannerId) {
+      matches = matches.filter(
         (finding) => finding.scannerId === item.scannerId,
       );
-
-      if (scannerTitleMatches.length === 1) {
-        const findingId = findingIds.get(getFindingKey(scannerTitleMatches[0]));
-
-        if (findingId) {
-          return [findingId];
-        }
-      }
     }
-  }
 
-  if (evidenceFingerprint) {
-    const fingerprintMatches = findings.filter(
-      (finding) =>
-        normalizeFindingKey(finding.fingerprint) === evidenceFingerprint,
-    );
-
-    if (fingerprintMatches.length > 0) {
-      return fingerprintMatches
-        .map((finding) => findingIds.get(getFindingKey(finding)))
-        .filter(Boolean);
+    if (matches.length === 1) {
+      const id = findingIds.get(getFindingKey(matches[0]));
+      if (id) return [id];
     }
   }
 
   if (evidenceDescription) {
-    const descriptionMatches = findings.filter(
+    const matches = findings.filter(
       (finding) =>
         normalizeFindingKey(finding.description) === evidenceDescription,
     );
 
-    if (descriptionMatches.length === 1) {
-      const findingId = findingIds.get(getFindingKey(descriptionMatches[0]));
+    if (matches.length === 1) {
+      const id = findingIds.get(getFindingKey(matches[0]));
+      if (id) return [id];
+    }
+  }
 
-      if (findingId) {
-        return [findingId];
-      }
+  // Match evidence to a unique finding using scanner-specific metadata.
+  const evidenceParameter = normalizeFindingKey(item?.metadata?.parameter);
+  const evidenceTechnique = normalizeFindingKey(item?.metadata?.technique);
+
+  if (evidenceParameter || evidenceTechnique) {
+    const matches = findings.filter((finding) => {
+      const findingParameter = normalizeFindingKey(
+        finding?.metadata?.parameter,
+      );
+      const findingTechnique = normalizeFindingKey(
+        finding?.metadata?.technique,
+      );
+
+      return (
+        (!item?.scannerId ||
+          normalizeFindingKey(finding?.scannerId) ===
+            normalizeFindingKey(item.scannerId)) &&
+        (!evidenceParameter || findingParameter === evidenceParameter) &&
+        (!evidenceTechnique || findingTechnique === evidenceTechnique)
+      );
+    });
+
+    if (matches.length === 1) {
+      const id = findingIds.get(getFindingKey(matches[0]));
+      if (id) return [id];
     }
   }
 
@@ -485,7 +915,11 @@ const findMatchingFindingIds = ({ item, findings, findingIds }) => {
 
   if (item?.scannerId) {
     return findings
-      .filter((finding) => finding.scannerId === item.scannerId)
+      .filter(
+        (finding) =>
+          normalizeFindingKey(finding.scannerId) ===
+          normalizeFindingKey(item.scannerId),
+      )
       .map((finding) => findingIds.get(getFindingKey(finding)))
       .filter(Boolean);
   }
@@ -493,105 +927,33 @@ const findMatchingFindingIds = ({ item, findings, findingIds }) => {
   return [];
 };
 
-const getFindingIdsForEvidence = ({ item, findings, findingIds }) =>
-  findMatchingFindingIds({
-    item,
-    findings,
-    findingIds,
-  });
-
 /*
- * Evidence normalization and persistence
+ * Evidence normalization and persistence.
  */
 
-const normalizeHeaders = (headers) => {
-  if (!headers || typeof headers !== "object" || Array.isArray(headers)) {
-    return {};
-  }
-
-  return headers;
-};
-
-const normalizeBody = (body) => {
-  if (body === undefined || body === null) {
-    return null;
-  }
-
-  if (typeof body === "string") {
-    return body.slice(0, 20_000);
-  }
-
-  try {
-    return JSON.stringify(body).slice(0, 20_000);
-  } catch {
-    return String(body).slice(0, 20_000);
-  }
-};
-
-const normalizeParameters = (parameters) => {
-  if (
-    !parameters ||
-    typeof parameters !== "object" ||
-    Array.isArray(parameters)
-  ) {
-    return {};
-  }
-
-  return parameters;
-};
-
-const getContentType = (headers) => {
-  if (!headers || typeof headers !== "object") {
-    return null;
-  }
-
-  const contentType =
-    headers["content-type"] ?? headers["Content-Type"] ?? null;
-
-  return typeof contentType === "string" ? contentType.slice(0, 512) : null;
-};
-
-const getBodyLength = (body) => {
-  if (body === undefined || body === null) {
-    return null;
-  }
-
-  if (typeof body === "string") {
-    return body.length;
-  }
-
-  try {
-    return JSON.stringify(body).length;
-  } catch {
-    return null;
-  }
-};
-
-const buildPersistedEvidence = ({ item, findingId, scannerId, targetId }) => {
-  const sourceRequest =
-    item?.request &&
-    typeof item.request === "object" &&
-    !Array.isArray(item.request)
-      ? item.request
-      : null;
-
-  const sourceResponse =
-    item?.response &&
-    typeof item.response === "object" &&
-    !Array.isArray(item.response)
-      ? item.response
-      : null;
+const buildPersistedEvidence = ({
+  item,
+  findingId,
+  scannerId,
+  targetId,
+}) => {
+  const sourceRequest = isPlainObject(item?.request) ? item.request : null;
+  const sourceResponse = isPlainObject(item?.response) ? item.response : null;
 
   const requestMethod = item?.method ?? sourceRequest?.method ?? null;
-  const requestUrl = item?.url ?? sourceRequest?.url ?? null;
 
-  const requestHeaders = normalizeHeaders(
+  const rawRequestUrl = item?.url ?? sourceRequest?.url ?? null;
+  const requestUrl = redactUrl(rawRequestUrl);
+
+  const requestHeaders = redactHeaders(
     item?.requestHeaders ??
       sourceRequest?.headers ??
       (item?.type === "request" ? item?.headers : null),
   );
 
-  const requestBody = normalizeBody(item?.requestBody ?? sourceRequest?.body);
+  const requestBody = normalizeBody(
+    item?.requestBody ?? sourceRequest?.body,
+  );
 
   const requestParameters = normalizeParameters(
     item?.parameters ?? sourceRequest?.parameters,
@@ -603,7 +965,7 @@ const buildPersistedEvidence = ({ item, findingId, scannerId, targetId }) => {
     sourceResponse?.status ??
     null;
 
-  const responseHeaders = normalizeHeaders(
+  const responseHeaders = redactHeaders(
     item?.responseHeaders ??
       sourceResponse?.headers ??
       (item?.type === "response" || item?.type === "http_exchange"
@@ -615,39 +977,58 @@ const buildPersistedEvidence = ({ item, findingId, scannerId, targetId }) => {
     item?.responseBody ?? sourceResponse?.body ?? item?.bodyExcerpt,
   );
 
-  const summary = item?.summary ?? item?.description ?? null;
+  const rawSummary = item?.summary ?? item?.description ?? null;
 
-  const observationDescription =
+  const summary =
+    typeof rawSummary === "string"
+      ? redactText(rawSummary).slice(0, 5000)
+      : null;
+
+  const rawObservationDescription =
     item?.observation?.description ??
     (typeof item?.observation === "string" ? item.observation : null) ??
     item?.description ??
     summary ??
     null;
 
-  const observationExpected =
+  const rawObservationExpected =
     item?.observation?.expected ?? item?.expected ?? null;
 
-  const observationActual =
+  const rawObservationActual =
     item?.observation?.actual ?? item?.actual ?? null;
 
   const effectiveMethod = requestMethod ?? sourceResponse?.method ?? null;
-  const effectiveUrl = requestUrl ?? sourceResponse?.url ?? null;
+
+  const effectiveUrl = redactUrl(
+    rawRequestUrl ?? sourceResponse?.url ?? null,
+  );
 
   const effectiveHeaders =
-    Object.keys(responseHeaders).length > 0 ? responseHeaders : requestHeaders;
+    Object.keys(responseHeaders).length > 0
+      ? responseHeaders
+      : requestHeaders;
+
+  const sourceMetadata = isPlainObject(item?.metadata)
+    ? redactValue(item.metadata)
+    : {};
 
   const metadata = {
-    ...(item?.metadata &&
-    typeof item.metadata === "object" &&
-    !Array.isArray(item.metadata)
-      ? item.metadata
-      : {}),
-
+    ...sourceMetadata,
     scannerId,
     targetId,
 
-    ...(item?.parameter != null ? { parameter: item.parameter } : {}),
-    ...(item?.payload != null ? { payload: item.payload } : {}),
+    ...(item?.parameter != null
+      ? {
+          parameter: redactText(String(item.parameter)).slice(0, 500),
+        }
+      : {}),
+
+    ...(item?.payload != null
+      ? {
+          payload: redactText(String(item.payload)).slice(0, 2000),
+        }
+      : {}),
+
     ...(item?.confidence != null ? { confidence: item.confidence } : {}),
     ...(item?.cwe != null ? { cwe: item.cwe } : {}),
     ...(item?.owasp != null ? { owasp: item.owasp } : {}),
@@ -690,24 +1071,26 @@ const buildPersistedEvidence = ({ item, findingId, scannerId, targetId }) => {
       headers: responseHeaders,
       bodySnippet: responseBody,
       contentType: getContentType(responseHeaders),
-      bodyLength: getBodyLength(sourceResponse?.body ?? item?.bodyExcerpt),
+      bodyLength: getBodyLength(
+        sourceResponse?.body ?? item?.bodyExcerpt,
+      ),
     },
 
     observation: {
       description:
-        typeof observationDescription === "string"
-          ? observationDescription.slice(0, 10_000)
-          : observationDescription,
+        typeof rawObservationDescription === "string"
+          ? redactText(rawObservationDescription).slice(0, 10_000)
+          : null,
 
       expected:
-        typeof observationExpected === "string"
-          ? observationExpected.slice(0, 10_000)
-          : observationExpected,
+        typeof rawObservationExpected === "string"
+          ? redactText(rawObservationExpected).slice(0, 10_000)
+          : null,
 
       actual:
-        typeof observationActual === "string"
-          ? observationActual.slice(0, 10_000)
-          : observationActual,
+        typeof rawObservationActual === "string"
+          ? redactText(rawObservationActual).slice(0, 10_000)
+          : null,
     },
 
     method: effectiveMethod,
@@ -716,13 +1099,10 @@ const buildPersistedEvidence = ({ item, findingId, scannerId, targetId }) => {
     headers: effectiveHeaders,
 
     bodyExcerpt: responseBody ?? requestBody,
-
-    summary: typeof summary === "string" ? summary.slice(0, 5_000) : summary,
-
+    summary,
     fingerprint: item?.fingerprint ?? null,
 
-    sensitiveDataRedacted: item?.sensitiveDataRedacted ?? true,
-
+    sensitiveDataRedacted: true,
     metadata,
   };
 };
@@ -736,11 +1116,7 @@ const persistEvidenceForFinding = async ({
   findingId = null,
   isGuest = false,
 }) => {
-  await assertWorkerCanContinue({
-    ownerId,
-    scanId,
-    isGuest,
-  });
+  await assertWorkerCanContinue({ ownerId, scanId, isGuest });
 
   const evidence = buildPersistedEvidence({
     item,
@@ -767,8 +1143,9 @@ const persistEvidenceForFinding = async ({
     responseStatus:
       evidence.response?.statusCode ?? evidence.statusCode ?? null,
     evidenceType: evidence.type,
-    parameter: evidence.metadata?.parameter ?? item?.parameter ?? null,
-    observation: evidence.observation?.description ?? evidence.summary ?? null,
+    parameter: evidence.metadata?.parameter ?? null,
+    observation:
+      evidence.observation?.description ?? evidence.summary ?? null,
     expected: evidence.observation?.expected ?? null,
     actual: evidence.observation?.actual ?? null,
     requestParameters: evidence.request?.parameters ?? null,
@@ -778,22 +1155,14 @@ const persistEvidenceForFinding = async ({
     payload: evidence.metadata?.payload ?? null,
   });
 
-  await assertWorkerCanContinue({
-    ownerId,
-    scanId,
-    isGuest,
-  });
+  await assertWorkerCanContinue({ ownerId, scanId, isGuest });
 
   const persistedEvidence = await evidenceRepository.upsertByFingerprint({
     evidence,
   });
 
   if (persistedEvidence?._id && findingId) {
-    await assertWorkerCanContinue({
-      ownerId,
-      scanId,
-      isGuest,
-    });
+    await assertWorkerCanContinue({ ownerId, scanId, isGuest });
 
     await findingRepository.addEvidenceId(
       ownerId,
@@ -806,7 +1175,7 @@ const persistEvidenceForFinding = async ({
 };
 
 /*
- * Persist findings, evidence, fingerprints, and verification records.
+ * Persist scan results.
  */
 
 const persistScanResults = async ({
@@ -823,45 +1192,26 @@ const persistScanResults = async ({
     verificationRecords = [],
   } = results;
 
-  await assertWorkerCanContinue({
-    ownerId,
-    scanId,
-    isGuest,
-  });
+  await assertWorkerCanContinue({ ownerId, scanId, isGuest });
 
   const normalizedFindings = attachFindingFingerprints(findings);
   const orderedFindings = sortFindingsByRisk(normalizedFindings);
 
-  console.info(
-    JSON.stringify({
-      event: "scan.evidence.debug",
-      scanId,
-      evidenceCount: evidence.length,
-      findingCount: orderedFindings.length,
-
-      evidenceItems: evidence.map((item) => ({
-        scannerId: item?.scannerId ?? null,
-        type: item?.type ?? null,
-        findingId: item?.findingId ?? null,
-        findingFingerprint: item?.findingFingerprint ?? null,
-        findingKey: item?.findingKey ?? null,
-        fingerprint: item?.fingerprint ?? null,
-      })),
-    }),
-  );
+  logEvent("scan.results.persisting", {
+    scanId,
+    findingCount: orderedFindings.length,
+    evidenceCount: evidence.length,
+    fingerprintCount: fingerprints.length,
+    verificationCount: verificationRecords.length,
+  });
 
   const findingGroups = correlateFindings(orderedFindings);
-
   const findingIds = new Map();
   const persistedFindings = [];
   const persistedFindingFingerprints = new Set();
 
   for (const finding of orderedFindings) {
-    await assertWorkerCanContinue({
-      ownerId,
-      scanId,
-      isGuest,
-    });
+    await assertWorkerCanContinue({ ownerId, scanId, isGuest });
 
     const findingKey = getFindingKey(finding);
     const fingerprint = normalizeFindingKey(finding.fingerprint);
@@ -890,14 +1240,12 @@ const persistScanResults = async ({
     }
 
     if (!persistedFindingId) {
-      await assertWorkerCanContinue({
-        ownerId,
-        scanId,
-        isGuest,
-      });
+      await assertWorkerCanContinue({ ownerId, scanId, isGuest });
+
+      const safeFinding = redactValue(finding);
 
       const createdFinding = await findingRepository.create({
-        ...finding,
+        ...safeFinding,
         ownerId,
         scanId,
         targetId,
@@ -926,13 +1274,9 @@ const persistScanResults = async ({
   const persistedEvidence = [];
 
   for (const item of evidence) {
-    await assertWorkerCanContinue({
-      ownerId,
-      scanId,
-      isGuest,
-    });
+    await assertWorkerCanContinue({ ownerId, scanId, isGuest });
 
-    const findingIdList = getFindingIdsForEvidence({
+    const findingIdList = findMatchingFindingIds({
       item,
       findings: orderedFindings,
       findingIds,
@@ -942,17 +1286,13 @@ const persistScanResults = async ({
       findingIdList.length > 0 ? findingIdList : [null];
 
     for (const findingId of evidenceFindingIds) {
-      await assertWorkerCanContinue({
-        ownerId,
-        scanId,
-        isGuest,
-      });
+      await assertWorkerCanContinue({ ownerId, scanId, isGuest });
 
       const evidenceDocument = await persistEvidenceForFinding({
         ownerId,
         scanId,
         targetId,
-        scannerId: item.scannerId,
+        scannerId: item?.scannerId ?? "unknown",
         item,
         findingId,
         isGuest,
@@ -966,14 +1306,10 @@ const persistScanResults = async ({
   }
 
   for (const fingerprint of fingerprints) {
-    await assertWorkerCanContinue({
-      ownerId,
-      scanId,
-      isGuest,
-    });
+    await assertWorkerCanContinue({ ownerId, scanId, isGuest });
 
     await fingerprintRepository.create({
-      ...fingerprint,
+      ...redactValue(fingerprint),
       ownerId,
       scanId,
       targetId,
@@ -983,11 +1319,7 @@ const persistScanResults = async ({
   let persistedVerificationCount = 0;
 
   for (const verification of verificationRecords) {
-    await assertWorkerCanContinue({
-      ownerId,
-      scanId,
-      isGuest,
-    });
+    await assertWorkerCanContinue({ ownerId, scanId, isGuest });
 
     const findingId =
       verification.findingId ||
@@ -999,7 +1331,7 @@ const persistScanResults = async ({
     }
 
     await verificationRepository.create({
-      ...verification,
+      ...redactValue(verification),
       ownerId,
       scanId,
       findingId,
@@ -1021,7 +1353,7 @@ const persistScanResults = async ({
 };
 
 /*
- * Enterprise company-rule evaluation
+ * Enterprise company-rule evaluation.
  */
 
 const evaluateEnterpriseCompanyRules = async ({
@@ -1043,10 +1375,8 @@ const evaluateEnterpriseCompanyRules = async ({
 
   const planDefinition = getPlan(plan ?? "free");
 
-  const enabled = planDefinition.integrations?.companyRules === true;
-
   if (
-    !enabled ||
+    planDefinition.integrations?.companyRules !== true ||
     !Array.isArray(companyRuleIds) ||
     companyRuleIds.length === 0
   ) {
@@ -1079,13 +1409,51 @@ const buildDeletedScanResult = ({ scanId, ownerId, targetId }) => ({
 });
 
 /*
- * Main scan worker
+ * Crawl helpers.
+ */
+
+const runPublicCrawl = async ({
+  ownerId,
+  scanId,
+  scanTarget,
+  effectivePlanName,
+  scopeSnapshot,
+}) =>
+  runCrawlAndPersist({
+    ownerId,
+    scanId,
+    targetUrl: scanTarget.url,
+    plan: effectivePlanName,
+    headers: {},
+    scopeSnapshot,
+    browserContext: null,
+  });
+
+const closeAuthenticatedSession = async ({
+  authenticatedSession,
+  ownerId,
+  scanId,
+}) => {
+  if (!authenticatedSession) {
+    return;
+  }
+
+  try {
+    await authenticatedSession.close();
+  } catch {
+    logFailure("scan.authenticated_session.cleanup_failed", {
+      ownerId,
+      scanId,
+      errorCode: "AUTHENTICATED_SESSION_CLEANUP_FAILED",
+    });
+  }
+};
+
+/*
+ * Main scan worker.
  */
 
 const processScanJob = async (job) => {
-  /*
-   * Never destructure or trust a plan from job.data.
-   */
   const {
     ownerId,
     scanId,
@@ -1102,19 +1470,22 @@ const processScanJob = async (job) => {
   const startedAt = Date.now();
 
   let credentialsForScan = null;
+  let authenticatedSession = null;
+  let authenticatedHeaderResolver = null;
   let retainCredentialsForRetry = false;
+  let scanExecutionStarted = false;
+
+  let authenticationStatus = createAuthenticationStatus({
+    status: credentialReference ? "pending" : "not_requested",
+    message: credentialReference
+      ? "Authentication has not yet been attempted."
+      : "Authenticated scanning was not requested.",
+  });
 
   recordScanStarted();
 
   try {
-    /*
-     * Do not transition a deleted scan back to running.
-     */
-    await assertWorkerCanContinue({
-      ownerId,
-      scanId,
-      isGuest,
-    });
+    await assertWorkerCanContinue({ ownerId, scanId, isGuest });
 
     const runningScan = await scanRepository.updateStatus(
       ownerId,
@@ -1132,17 +1503,10 @@ const processScanJob = async (job) => {
       const currentScan = await scanRepository.findAnyById(ownerId, scanId);
 
       if (currentScan?.status === "deleted") {
-        return buildDeletedScanResult({
-          scanId,
-          ownerId,
-          targetId,
-        });
+        return buildDeletedScanResult({ scanId, ownerId, targetId });
       }
 
-      /*
-       * Retry comparison persistence without rerunning scanners or
-       * changing the status of an already-completed scan.
-       */
+      // Comparison retries must not rerun scanners or require credentials.
       if (currentScan?.status === "completed" && currentScan?.completedAt) {
         try {
           await createAndPersistComparisonForScan({
@@ -1151,18 +1515,13 @@ const processScanJob = async (job) => {
             comparisonScanId: scanId,
           });
         } catch (comparisonError) {
-          console.error(
-            JSON.stringify({
-              event: "scan.comparison.retry_failed",
-              ownerId,
-              targetId,
-              scanId,
-              errorCode: comparisonError?.code ?? "SCAN_COMPARISON_FAILED",
-              errorMessage:
-                comparisonError?.message ??
-                "Automatic comparison retry failed.",
-            }),
-          );
+          logFailure("scan.comparison.retry_failed", {
+            ownerId,
+            targetId,
+            scanId,
+            errorCode:
+              comparisonError?.code ?? "SCAN_COMPARISON_FAILED",
+          });
 
           throw createComparisonRetryError(comparisonError);
         }
@@ -1183,41 +1542,27 @@ const processScanJob = async (job) => {
       );
     }
 
-    /*
-     * Resolve the current subscription after confirming that this is
-     * a scan execution rather than a comparison-only retry.
-     */
-    const effectivePlan = await resolveWorkerPlan({
-      ownerId,
-      isGuest,
-    });
+    scanExecutionStarted = true;
 
+    const effectivePlan = await resolveWorkerPlan({ ownerId, isGuest });
     const effectivePlanName = effectivePlan.name;
 
-    /*
-     * Fail closed if the scan record says credentials were provided
-     * but the queue payload has no vault reference.
-     *
-     * This prevents an intended authenticated scan from silently
-     * continuing as an unauthenticated scan.
-     */
     const credentialsWereProvided =
       runningScan.credentials?.credentialProvided === true;
 
     if (credentialsWereProvided && !credentialReference) {
-      throw createWorkerError(
-        "The temporary credential reference is missing. Submit the scan again.",
-        410,
-        "SCAN_CREDENTIAL_REFERENCE_MISSING",
-      );
+      authenticationStatus = createAuthenticationStatus({
+        status: "failed",
+        message:
+          "The temporary authentication reference is missing. The scan will continue without authenticated access.",
+        errorCode: "SCAN_CREDENTIAL_REFERENCE_MISSING",
+      });
     }
 
     /*
-     * Retrieve credentials only from the encrypted Redis vault.
-     *
-     * Guests cannot use authenticated scanning. A subscription change
-     * between queue acceptance and execution is enforced here.
+     * Credentials are loaded only from the encrypted, expiring vault.
      */
+
     if (credentialReference) {
       if (isGuest || effectivePlan.authenticationScanning !== true) {
         throw createWorkerError(
@@ -1227,27 +1572,44 @@ const processScanJob = async (job) => {
         );
       }
 
-      credentialsForScan = await getCredentials(credentialReference);
+      try {
+        credentialsForScan = await getCredentials(credentialReference);
 
-      if (!credentialsForScan) {
-        throw createWorkerError(
-          "Temporary scan credentials are missing or expired. Submit the scan again.",
-          410,
-          "SCAN_CREDENTIALS_EXPIRED",
-        );
+        if (!credentialsForScan) {
+          authenticationStatus = createAuthenticationStatus({
+            status: "failed",
+            message:
+              "Temporary authentication data is missing or expired. Public scanning will continue.",
+            errorCode: "SCAN_CREDENTIALS_EXPIRED",
+          });
+        }
+      } catch (error) {
+        if (
+          error?.code === "CREDENTIAL_ENCRYPTION_KEY_INVALID" ||
+          error?.code === "AUTHENTICATION_SCANNING_NOT_AVAILABLE"
+        ) {
+          throw error;
+        }
+
+        authenticationStatus = createAuthenticationStatus({
+          status: "failed",
+          message:
+            "Temporary authentication data could not be retrieved. Public scanning will continue.",
+          errorCode: error?.code ?? "SCAN_CREDENTIALS_UNAVAILABLE",
+        });
+
+        logFailure("scan.credentials.resolve_failed", {
+          ownerId,
+          scanId,
+          errorCode:
+            error?.code ?? "SCAN_CREDENTIALS_UNAVAILABLE",
+        });
       }
     }
 
-    await notifyScanStarted({
-      ownerId,
-      scanId,
-    }).catch(() => {});
+    await notifyScanStarted({ ownerId, scanId }).catch(() => {});
 
-    await assertWorkerCanContinue({
-      ownerId,
-      scanId,
-      isGuest,
-    });
+    await assertWorkerCanContinue({ ownerId, scanId, isGuest });
 
     const storedTarget = await targetRepository.findById(ownerId, targetId);
 
@@ -1270,15 +1632,74 @@ const processScanJob = async (job) => {
     const engineSelection = buildEngineSelection(selection);
 
     /*
-     * Crawl failures are non-fatal to the selected security scanners.
+     * Authentication setup is isolated from public scanning.
      */
+
+    if (credentialsForScan) {
+      try {
+        await assertWorkerCanContinue({ ownerId, scanId, isGuest });
+
+        authenticatedSession = await createAuthenticatedBrowserSession({
+          targetUrl: scanTarget.url,
+          credentials: credentialsForScan,
+        });
+
+        authenticatedHeaderResolver =
+          createAuthenticatedHeaderResolver(authenticatedSession);
+
+        authenticationStatus = createAuthenticationStatus({
+          status: "session_established",
+          message:
+            "The browser session was established. Protected-page access has not yet been confirmed.",
+          authenticatedCoverageConfirmed: false,
+        });
+      } catch (error) {
+        if (
+          isDeletedScanError(error) ||
+          error?.code === "GUEST_SESSION_EXPIRED" ||
+          isCancellationError(error)
+        ) {
+          throw error;
+        }
+
+        if (
+          error?.code === "AUTHENTICATION_SCANNING_NOT_AVAILABLE" ||
+          error?.code === "CREDENTIAL_ENCRYPTION_KEY_INVALID"
+        ) {
+          throw error;
+        }
+
+        authenticationStatus = createAuthenticationStatus({
+          status: "failed",
+          message: getAuthenticationFailureMessage(error),
+          errorCode: error?.code ?? "AUTHENTICATION_FAILED",
+        });
+
+        logFailure("scan.authentication.setup_failed", {
+          ownerId,
+          scanId,
+          errorCode: error?.code ?? "AUTHENTICATION_FAILED",
+        });
+
+        await closeAuthenticatedSession({
+          authenticatedSession,
+          ownerId,
+          scanId,
+        });
+
+        authenticatedSession = null;
+        authenticatedHeaderResolver = null;
+      }
+    }
+
+    /*
+     * Crawl with the authenticated browser context when available.
+     * If that crawl throws, retry using a public-only crawl.
+     */
+
     let crawlResult = null;
 
-    await assertWorkerCanContinue({
-      ownerId,
-      scanId,
-      isGuest,
-    });
+    await assertWorkerCanContinue({ ownerId, scanId, isGuest });
 
     try {
       crawlResult = await runCrawlAndPersist({
@@ -1288,37 +1709,104 @@ const processScanJob = async (job) => {
         plan: effectivePlanName,
         headers: {},
         scopeSnapshot,
+        browserContext: authenticatedSession?.context ?? null,
       });
     } catch (error) {
       if (isDeletedScanError(error)) {
-        return buildDeletedScanResult({
-          scanId,
-          ownerId,
-          targetId,
-        });
+        return buildDeletedScanResult({ scanId, ownerId, targetId });
       }
 
-      console.error(
-        JSON.stringify({
-          event: "scan.crawl.failed",
-          scanId,
+      if (
+        error?.code === "GUEST_SESSION_EXPIRED" ||
+        isCancellationError(error)
+      ) {
+        throw error;
+      }
+
+      if (!authenticatedSession) {
+        logFailure("scan.crawl.failed", {
           ownerId,
+          scanId,
           errorCode: error?.code ?? "CRAWL_FAILED",
-          errorMessage: error?.message ?? "Crawl failed.",
-        }),
-      );
+        });
+      } else {
+        authenticationStatus = createAuthenticationStatus({
+          status: "failed",
+          message:
+            "Authenticated crawling failed. The scan will retry crawling publicly accessible pages.",
+          errorCode: "AUTHENTICATED_CRAWL_FAILED",
+        });
+
+        logFailure("scan.authenticated_crawl.failed", {
+          ownerId,
+          scanId,
+          errorCode: error?.code ?? "AUTHENTICATED_CRAWL_FAILED",
+        });
+
+        await closeAuthenticatedSession({
+          authenticatedSession,
+          ownerId,
+          scanId,
+        });
+
+        authenticatedSession = null;
+        authenticatedHeaderResolver = null;
+
+        await assertWorkerCanContinue({ ownerId, scanId, isGuest });
+
+        try {
+          crawlResult = await runPublicCrawl({
+            ownerId,
+            scanId,
+            scanTarget,
+            effectivePlanName,
+            scopeSnapshot,
+          });
+        } catch (publicCrawlError) {
+          if (isDeletedScanError(publicCrawlError)) {
+            return buildDeletedScanResult({ scanId, ownerId, targetId });
+          }
+
+          if (
+            publicCrawlError?.code === "GUEST_SESSION_EXPIRED" ||
+            isCancellationError(publicCrawlError)
+          ) {
+            throw publicCrawlError;
+          }
+
+          logFailure("scan.public_fallback_crawl.failed", {
+            ownerId,
+            scanId,
+            errorCode: publicCrawlError?.code ?? "CRAWL_FAILED",
+          });
+        }
+      }
     }
 
-    await assertWorkerCanContinue({
-      ownerId,
-      scanId,
-      isGuest,
-    });
+    await assertWorkerCanContinue({ ownerId, scanId, isGuest });
 
     /*
-     * Plaintext credentials are passed directly to the scan engine.
-     * They are not copied into the BullMQ payload or worker logs.
+     * Session creation is not proof of authenticated coverage.
+     * Only an explicit crawler confirmation can establish that status.
      */
+
+    if (
+      authenticationStatus.status === "session_established" &&
+      crawlResult?.authenticatedCoverageConfirmed === true
+    ) {
+      authenticationStatus = createAuthenticationStatus({
+        status: "authenticated",
+        message:
+          "The crawler confirmed access to authenticated content.",
+        authenticatedCoverageConfirmed: true,
+      });
+    }
+
+    /*
+     * The engine and shared HTTP layer must honor authenticatedRequest.
+     * The resolver returns cookies only for the exact authenticated origin.
+     */
+
     const result = await executeScan({
       scan: {
         id: scanId,
@@ -1329,10 +1817,18 @@ const processScanJob = async (job) => {
       target: scanTarget,
       selection: engineSelection,
       ownerId,
-      credentials: credentialsForScan,
 
       options,
       scopeSnapshot,
+
+      authenticatedSession,
+
+      authenticatedRequest: authenticatedSession
+        ? {
+            authOrigin: authenticatedSession.targetOrigin,
+            resolveHeaders: authenticatedHeaderResolver,
+          }
+        : null,
 
       discoveredUrls: (crawlResult?.pages ?? [])
         .filter((page) => page?.status === "success")
@@ -1346,11 +1842,16 @@ const processScanJob = async (job) => {
         }),
     });
 
-    await assertWorkerCanContinue({
-      ownerId,
+    logEvent("scan.progress.diagnostic", {
       scanId,
-      isGuest,
+      selectedScannerIds: engineSelection.selectedScannerIds,
+      engineProgress: result.progress ?? null,
+      scannerResultIds: (result.scannerResults ?? []).map(
+        (scannerResult) => scannerResult.scannerId,
+      ),
     });
+
+    await assertWorkerCanContinue({ ownerId, scanId, isGuest });
 
     const companyRuleAnalysis = await evaluateEnterpriseCompanyRules({
       ownerId,
@@ -1360,11 +1861,7 @@ const processScanJob = async (job) => {
       scannerResults: result.scannerResults || [],
     });
 
-    await assertWorkerCanContinue({
-      ownerId,
-      scanId,
-      isGuest,
-    });
+    await assertWorkerCanContinue({ ownerId, scanId, isGuest });
 
     if (companyRuleAnalysis.findings?.length > 0) {
       result.findings = [
@@ -1373,27 +1870,23 @@ const processScanJob = async (job) => {
       ];
     }
 
-    console.info(
-      JSON.stringify({
-        event: "scan.company_rules.completed",
-        scanId,
-        ownerId,
-        plan: effectivePlanName,
-        companyRuleIds,
-        enabled: companyRuleAnalysis.enabled,
-        rulesEvaluated: companyRuleAnalysis.rulesEvaluated,
-        violatedRules: companyRuleAnalysis.violatedRules,
-      }),
+    logEvent("scan.company_rules.completed", {
+      scanId,
+      ownerId,
+      plan: effectivePlanName,
+      companyRuleCount: companyRuleIds.length,
+      enabled: companyRuleAnalysis.enabled,
+      rulesEvaluated: companyRuleAnalysis.rulesEvaluated,
+      violatedRules: companyRuleAnalysis.violatedRules,
+    });
+
+    const analyzedFindings = attachFindingFingerprints(
+      result.findings || [],
     );
 
-    const analyzedFindings = attachFindingFingerprints(result.findings || []);
     const risk = calculateRisk(analyzedFindings);
 
-    await assertWorkerCanContinue({
-      ownerId,
-      scanId,
-      isGuest,
-    });
+    await assertWorkerCanContinue({ ownerId, scanId, isGuest });
 
     const persisted = await persistScanResults({
       ownerId,
@@ -1406,15 +1899,12 @@ const processScanJob = async (job) => {
       isGuest,
     });
 
-    await assertWorkerCanContinue({
-      ownerId,
-      scanId,
-      isGuest,
-    });
+    await assertWorkerCanContinue({ ownerId, scanId, isGuest });
 
     /*
-     * AI failure is non-fatal to the scan.
+     * AI-analysis failure does not fail the security scan.
      */
+
     let aiAnalysis = {
       enabled: false,
       status: "disabled",
@@ -1423,11 +1913,7 @@ const processScanJob = async (job) => {
     };
 
     try {
-      await assertWorkerCanContinue({
-        ownerId,
-        scanId,
-        isGuest,
-      });
+      await assertWorkerCanContinue({ ownerId, scanId, isGuest });
 
       aiAnalysis = await analyzeAndPersistFindings({
         ownerId,
@@ -1437,28 +1923,21 @@ const processScanJob = async (job) => {
         target: scanTarget,
       });
 
-      await assertWorkerCanContinue({
-        ownerId,
-        scanId,
-        isGuest,
-      });
+      await assertWorkerCanContinue({ ownerId, scanId, isGuest });
     } catch (error) {
       if (
         isDeletedScanError(error) ||
-        error?.code === "GUEST_SESSION_EXPIRED"
+        error?.code === "GUEST_SESSION_EXPIRED" ||
+        isCancellationError(error)
       ) {
         throw error;
       }
 
-      console.error(
-        JSON.stringify({
-          event: "scan.ai_analysis.failed",
-          scanId,
-          ownerId,
-          errorCode: error?.code ?? "AI_ANALYSIS_FAILED",
-          errorMessage: error?.message ?? "AI analysis failed.",
-        }),
-      );
+      logFailure("scan.ai_analysis.failed", {
+        scanId,
+        ownerId,
+        errorCode: error?.code ?? "AI_ANALYSIS_FAILED",
+      });
 
       aiAnalysis = {
         enabled: environment.ai.enabled,
@@ -1468,11 +1947,7 @@ const processScanJob = async (job) => {
       };
     }
 
-    await assertWorkerCanContinue({
-      ownerId,
-      scanId,
-      isGuest,
-    });
+    await assertWorkerCanContinue({ ownerId, scanId, isGuest });
 
     const finishedAt = new Date();
     const durationMs = Date.now() - startedAt;
@@ -1502,12 +1977,15 @@ const processScanJob = async (job) => {
 
     const statusFields = {
       progress:
-        finalStatus === "completed" ? 100 : (result.progress?.progress ?? 0),
+        finalStatus === "completed"
+          ? 100
+          : (result.progress?.progress ?? 0),
 
       completedScanners: result.progress?.completed ?? 0,
 
       totalScanners:
-        result.progress?.total ?? engineSelection.selectedScannerIds.length,
+        result.progress?.total ??
+        engineSelection.selectedScannerIds.length,
 
       findingCounts,
       riskScore: risk.score,
@@ -1519,16 +1997,19 @@ const processScanJob = async (job) => {
 
       errorMessage:
         finalStatus === "failed"
-          ? (result.errorMessage ?? "Scan execution failed.")
+          ? "One or more scan operations failed."
           : null,
+
+      authenticationStatus: redactValue(authenticationStatus),
 
       companyRuleAnalysis: {
         enabled: companyRuleAnalysis.enabled,
         rulesEvaluated: companyRuleAnalysis.rulesEvaluated,
         violatedRules: companyRuleAnalysis.violatedRules,
+
         evaluations: (companyRuleAnalysis.evaluations || []).map(
           (evaluation) => ({
-            ...evaluation,
+            ...redactValue(evaluation),
             status: evaluation.error
               ? "error"
               : !evaluation.supported
@@ -1540,10 +2021,7 @@ const processScanJob = async (job) => {
         ),
       },
 
-      /*
-       * Per-scanner outcomes allow comparisons and trends to exclude
-       * scanners that failed or were not run.
-       */
+      // Preserve scanner outcomes so unrun scanners cannot resolve findings.
       scannerOutcomes: buildScannerOutcomes({
         selection: engineSelection,
         scannerResults: result.scannerResults || [],
@@ -1558,27 +2036,34 @@ const processScanJob = async (job) => {
       statusFields.completedAt = finishedAt;
     }
 
-    await assertScanCanFinish({
-      ownerId,
+    await assertScanCanFinish({ ownerId, scanId });
+
+    logEvent("scan.progress.before_persist", {
       scanId,
+      progress: statusFields.progress,
+      completedScanners: statusFields.completedScanners,
+      totalScanners: statusFields.totalScanners,
     });
 
     const finalizedScan = await scanRepository.updateStatus(
       ownerId,
       scanId,
       finalStatus,
-      statusFields,
+      statusFields
     );
+
+    logEvent("scan.progress.after_persist", {
+      scanId,
+      progress: finalizedScan?.progress ?? null,
+      completedScanners: finalizedScan?.completedScanners ?? null,
+      totalScanners: finalizedScan?.totalScanners ?? null,
+    });
 
     if (!finalizedScan) {
       const currentScan = await scanRepository.findAnyById(ownerId, scanId);
 
       if (currentScan?.status === "deleted") {
-        return buildDeletedScanResult({
-          scanId,
-          ownerId,
-          targetId,
-        });
+        return buildDeletedScanResult({ scanId, ownerId, targetId });
       }
 
       throw createWorkerError(
@@ -1588,12 +2073,8 @@ const processScanJob = async (job) => {
       );
     }
 
-    /*
-     * Update target counters only after a successful completion.
-     */
     if (finalStatus === "completed") {
       await targetRepository.incrementScanCount(ownerId, targetId);
-
       await targetRepository.updateLastScanned(ownerId, targetId, finishedAt);
 
       recordScanCompleted({
@@ -1608,9 +2089,9 @@ const processScanJob = async (job) => {
       }).catch(() => {});
 
       /*
-       * If comparison persistence fails, leave the scan completed.
-       * BullMQ can retry comparison without rerunning the scanners.
+       * Comparison retries must not rerun the scanner execution.
        */
+
       try {
         await createAndPersistComparisonForScan({
           ownerId,
@@ -1618,17 +2099,13 @@ const processScanJob = async (job) => {
           comparisonScanId: scanId,
         });
       } catch (comparisonError) {
-        console.error(
-          JSON.stringify({
-            event: "scan.comparison.failed",
-            ownerId,
-            targetId,
-            scanId,
-            errorCode: comparisonError?.code ?? "SCAN_COMPARISON_FAILED",
-            errorMessage:
-              comparisonError?.message ?? "Automatic comparison failed.",
-          }),
-        );
+        logFailure("scan.comparison.failed", {
+          ownerId,
+          targetId,
+          scanId,
+          errorCode:
+            comparisonError?.code ?? "SCAN_COMPARISON_FAILED",
+        });
 
         throw createComparisonRetryError(comparisonError);
       }
@@ -1640,7 +2117,7 @@ const processScanJob = async (job) => {
       await notifyScanFailed({
         ownerId,
         scanId,
-        error: result.errorMessage ?? "Scan execution failed.",
+        error: "Scan execution failed.",
       }).catch(() => {});
     }
 
@@ -1656,6 +2133,8 @@ const processScanJob = async (job) => {
       fingerprints: persisted.fingerprintCount,
       verifications: persisted.verificationCount,
 
+      authenticationStatus: redactValue(authenticationStatus),
+
       companyRules: {
         enabled: companyRuleAnalysis.enabled,
         selected: companyRuleIds.length,
@@ -1670,21 +2149,14 @@ const processScanJob = async (job) => {
       },
     };
   } catch (error) {
-    /*
-     * Comparison-only retries must not mark an already-completed scan
-     * as failed. They do not need the scan credentials.
-     */
+    // A comparison-only retry must not turn a completed scan into a failure.
     if (error?.scanComparisonRetry === true) {
       retainCredentialsForRetry = false;
       throw error;
     }
 
     if (isDeletedScanError(error)) {
-      return buildDeletedScanResult({
-        scanId,
-        ownerId,
-        targetId,
-      });
+      return buildDeletedScanResult({ scanId, ownerId, targetId });
     }
 
     const currentScan = await scanRepository
@@ -1692,15 +2164,22 @@ const processScanJob = async (job) => {
       .catch(() => null);
 
     if (currentScan?.status === "deleted") {
-      return buildDeletedScanResult({
+      return buildDeletedScanResult({ scanId, ownerId, targetId });
+    }
+
+    if (
+      currentScan?.status === "cancelled" ||
+      currentScan?.status === "completed"
+    ) {
+      return {
         scanId,
         ownerId,
         targetId,
-      });
+        status: currentScan.status,
+      };
     }
 
     const errorCode = error?.code || "SCAN_EXECUTION_FAILED";
-    const errorMessage = error?.message || "Scan execution failed.";
 
     if (errorCode === "GUEST_SESSION_EXPIRED") {
       return {
@@ -1712,10 +2191,14 @@ const processScanJob = async (job) => {
       };
     }
 
-    /*
-     * BullMQ attemptsMade counts previous failed attempts.
-     * The next attempt number is therefore attemptsMade + 1.
-     */
+    const authenticationFailure = isAuthenticationError(error);
+
+    const safeErrorMessage = authenticationFailure
+      ? getAuthenticationFailureMessage(error)
+      : TERMINAL_SCAN_ERROR_CODES.has(errorCode)
+        ? redactText(error.message || "Scan execution failed.")
+        : "Scan execution failed. Review the scan status and retry if appropriate.";
+
     const configuredAttempts = Math.max(
       1,
       Number(job.opts?.attempts) || 1,
@@ -1727,25 +2210,78 @@ const processScanJob = async (job) => {
       nextAttemptNumber < configuredAttempts &&
       !TERMINAL_SCAN_ERROR_CODES.has(errorCode);
 
-    /*
-     * Keep the vault reference only when a retry is expected and
-     * the failure is potentially recoverable.
-     *
-     * The vault's TTL remains a fallback if the worker crashes.
-     */
-    if (credentialReference && retryExpected) {
-      retainCredentialsForRetry = true;
+    if (retryExpected) {
+      let retryScan = null;
+
+      if (currentScan?.status === "running") {
+        retryScan = await scanRepository
+          .updateStatus(ownerId, scanId, "pending", {
+            errorCode: null,
+            errorMessage: null,
+            progress: 0,
+          })
+          .catch(() => null);
+      }
+
+      if (retryScan || currentScan?.status === "pending") {
+        retainCredentialsForRetry = Boolean(credentialReference);
+
+        logEvent("scan.worker.retry_scheduled", {
+          ownerId,
+          scanId,
+          errorCode,
+          nextAttemptNumber,
+          configuredAttempts,
+        });
+
+        throw error;
+      }
+
+      const latestScan = await scanRepository
+        .findAnyById(ownerId, scanId)
+        .catch(() => null);
+
+      if (latestScan?.status === "deleted") {
+        return buildDeletedScanResult({ scanId, ownerId, targetId });
+      }
+
+      if (
+        latestScan?.status === "cancelled" ||
+        latestScan?.status === "completed"
+      ) {
+        return {
+          scanId,
+          ownerId,
+          targetId,
+          status: latestScan.status,
+        };
+      }
+
+      logFailure("scan.worker.retry_transition_failed", {
+        ownerId,
+        scanId,
+        errorCode,
+        status: latestScan?.status ?? "unknown",
+      });
     }
 
-    /*
-     * Never overwrite a deleted scan.
-     * The repository must enforce valid status transitions.
-     */
     const failedScan = await scanRepository
       .updateStatus(ownerId, scanId, "failed", {
         failedAt: new Date(),
         errorCode,
-        errorMessage,
+        errorMessage: safeErrorMessage,
+
+        ...(credentialReference
+          ? {
+              authenticationStatus: redactValue(
+                createAuthenticationStatus({
+                  status: "failed",
+                  message: safeErrorMessage,
+                  errorCode,
+                }),
+              ),
+            }
+          : {}),
       })
       .catch(() => null);
 
@@ -1755,54 +2291,77 @@ const processScanJob = async (job) => {
         .catch(() => null);
 
       if (latestScan?.status === "deleted") {
-        return buildDeletedScanResult({
+        return buildDeletedScanResult({ scanId, ownerId, targetId });
+      }
+
+      if (
+        latestScan?.status === "cancelled" ||
+        latestScan?.status === "completed"
+      ) {
+        return {
           scanId,
           ownerId,
           targetId,
-        });
+          status: latestScan.status,
+        };
       }
     }
 
-    recordScanFailed();
+    if (scanExecutionStarted) {
+      recordScanFailed();
+    }
 
     await notifyScanFailed({
       ownerId,
       scanId,
-      error: errorMessage,
+      error: safeErrorMessage,
     }).catch(() => {});
+
+    logFailure("scan.worker.failed", {
+      ownerId,
+      scanId,
+      errorCode,
+      retryExpected: false,
+    });
+
+    if (TERMINAL_SCAN_ERROR_CODES.has(errorCode)) {
+      throw new UnrecoverableError(safeErrorMessage);
+    }
 
     throw error;
   } finally {
-    /*
-     * Drop the worker's local reference to the plaintext credentials.
-     *
-     * Delete the Redis vault entry after success, cancellation, expiry,
-     * permanent failure, or the final failed attempt.
-     *
-     * Retain it only when another BullMQ attempt is expected.
-     */
+    await closeAuthenticatedSession({
+      authenticatedSession,
+      ownerId,
+      scanId,
+    });
+
+    authenticatedSession = null;
+    authenticatedHeaderResolver = null;
+
+    // Release this worker's plaintext credential reference.
     credentialsForScan = null;
 
+    /*
+     * The encrypted vault entry is retained only if another BullMQ attempt
+     * is expected. Its configured TTL must still impose a maximum lifetime.
+     */
     if (credentialReference && !retainCredentialsForRetry) {
       try {
         await deleteCredentials(credentialReference);
-      } catch (cleanupError) {
-        console.error(
-          JSON.stringify({
-            event: "scan.credentials.cleanup_failed",
-            scanId,
-            ownerId,
-            errorCode:
-              cleanupError?.code ?? "CREDENTIAL_CLEANUP_FAILED",
-          }),
-        );
+      } catch {
+        logFailure("scan.worker.credential_cleanup_failed", {
+          ownerId,
+          scanId,
+          errorCode: "SCAN_CREDENTIAL_CLEANUP_FAILED",
+        });
       }
     }
   }
 };
 
 /*
- * Worker factory
+ * Worker factory.
  */
 
 const createScanWorker = () =>

@@ -99,17 +99,14 @@ const normalizePlanName = (value) => {
 
   const normalized = value.trim().toLowerCase();
 
-  return Object.hasOwn(PLANS, normalized)
-    ? normalized
-    : PLAN_NAMES.FREE;
+  return Object.hasOwn(PLANS, normalized) ? normalized : PLAN_NAMES.FREE;
 };
 
 // No environment-based or implicit Pro/Enterprise default.
 const getPlan = (planName = PLAN_NAMES.FREE) =>
   PLANS[normalizePlanName(planName)];
 
-const getPlanName = (planName = PLAN_NAMES.FREE) =>
-  getPlan(planName).name;
+const getPlanName = (planName = PLAN_NAMES.FREE) => getPlan(planName).name;
 
 const isValidPlan = (planName) =>
   typeof planName === "string" &&

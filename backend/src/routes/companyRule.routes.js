@@ -60,13 +60,7 @@ const updateRuleSchema = Joi.object({
 
   description: Joi.string().trim().min(1).max(2000),
 
-  severity: Joi.string().valid(
-    "critical",
-    "high",
-    "medium",
-    "low",
-    "info",
-  ),
+  severity: Joi.string().valid("critical", "high", "medium", "low", "info"),
 
   rule: Joi.object(),
 
@@ -88,29 +82,13 @@ const listQuerySchema = Joi.object({
 });
 
 // Verify the Bearer token before authorization checks.
-router.use(
-  protect,
-  requireAuthorization,
-  requireOwner,
-);
+router.use(protect, requireAuthorization, requireOwner);
 
-router.post(
-  "/",
-  validate(ruleSchema, "body"),
-  createRule,
-);
+router.post("/", validate(ruleSchema, "body"), createRule);
 
-router.get(
-  "/",
-  validate(listQuerySchema, "query"),
-  listRules,
-);
+router.get("/", validate(listQuerySchema, "query"), listRules);
 
-router.get(
-  "/:ruleId",
-  validate(ruleParamsSchema, "params"),
-  getRule,
-);
+router.get("/:ruleId", validate(ruleParamsSchema, "params"), getRule);
 
 router.patch(
   "/:ruleId",
@@ -119,10 +97,6 @@ router.patch(
   updateRule,
 );
 
-router.delete(
-  "/:ruleId",
-  validate(ruleParamsSchema, "params"),
-  deleteRule,
-);
+router.delete("/:ruleId", validate(ruleParamsSchema, "params"), deleteRule);
 
 export default router;

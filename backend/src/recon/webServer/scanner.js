@@ -1,12 +1,113 @@
+
+/* STATUS: UPDATED */
+
 import { get } from "../../request/request.js";
 
 import { createExchangeEvidence } from "../shared/evidence.js";
-
 import { createServiceFingerprint } from "../shared/fingerprint.js";
-
-import { createReconScanner, getTargetUrl } from "../shared/reconContract.js";
-
+import {
+  createReconScanner,
+  getTargetUrl,
+} from "../shared/reconContract.js";
 import { assertSafeUrl } from "../shared/resolver.js";
+
+const MAX_HEADER_LENGTH = 2048;
+
+const SENSITIVE_HEADERS = new Set([
+  "authorization",
+  "proxy-authorization",
+  "cookie",
+  "set-cookie",
+  "x-api-key",
+  "x-auth-token",
+  "x-csrf-token",
+  "x-xsrf-token",
+]);
+
+const normalizeHeaderValue = (value) => {
+  if (Array.isArray(value)) {
+    return value.map(String).join(", ");
+  }
+
+  if (typeof value === "string" || typeof value === "number") {
+    return String(value);
+  }
+
+  return null;
+};
+
+const getHeader = (headers, name) => {
+  if (!headers || typeof headers !== "object") {
+    return null;
+  }
+
+  const entry = Object.entries(headers).find(
+    ([key]) => key.toLowerCase() === name.toLowerCase(),
+  );
+
+  if (!entry) {
+    return null;
+  }
+
+  const value = normalizeHeaderValue(entry[1]);
+
+  return value
+    ? value.trim().slice(0, MAX_HEADER_LENGTH) || null
+    : null;
+};
+
+const sanitizeHeaders = (headers) => {
+  const safe = {};
+
+  for (const [name, value] of Object.entries(headers ?? {})) {
+    if (SENSITIVE_HEADERS.has(name.toLowerCase())) {
+      continue;
+    }
+
+    const normalized = normalizeHeaderValue(value);
+
+    if (normalized !== null) {
+      safe[name] = normalized.slice(0, MAX_HEADER_LENGTH);
+    }
+  }
+
+  return safe;
+};
+
+const normalizeStatus = (response) => {
+  const status = Number(
+    response?.status ?? response?.statusCode,
+  );
+
+  if (
+    !Number.isInteger(status) ||
+    status < 100 ||
+    status > 599
+  ) {
+    throw new Error(
+      "Web server detection received an invalid HTTP status.",
+    );
+  }
+
+  return status;
+};
+
+const cancelledResult = () => ({
+  data: {
+    server: null,
+    poweredBy: null,
+    protocol: null,
+    status: null,
+  },
+  evidence: [],
+  fingerprints: [],
+  verificationRecords: [],
+  metadata: {
+    cancelled: true,
+    serverDetected: false,
+    poweredByDetected: false,
+  },
+});
 
 const scanner = createReconScanner({
   id: "recon.web-server",
@@ -14,75 +115,65 @@ const scanner = createReconScanner({
   name: "Web Server Detection",
 
   description:
-    "Identifies publicly exposed web-server information from HTTP headers.",
+    "Identifies web-server information publicly disclosed through HTTP response headers.",
 
   async run(context) {
+    if (context?.signal?.aborted) {
+      return cancelledResult();
+    }
+
     const targetUrl = getTargetUrl(context);
 
     await assertSafeUrl(targetUrl);
 
-    if (context?.signal?.aborted) {
-      return {
-        data: {
-          server: null,
-          poweredBy: null,
-          protocol: null,
-          status: null,
-        },
+    const parsedUrl = new URL(targetUrl);
 
-        evidence: [],
-
-        fingerprints: [],
-
-        verificationRecords: [],
-
-        metadata: {
-          cancelled: true,
-        },
-      };
+    if (!["http:", "https:"].includes(parsedUrl.protocol)) {
+      throw new Error(
+        "Web server detection only supports HTTP and HTTPS targets.",
+      );
     }
 
-    const requestHeaders = context?.session?.getHeaders?.() ?? {};
+    const protocol = parsedUrl.protocol.slice(0, -1);
+
+    const port = parsedUrl.port
+      ? Number(parsedUrl.port)
+      : protocol === "https"
+        ? 443
+        : 80;
+
+    const requestHeaders =
+      context?.session?.getHeaders?.() ?? {};
 
     const response = await get(targetUrl, {
       signal: context?.signal,
-
+      scope: context?.scope,
       headers: requestHeaders,
+      maxRedirects: 0,
     });
 
     if (context?.signal?.aborted) {
-      return {
-        data: {
-          server: null,
-          poweredBy: null,
-          protocol: null,
-          status: null,
-        },
-
-        evidence: [],
-
-        fingerprints: [],
-
-        verificationRecords: [],
-
-        metadata: {
-          cancelled: true,
-        },
-      };
+      return cancelledResult();
     }
 
-    const server = response.headers?.server ?? response.headers?.Server ?? null;
+    const responseHeaders = response?.headers ?? {};
 
-    const poweredBy =
-      response.headers?.["x-powered-by"] ??
-      response.headers?.["X-Powered-By"] ??
-      null;
+    const status = normalizeStatus(response);
 
-    const url = new URL(targetUrl);
+    const server = getHeader(
+      responseHeaders,
+      "server",
+    );
 
-    const protocol = url.protocol.replace(":", "");
+    const poweredBy = getHeader(
+      responseHeaders,
+      "x-powered-by",
+    );
 
-    const port = url.port || (protocol === "https" ? 443 : 80);
+    const contentType = getHeader(
+      responseHeaders,
+      "content-type",
+    );
 
     const fingerprints = [];
 
@@ -90,21 +181,15 @@ const scanner = createReconScanner({
       fingerprints.push(
         createServiceFingerprint({
           service: server,
-
           port,
-
           protocol,
-
           version: null,
-
-          confidence: "high",
-
+          confidence: "medium",
           source: "webServer",
-
           evidence: {
             header: "server",
-
             value: server,
+            responseStatus: status,
           },
         }),
       );
@@ -114,21 +199,15 @@ const scanner = createReconScanner({
       fingerprints.push(
         createServiceFingerprint({
           service: poweredBy,
-
           port,
-
           protocol,
-
           version: null,
-
-          confidence: "medium",
-
+          confidence: "low",
           source: "webServer",
-
           evidence: {
             header: "x-powered-by",
-
             value: poweredBy,
+            responseStatus: status,
           },
         }),
       );
@@ -137,20 +216,16 @@ const scanner = createReconScanner({
     const evidence = createExchangeEvidence({
       request: {
         method: "GET",
-
         url: targetUrl,
-
-        headers: requestHeaders,
+        headers: sanitizeHeaders(requestHeaders),
       },
 
       response: {
-        status: response.status,
-
-        statusText: response.statusText,
-
-        headers: response.headers,
-
-        contentType: response.headers?.["content-type"],
+        status,
+        statusText: response?.statusText ?? null,
+        headers: sanitizeHeaders(responseHeaders),
+        contentType,
+        body: null,
       },
     });
 
@@ -159,21 +234,23 @@ const scanner = createReconScanner({
         server,
         poweredBy,
         protocol,
-        status: response.status,
+        status,
+        contentType,
       },
 
       evidence: [evidence],
-
       fingerprints,
-
       verificationRecords: [],
 
       metadata: {
         serverDetected: Boolean(server),
-
         poweredByDetected: Boolean(poweredBy),
-
         port,
+        detectionMethod: "http-response-headers",
+        identityVerified: false,
+        cancelled: false,
+        note:
+          "Server headers are self-reported response values and may be absent, modified, or spoofed.",
       },
     };
   },

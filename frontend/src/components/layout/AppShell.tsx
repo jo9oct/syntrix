@@ -5,9 +5,9 @@ import {
   FileText, Settings, LogOut, Bell, ChevronDown,
   ShieldCheck, ArrowRightLeft, RotateCcw, Search, Globe,
   CheckCircle2, AlertTriangle, Shield, UserCheck, Code,
-  CreditCard, Menu, X, Sparkles
+  CreditCard, Menu, X, Sparkles, Network, Sliders, Trash2
 } from 'lucide-react';
-import { useAuthStore, type UserRole } from '../../store/authStore';
+import { useAuthStore, type UserRole, getRoleLandingPath, DEMO_ACTORS } from '../../store/authStore';
 
 interface NavItemDef {
   to: string;
@@ -18,13 +18,16 @@ interface NavItemDef {
 }
 
 const navItems: NavItemDef[] = [
-  { to: '/dashboard', label: 'Dashboard', icon: LayoutDashboard, end: true },
-  { to: '/dashboard/projects', label: 'Projects', icon: FolderKanban },
+  { to: '/dashboard', label: 'Dashboard', icon: LayoutDashboard, end: true, roles: ['admin', 'security_engineer', 'client_owner'] },
+  { to: '/dashboard/projects', label: 'Targets & Inventory', icon: Globe },
   { to: '/dashboard/assessment/new', label: 'New Assessment', icon: ShieldCheck, roles: ['admin', 'security_engineer'] },
   { to: '/dashboard/findings', label: 'Findings', icon: ShieldAlert, roles: ['admin', 'security_engineer', 'client_owner', 'developer'] },
+  { to: '/dashboard/scopes', label: 'Security Scopes', icon: Network, roles: ['admin', 'security_engineer'] },
+  { to: '/dashboard/rules', label: 'Company Policies', icon: Sliders, roles: ['admin', 'security_engineer'] },
+  { to: '/dashboard/reports', label: 'Reports', icon: FileText, roles: ['admin', 'security_engineer', 'client_owner', 'malware_analyst'] },
+  { to: '/dashboard/scans/deleted', label: 'Deleted Scans', icon: Trash2, roles: ['admin', 'security_engineer'] },
   { to: '/dashboard/remediation', label: 'Remediation', icon: ArrowRightLeft, roles: ['admin', 'developer', 'security_engineer'] },
   { to: '/dashboard/retest', label: 'Retesting', icon: RotateCcw, roles: ['admin', 'security_engineer', 'developer'] },
-  { to: '/dashboard/reports', label: 'Reports', icon: FileText, roles: ['admin', 'security_engineer', 'client_owner', 'malware_analyst'] },
   { to: '/dashboard/malware', label: 'Malware Analysis', icon: Bug, roles: ['admin', 'malware_analyst', 'security_engineer'] },
   { to: '/dashboard/billing', label: 'Billing & Plans', icon: CreditCard, roles: ['admin', 'client_owner'] },
   { to: '/dashboard/admin', label: 'Administration', icon: Settings, roles: ['admin'] },
@@ -40,10 +43,11 @@ const DEMO_NOTIFICATIONS = [
 export const AppShell: React.FC = () => {
   const navigate = useNavigate();
   const location = useLocation();
-  const { user, logout } = useAuthStore();
+  const { user, logout, switchRole } = useAuthStore();
   const [showNotifications, setShowNotifications] = useState(false);
   const [notifications, setNotifications] = useState(DEMO_NOTIFICATIONS);
   const [mobileSidebarOpen, setMobileSidebarOpen] = useState(false);
+  const [showActorMenu, setShowActorMenu] = useState(false);
 
   const currentUser = {
     name: (user && user.name) || 'User',
@@ -183,13 +187,64 @@ export const AppShell: React.FC = () => {
           </div>
 
           <div className="flex items-center gap-2 sm:gap-3">
-            {/* Role indicator badge */}
-            <div className="hidden md:flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-white/5 border border-white/10 text-xs">
-              <Shield size={13} className="text-brand-cyan" />
-              <span className="text-text-muted">Role:</span>
-              <span className="text-white font-semibold capitalize truncate max-w-[140px]">
-                {currentUser.role?.replace('_', ' ')}
-              </span>
+            {/* Interactive Actor Switcher Dropdown */}
+            <div className="relative">
+              <button
+                onClick={() => setShowActorMenu(!showActorMenu)}
+                className="flex items-center gap-2 px-3 py-1.5 rounded-full bg-white/5 hover:bg-white/10 border border-white/10 hover:border-brand-cyan/40 text-xs transition-colors"
+                title="Switch Active Operational Actor"
+              >
+                <Shield size={13} className="text-brand-cyan" />
+                <span className="text-text-muted hidden sm:inline">Actor:</span>
+                <span className="text-white font-semibold capitalize truncate max-w-[140px]">
+                  {currentUser.role?.replace('_', ' ')}
+                </span>
+                <ChevronDown size={12} className={`text-text-muted transition-transform ${showActorMenu ? 'rotate-180' : ''}`} />
+              </button>
+
+              {showActorMenu && (
+                <>
+                  <div
+                    className="fixed inset-0 z-40 bg-transparent"
+                    onClick={() => setShowActorMenu(false)}
+                  />
+                  <div className="absolute right-0 top-full mt-2 w-72 bg-[#0f172a] border border-white/20 rounded-2xl p-3 shadow-2xl shadow-black z-50 text-white">
+                    <div className="text-[11px] font-semibold text-text-muted uppercase tracking-wider px-2 pb-2 border-b border-white/10 mb-2 flex items-center justify-between">
+                      <span>Operational Actor</span>
+                      <Sparkles size={12} className="text-brand-cyan" />
+                    </div>
+                    <div className="space-y-1">
+                      {(Object.keys(DEMO_ACTORS) as UserRole[]).map((roleKey) => {
+                        const actor = DEMO_ACTORS[roleKey];
+                        const isCurrent = currentUser.role === roleKey;
+                        return (
+                          <button
+                            key={roleKey}
+                            onClick={() => {
+                              switchRole(roleKey);
+                              setShowActorMenu(false);
+                              navigate(getRoleLandingPath(roleKey));
+                            }}
+                            className={`w-full flex items-center justify-between p-2 rounded-xl text-left text-xs transition-all ${
+                              isCurrent
+                                ? 'bg-brand-cyan/15 text-brand-cyan border border-brand-cyan/30 font-semibold'
+                                : 'hover:bg-white/5 text-slate-300 hover:text-white'
+                            }`}
+                          >
+                            <div className="min-w-0">
+                              <div className="font-medium truncate">{actor.name}</div>
+                              <div className="text-[10px] text-text-muted capitalize">
+                                {actor.role.replace('_', ' ')} • {actor.defaultPath.replace('/dashboard', '~')}
+                              </div>
+                            </div>
+                            {isCurrent && <CheckCircle2 size={14} className="text-brand-cyan shrink-0 ml-2" />}
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </div>
+                </>
+              )}
             </div>
 
             {/* Notifications */}

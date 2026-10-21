@@ -1,27 +1,15 @@
-﻿
- // STATUS: UPDATED
- // File: src/reports/reportBuilder.js
+﻿// STATUS: UPDATED
+// File: src/reports/reportBuilder.js
 
-import {
-  buildJsonReport,
-  serializeJsonReport,
-} from "./jsonReport.js";
+import { buildJsonReport, serializeJsonReport } from "./jsonReport.js";
 
-import {
-  buildHtmlReport,
-} from "./htmlReport.js";
+import { buildHtmlReport } from "./htmlReport.js";
 
-const SUPPORTED_FORMATS = Object.freeze([
-  "json",
-  "html",
-  "pdf",
-]);
+const SUPPORTED_FORMATS = Object.freeze(["json", "html", "pdf"]);
 
 const assertSupportedFormat = (format) => {
   if (!SUPPORTED_FORMATS.includes(format)) {
-    throw new Error(
-      `Unsupported report format: ${format}`,
-    );
+    throw new Error(`Unsupported report format: ${format}`);
   }
 };
 
@@ -84,7 +72,4 @@ const buildReport = ({
   }
 };
 
-export {
-  SUPPORTED_FORMATS,
-  buildReport,
-};
+export { SUPPORTED_FORMATS, buildReport };

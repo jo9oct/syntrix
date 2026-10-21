@@ -1,33 +1,72 @@
+
+/* STATUS: UPDATED */
+
 import { get } from "../../request/request.js";
 
 import { createExchangeEvidence } from "../shared/evidence.js";
-
-import { createReconScanner, getTargetUrl } from "../shared/reconContract.js";
-
+import {
+  createReconScanner,
+  getTargetUrl,
+} from "../shared/reconContract.js";
 import { assertSafeUrl } from "../shared/resolver.js";
 
+const MAX_ROBOTS_BYTES = 1024 * 1024;
+const MAX_DIRECTIVES = 10000;
+const MAX_VALUE_LENGTH = 2000;
+const MAX_USER_AGENT_LENGTH = 256;
+
+const createEmptyResult = () => ({
+  userAgents: [],
+  disallowed: [],
+  allowed: [],
+  sitemaps: [],
+});
+
+const getResponseBody = (body) => {
+  if (typeof body === "string") {
+    return body;
+  }
+
+  if (Buffer.isBuffer(body)) {
+    return body.toString("utf8");
+  }
+
+  return null;
+};
+
 const parseRobots = (body) => {
-  if (typeof body !== "string") {
+  const text = getResponseBody(body);
+
+  if (text === null) {
     return {
-      userAgents: [],
-      disallowed: [],
-      allowed: [],
-      sitemaps: [],
+      ...createEmptyResult(),
+      malformed: true,
+      directivesParsed: 0,
     };
   }
 
   const userAgents = new Set();
-
   const disallowed = [];
   const allowed = [];
   const sitemaps = [];
 
-  let currentUserAgent = "*";
+  let currentAgents = [];
+  let groupHasRules = false;
+  let directivesParsed = 0;
+  let truncated = false;
 
-  for (const rawLine of body.split(/\r?\n/)) {
-    const line = rawLine.trim();
+  const lines = text.split(/\r?\n/);
 
-    if (!line || line.startsWith("#")) {
+  for (const rawLine of lines) {
+    if (directivesParsed >= MAX_DIRECTIVES) {
+      truncated = true;
+      break;
+    }
+
+    // Remove comments while retaining the directive itself.
+    const line = rawLine.split("#", 1)[0].trim();
+
+    if (!line) {
       continue;
     }
 
@@ -37,72 +76,125 @@ const parseRobots = (body) => {
       continue;
     }
 
-    const directive = line.slice(0, separator).trim().toLowerCase();
+    const directive = line
+      .slice(0, separator)
+      .trim()
+      .toLowerCase();
 
-    const value = line.slice(separator + 1).trim();
-
-    if (!value) {
-      continue;
-    }
+    const value = line
+      .slice(separator + 1)
+      .trim()
+      .slice(0, MAX_VALUE_LENGTH);
 
     if (directive === "user-agent") {
-      currentUserAgent = value.slice(0, 256);
+      if (groupHasRules) {
+        currentAgents = [];
+        groupHasRules = false;
+      }
 
-      userAgents.add(currentUserAgent);
+      if (!value) {
+        continue;
+      }
 
-      continue;
-    }
+      const agent = value.slice(0, MAX_USER_AGENT_LENGTH);
 
-    if (directive === "disallow") {
-      disallowed.push({
-        userAgent: currentUserAgent,
+      if (!currentAgents.includes(agent)) {
+        currentAgents.push(agent);
+      }
 
-        path: value.slice(0, 2000),
-      });
-
-      continue;
-    }
-
-    if (directive === "allow") {
-      allowed.push({
-        userAgent: currentUserAgent,
-
-        path: value.slice(0, 2000),
-      });
-
+      userAgents.add(agent);
+      directivesParsed += 1;
       continue;
     }
 
     if (directive === "sitemap") {
-      sitemaps.push(value.slice(0, 2000));
+      // Sitemap is a global directive and may be an absolute URL.
+      if (value) {
+        sitemaps.push(value);
+      }
+
+      directivesParsed += 1;
+      continue;
     }
+
+    if (!["allow", "disallow"].includes(directive)) {
+      continue;
+    }
+
+    // Empty Allow/Disallow values do not specify a path rule.
+    if (!value) {
+      continue;
+    }
+
+    const agents = currentAgents.length
+      ? currentAgents
+      : ["*"];
+
+    for (const userAgent of agents) {
+      const entry = {
+        userAgent,
+        path: value,
+      };
+
+      if (directive === "allow") {
+        allowed.push(entry);
+      } else {
+        disallowed.push(entry);
+      }
+    }
+
+    groupHasRules = true;
+    directivesParsed += 1;
   }
 
   return {
     userAgents: [...userAgents],
-
     disallowed,
-
     allowed,
-
     sitemaps,
+    malformed: false,
+    directivesParsed,
+    truncated,
   };
 };
+
+const cancelledResult = (url) => ({
+  data: {
+    url,
+    status: null,
+    ...createEmptyResult(),
+  },
+  evidence: [],
+  fingerprints: [],
+  verificationRecords: [],
+  metadata: {
+    cancelled: true,
+  },
+});
 
 const scanner = createReconScanner({
   id: "recon.robots",
 
   name: "Robots.txt Reconnaissance",
 
-  description: "Retrieves and parses the target robots.txt resource.",
+  description:
+    "Retrieves and parses robots.txt directives as public discovery hints.",
 
   async run(context) {
-    const targetUrl = getTargetUrl(context);
+    if (context?.signal?.aborted) {
+      return cancelledResult(null);
+    }
 
+    const targetUrl = getTargetUrl(context);
     const parsedUrl = new URL(targetUrl);
 
-    parsedUrl.pathname = "/robots.txt";
+    if (!["http:", "https:"].includes(parsedUrl.protocol)) {
+      throw new Error(
+        "Robots reconnaissance only supports HTTP and HTTPS targets.",
+      );
+    }
 
+    parsedUrl.pathname = "/robots.txt";
     parsedUrl.search = "";
     parsedUrl.hash = "";
 
@@ -111,116 +203,104 @@ const scanner = createReconScanner({
     await assertSafeUrl(robotsUrl);
 
     if (context?.signal?.aborted) {
-      return {
-        data: {
-          url: robotsUrl,
-
-          status: null,
-
-          userAgents: [],
-
-          disallowed: [],
-
-          allowed: [],
-
-          sitemaps: [],
-        },
-
-        evidence: [],
-
-        fingerprints: [],
-
-        verificationRecords: [],
-
-        metadata: {
-          cancelled: true,
-        },
-      };
+      return cancelledResult(robotsUrl);
     }
 
-    const requestHeaders = context?.session?.getHeaders?.() ?? {};
-
+    // robots.txt is public. Do not forward authenticated session
+    // cookies or authorization headers unnecessarily.
     const response = await get(robotsUrl, {
       signal: context?.signal,
-
-      headers: requestHeaders,
+      scope: context?.scope,
+      headers: {
+        Accept: "text/plain, */*;q=0.1",
+      },
+      maxRedirects: 0,
+      maxContentLength: MAX_ROBOTS_BYTES,
+      maxBodyLength: MAX_ROBOTS_BYTES,
+      responseType: "text",
     });
 
     if (context?.signal?.aborted) {
-      return {
-        data: {
-          url: robotsUrl,
-
-          status: response.status,
-
-          userAgents: [],
-
-          disallowed: [],
-
-          allowed: [],
-
-          sitemaps: [],
-        },
-
-        evidence: [],
-
-        fingerprints: [],
-
-        verificationRecords: [],
-
-        metadata: {
-          cancelled: true,
-        },
-      };
+      return cancelledResult(robotsUrl);
     }
 
-    const parsed = parseRobots(response.data);
+    const status = Number(response?.status);
+
+    if (!Number.isInteger(status) || status < 100 || status > 599) {
+      throw new Error(
+        "Robots reconnaissance received an invalid HTTP status.",
+      );
+    }
+
+    const successfulResponse = status >= 200 && status < 300;
+
+    const body = successfulResponse
+      ? getResponseBody(response.data)
+      : null;
+
+    const bodySize = body === null
+      ? 0
+      : Buffer.byteLength(body, "utf8");
+
+    if (bodySize > MAX_ROBOTS_BYTES) {
+      throw new Error(
+        "The robots.txt response exceeds the permitted size.",
+      );
+    }
+
+    const parsed = successfulResponse
+      ? parseRobots(body)
+      : createEmptyResult();
+
+    const contentType =
+      response?.headers?.["content-type"] ??
+      response?.headers?.["Content-Type"] ??
+      null;
+
+    const evidence = createExchangeEvidence({
+      request: {
+        method: "GET",
+        url: robotsUrl,
+        headers: {
+          Accept: "text/plain, */*;q=0.1",
+        },
+      },
+
+      response: {
+        status,
+        statusText: response?.statusText ?? null,
+        headers: response?.headers ?? {},
+        contentType,
+        // robots.txt can reveal internal paths; retain parsed
+        // directives rather than duplicating the entire body.
+        body: null,
+      },
+    });
 
     return {
       data: {
         url: robotsUrl,
-
-        status: response.status,
-
+        status,
         ...parsed,
       },
 
-      evidence: [
-        createExchangeEvidence({
-          request: {
-            method: "GET",
-
-            url: robotsUrl,
-
-            headers: requestHeaders,
-          },
-
-          response: {
-            status: response.status,
-
-            statusText: response.statusText,
-
-            headers: response.headers,
-
-            body: response.data,
-
-            contentType: response.headers?.["content-type"],
-          },
-        }),
-      ],
-
+      evidence: [evidence],
       fingerprints: [],
-
       verificationRecords: [],
 
       metadata: {
+        successfulResponse,
+        bodyBytes: bodySize,
         userAgentCount: parsed.userAgents.length,
-
         disallowedCount: parsed.disallowed.length,
-
         allowedCount: parsed.allowed.length,
-
         sitemapCount: parsed.sitemaps.length,
+        directivesParsed: parsed.directivesParsed ?? 0,
+        truncated: parsed.truncated ?? false,
+        malformed: parsed.malformed ?? false,
+        cancelled: false,
+        note:
+          "Robots directives guide crawler behavior; they do not authorize access or prove a vulnerability.",
       },
     };
   },

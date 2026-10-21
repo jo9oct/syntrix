@@ -1,4 +1,5 @@
 // STATUS: UPDATED
+// File: src/config/security.js
 
 const blockedProtocols = new Set([
   "file:",
@@ -22,6 +23,12 @@ const sensitiveHeaders = new Set([
   "set-cookie",
   "x-api-key",
   "x-auth-token",
+  "x-access-token",
+  "x-refresh-token",
+  "x-csrf-token",
+  "x-xsrf-token",
+  "x-forwarded-authorization",
+  "www-authenticate",
 ]);
 
 const privateIpv4Ranges = Object.freeze([
@@ -66,16 +73,6 @@ const privateIpv4Ranges = Object.freeze([
     end: "192.0.2.255",
   },
   {
-    name: "documentation-2",
-    start: "198.51.100.0",
-    end: "198.51.100.255",
-  },
-  {
-    name: "documentation-3",
-    start: "203.0.113.0",
-    end: "203.0.113.255",
-  },
-  {
     name: "private-c",
     start: "192.168.0.0",
     end: "192.168.255.255",
@@ -84,6 +81,16 @@ const privateIpv4Ranges = Object.freeze([
     name: "benchmarking",
     start: "198.18.0.0",
     end: "198.19.255.255",
+  },
+  {
+    name: "documentation-2",
+    start: "198.51.100.0",
+    end: "198.51.100.255",
+  },
+  {
+    name: "documentation-3",
+    start: "203.0.113.0",
+    end: "203.0.113.255",
   },
   {
     name: "multicast",

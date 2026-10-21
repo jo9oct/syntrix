@@ -1,16 +1,15 @@
+// STATUS: UPDATED
+// File: src/scanners/apiSecurity/scanner.js
+
 import { get } from "../../request/request.js";
-
+import { getAuthenticatedRequestOptions } from "../../request/authenticatedRequestOptions.js";
 import { createSecurityEvidence } from "../shared/evidenceBuilder.js";
-
 import { calculateConfidence } from "../shared/confidence.js";
-
 import { normalizeFinding } from "../shared/findingNormalizer.js";
-
 import {
   createSecurityScanner,
   getTargetUrl,
 } from "../shared/scannerContract.js";
-
 import { assertSafeUrl } from "../../recon/shared/resolver.js";
 
 const API_PATHS = [
@@ -23,20 +22,23 @@ const API_PATHS = [
 
 const scanner = createSecurityScanner({
   id: "security.api-security",
-
   name: "API Security",
-
   description:
     "Performs bounded discovery of common API documentation and endpoint surfaces.",
 
   async run(context) {
     const targetUrl = getTargetUrl(context);
 
-    const baseUrl = new URL(targetUrl);
+    await assertSafeUrl(targetUrl);
 
+    const baseUrl = new URL(targetUrl);
     const findings = [];
     const evidence = [];
     const results = [];
+
+    const requestHeaders = context?.session?.getHeaders?.() ?? {};
+
+    const authenticatedRequestOptions = getAuthenticatedRequestOptions(context);
 
     for (const pathname of API_PATHS) {
       if (context?.signal?.aborted) {
@@ -49,17 +51,14 @@ const scanner = createSecurityScanner({
 
       const response = await get(candidate, {
         signal: context?.signal,
-
-        headers: context?.session?.getHeaders?.() ?? {},
-
+        headers: requestHeaders,
         maxRedirects: 0,
-
         validateStatus: () => true,
+        ...authenticatedRequestOptions,
       });
 
       results.push({
         path: pathname,
-
         status: response.status,
       });
 
@@ -81,25 +80,17 @@ const scanner = createSecurityScanner({
         findings.push(
           normalizeFinding({
             scannerId: "security.api-security",
-
             title: "Public API Documentation Exposure",
-
-            description: `An API documentation or schema resource was publicly accessible at "${pathname}".`,
-
+            description: `An API documentation or schema resource was accessible at "${pathname}". This does not establish whether the resource was intended to be public.`,
             severity: "low",
-
             confidence: calculateConfidence({
-              confirmed: true,
+              confirmed: false,
             }),
-
             remediation:
-              "Restrict API documentation to intended audiences and avoid exposing sensitive implementation details.",
-
+              "Review whether API documentation is intended to be publicly accessible. Restrict it if it exposes information that should only be available to authorized users.",
             category: "api-security",
-
             metadata: {
               path: pathname,
-
               contentType,
             },
           }),
@@ -110,17 +101,12 @@ const scanner = createSecurityScanner({
         createSecurityEvidence({
           request: {
             method: "GET",
-
             url: candidate,
-
-            headers: context?.session?.getHeaders?.() ?? {},
+            headers: requestHeaders,
           },
-
           response: {
             status: response.status,
-
             statusText: response.statusText,
-
             headers: response.headers,
           },
         }),
@@ -131,10 +117,14 @@ const scanner = createSecurityScanner({
       data: {
         endpoints: results,
       },
-
       findings,
-
       evidence,
+      fingerprints: [],
+      verificationRecords: [],
+      metadata: {
+        cancelled: context?.signal?.aborted === true,
+        endpointsTested: results.length,
+      },
     };
   },
 });

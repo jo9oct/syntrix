@@ -1,16 +1,14 @@
-// STATUS: UPDATED
-// File: src/validators/scan.validators.js
+
+/* STATUS: UPDATED */
+/* FILE: src/validators/scan.validator.js */
 
 import Joi from "joi";
 
 const scannerNamePattern = /^[a-zA-Z0-9_-]+$/;
-
 const scannerName = Joi.string().trim().pattern(scannerNamePattern).max(128);
-
 const scannerSelection = Joi.array().items(scannerName).max(100).unique();
 
 const companyRuleId = Joi.string().trim().hex().length(24);
-
 const companyRuleIds = Joi.array()
   .items(companyRuleId)
   .max(100)
@@ -27,10 +25,7 @@ const scopes = Joi.array().items(scopeId).max(1).unique().default([]).messages({
 
 const targetUrl = Joi.string()
   .trim()
-  .uri({
-    scheme: ["http", "https"],
-    allowRelative: false,
-  })
+  .uri({ scheme: ["http", "https"], allowRelative: false })
   .max(2048)
   .custom((value, helpers) => {
     let parsedUrl;
@@ -54,11 +49,35 @@ const targetUrl = Joi.string()
     return value;
   });
 
-const credentialsSchema = Joi.object({
+const usernamePasswordCredentials = Joi.object({
   username: Joi.string().trim().min(1).max(512).required(),
-
   password: Joi.string().min(1).max(4096).required(),
-}).required();
+})
+  .unknown(false);
+
+const sessionCookieCredentials = Joi.object({
+  sessionCookie: Joi.string()
+    .trim()
+    .min(1)
+    .max(8192)
+    .pattern(/^[^\r\n\0]+$/)
+    .custom((value, helpers) => {
+      if (
+        !value.includes("=") ||
+        value.split(";").some((part) => !part.trim().includes("="))
+      ) {
+        return helpers.error("any.invalid");
+      }
+
+      return value;
+    })
+    .required(),
+})
+  .unknown(false);
+
+const credentialsSchema = Joi.alternatives()
+  .try(usernamePasswordCredentials, sessionCookieCredentials)
+  .required();
 
 const scanSelectionSchema = Joi.object({
   recon: scannerSelection.default([]),
@@ -81,15 +100,10 @@ const scanSelectionSchema = Joi.object({
 
 const createScanSchema = Joi.object({
   targetUrl: targetUrl.required(),
-
   scanSelection: scanSelectionSchema,
-
   scopes,
-
   companyRuleIds,
-
   credentials: credentialsSchema.optional(),
-
   idempotencyKey: Joi.string()
     .trim()
     .min(8)
@@ -108,9 +122,7 @@ const listScanQuerySchema = Joi.object({
   status: Joi.string()
     .valid("pending", "running", "completed", "failed", "cancelled")
     .optional(),
-
   limit: Joi.number().integer().min(1).max(100).default(50),
-
   skip: Joi.number().integer().min(0).max(100_000).default(0),
 });
 
@@ -125,7 +137,6 @@ const normalizeCompanyRuleIds = (ruleIds) => [
 
 const getSelectedScannerIds = (selection) => {
   const normalized = normalizeSelection(selection);
-
   return [...normalized.recon, ...normalized.security];
 };
 

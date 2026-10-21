@@ -15,10 +15,7 @@ const createSubscriptionError = (message, statusCode, code) => {
   return error;
 };
 
-const resolveEffectivePlanName = async ({
-  userId,
-  isGuest = false,
-}) => {
+const resolveEffectivePlanName = async ({ userId, isGuest = false }) => {
   // Guest scans always use the Free plan.
   if (isGuest) {
     return "free";

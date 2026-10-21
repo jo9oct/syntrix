@@ -41,11 +41,7 @@ const getHostname = (url) => {
 
 const assertOwnerId = (ownerId) => {
   if (!ownerId) {
-    throw createServiceError(
-      "OWNER_ID_REQUIRED",
-      "Owner ID is required.",
-      401,
-    );
+    throw createServiceError("OWNER_ID_REQUIRED", "Owner ID is required.", 401);
   }
 
   if (!mongoose.isValidObjectId(ownerId)) {
@@ -170,20 +166,31 @@ const resolveSelectedScope = async ({
   };
 };
 
+// STATUS: UPDATED
+// FILE: src/services/scan.service.js
+
 const assertAuthenticationAllowed = ({ credentials, plan, isGuest }) => {
   if (!credentials) {
     return;
   }
 
-  if (
-    typeof credentials.username !== "string" ||
-    credentials.username.trim().length === 0 ||
-    typeof credentials.password !== "string" ||
-    credentials.password.length === 0
-  ) {
+  const hasUsernamePassword =
+    typeof credentials.username === "string" &&
+    credentials.username.trim().length > 0 &&
+    typeof credentials.password === "string" &&
+    credentials.password.length > 0 &&
+    !Object.hasOwn(credentials, "sessionCookie");
+
+  const hasSessionCookie =
+    typeof credentials.sessionCookie === "string" &&
+    credentials.sessionCookie.trim().length > 0 &&
+    !Object.hasOwn(credentials, "username") &&
+    !Object.hasOwn(credentials, "password");
+
+  if (!hasUsernamePassword && !hasSessionCookie) {
     throw createServiceError(
       "INVALID_AUTHENTICATION_CREDENTIALS",
-      "A non-empty username and password are required for authenticated scanning.",
+      "Provide either username/password or a session cookie.",
       400,
     );
   }
@@ -522,10 +529,7 @@ const createScan = async ({
 
   try {
     if (credentials && !isGuest) {
-      credentialReference = await storeCredentials({
-        username: credentials.username,
-        password: credentials.password,
-      });
+      credentialReference = await storeCredentials(credentials);
     }
 
     await scanQueue.add(

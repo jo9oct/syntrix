@@ -1,4 +1,3 @@
-
 // STATUS: UPDATED
 // FILE: src/controllers/assessment.controller.js
 // PURPOSE: Manage assessments without findings, mock engines, or mock scan results.
@@ -12,10 +11,7 @@ export const getAssessments = async (req, res) => {
   try {
     const filter = {};
 
-    if (
-      req.user?.role !== "admin" &&
-      req.user?.role !== "security_engineer"
-    ) {
+    if (req.user?.role !== "admin" && req.user?.role !== "security_engineer") {
       if (!req.user?.organizationId) {
         return res.status(403).json({
           success: false,
@@ -104,10 +100,7 @@ export const startAssessment = async (req, res) => {
       });
     }
 
-    if (
-      typeof targetUrl !== "string" ||
-      targetUrl.trim().length === 0
-    ) {
+    if (typeof targetUrl !== "string" || targetUrl.trim().length === 0) {
       return res.status(400).json({
         success: false,
         error: "A target URL is required.",
@@ -167,10 +160,7 @@ export const getAssessment = async (req, res) => {
 
     const filter = { _id: id };
 
-    if (
-      req.user?.role !== "admin" &&
-      req.user?.role !== "security_engineer"
-    ) {
+    if (req.user?.role !== "admin" && req.user?.role !== "security_engineer") {
       if (!req.user?.organizationId) {
         return res.status(403).json({
           success: false,

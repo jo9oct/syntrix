@@ -12,10 +12,7 @@ import { createCleanupWorker } from "./src/jobs/cleanup.job.js";
 import { createNotificationWorker } from "./src/jobs/notification.job.js";
 import { createReportWorker } from "./src/jobs/report.job.js";
 
-import {
-  startScheduler,
-  stopScheduler,
-} from "./src/scheduler/scheduler.js";
+import { startScheduler, stopScheduler } from "./src/scheduler/scheduler.js";
 
 const workers = [];
 
@@ -84,12 +81,7 @@ const startWorker = async () => {
   const notificationWorker = createNotificationWorker();
   const reportWorker = createReportWorker();
 
-  workers.push(
-    scanWorker,
-    cleanupWorker,
-    notificationWorker,
-    reportWorker,
-  );
+  workers.push(scanWorker, cleanupWorker, notificationWorker, reportWorker);
 
   registerWorkerLogging(scanWorker, "scan");
   registerWorkerLogging(cleanupWorker, "cleanup");
@@ -129,9 +121,7 @@ const shutdown = async (signal) => {
   try {
     stopScheduler();
 
-    await Promise.all(
-      workers.map((worker) => worker.close()),
-    );
+    await Promise.all(workers.map((worker) => worker.close()));
 
     await closeQueues();
 
@@ -184,15 +174,9 @@ process.on("uncaughtException", (error) => {
 });
 
 process.on("unhandledRejection", (reason) => {
-  const message =
-    reason instanceof Error
-      ? reason.message
-      : String(reason);
+  const message = reason instanceof Error ? reason.message : String(reason);
 
-  const stack =
-    reason instanceof Error
-      ? reason.stack
-      : null;
+  const stack = reason instanceof Error ? reason.stack : null;
 
   console.error(
     JSON.stringify({

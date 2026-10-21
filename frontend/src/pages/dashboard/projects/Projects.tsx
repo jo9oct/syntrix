@@ -1,383 +1,193 @@
 import React, { useState, useEffect } from 'react';
 import { GlassCard } from '../../../components/ui/GlassCard';
-import { Button, Input, Badge, StatusBadge } from '../../../components/ui';
-import { ShieldCheck, Plus, Search, Filter, ArrowRight, Shield, Globe, Server, CheckCircle2, X } from 'lucide-react';
-import { useNavigate } from 'react-router-dom';
+import type { Target } from '../../../types/sentrix';
 import api from '../../../lib/api';
-
-export interface ProjectItem {
-  id: string;
-  name: string;
-  env: 'Production' | 'Staging' | 'Development' | 'Sandbox';
-  type: 'Web App' | 'API' | 'Malware' | 'Infrastructure';
-  status: 'active' | 'in_progress' | 'completed' | 'archived';
-  critical: number;
-  high: number;
-  medium: number;
-  progress: number;
-  updated: string;
-  targetUrl: string;
-}
-
-const INITIAL_PROJECTS: ProjectItem[] = [
-  { id: '1', name: 'Main Web Portal Security Audit', env: 'Production', type: 'Web App', status: 'active', critical: 1, high: 2, medium: 5, progress: 65, updated: '2 hours ago', targetUrl: 'https://portal.acmecorp.local' },
-  { id: '2', name: 'Mobile API Q3 Review', env: 'Staging', type: 'API', status: 'in_progress', critical: 0, high: 1, medium: 4, progress: 40, updated: '1 day ago', targetUrl: 'https://api-staging.acmecorp.local' },
-  { id: '3', name: 'Legacy System Retirement Scan', env: 'Production', type: 'Web App', status: 'completed', critical: 0, high: 0, medium: 0, progress: 100, updated: '1 week ago', targetUrl: 'https://legacy-billing.acmecorp.local' },
-  { id: '4', name: 'Suspicious Document Analysis', env: 'Sandbox', type: 'Malware', status: 'active', critical: 1, high: 0, medium: 0, progress: 85, updated: '5 hours ago', targetUrl: 'invoice_2026.pdf.exe' },
-  { id: '5', name: 'Internal HR Tool Assessment', env: 'Development', type: 'Web App', status: 'active', critical: 0, high: 1, medium: 3, progress: 50, updated: '1 month ago', targetUrl: 'http://hr-internal.corp' },
-  { id: '6', name: 'Payment Gateway Integration', env: 'Staging', type: 'API', status: 'active', critical: 0, high: 0, medium: 1, progress: 15, updated: 'Just now', targetUrl: 'https://pay.acmecorp.local' },
-];
+import {
+  Globe, Plus, Shield, Search, ArrowRight,
+  Clock, CheckCircle2, AlertTriangle, Activity, Server, Sliders
+} from 'lucide-react';
+import { Link, useNavigate } from 'react-router-dom';
 
 export const Projects: React.FC = () => {
   const navigate = useNavigate();
-  const [projects, setProjects] = useState<ProjectItem[]>(INITIAL_PROJECTS);
-  const [filter, setFilter] = useState('All');
+  const [targets, setTargets] = useState<Target[]>([]);
+  const [loading, setLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState('');
-  const [showCreateModal, setShowCreateModal] = useState(false);
 
-  // Load real projects from MongoDB backend
-  useEffect(() => {
-    const fetchProjects = async () => {
-      try {
-        const { data } = await api.get('/projects');
-        if (data?.data && Array.isArray(data.data) && data.data.length > 0) {
-          const mapped: ProjectItem[] = data.data.map((p: any) => ({
-            id: p._id || p.id,
-            name: p.name,
-            env: 'Production',
-            type: p.serviceType === 'web_app' ? 'Web App' : p.serviceType === 'api' ? 'API' : 'Malware',
-            status: p.status || 'active',
-            critical: p.riskSummary?.critical || 0,
-            high: p.riskSummary?.high || 0,
-            medium: p.riskSummary?.medium || 0,
-            progress: p.status === 'completed' ? 100 : 65,
-            updated: new Date(p.updatedAt || p.createdAt || Date.now()).toLocaleDateString(),
-            targetUrl: p.description || 'https://' + p.name.toLowerCase().replace(/\s+/g, '-') + '.local'
-          }));
-          setProjects(mapped);
-        }
-      } catch (err) {
-        // Fallback to initial projects if backend unreachable
-      }
-    };
-    fetchProjects();
-  }, []);
-
-  // New Project Form
-  const [newProject, setNewProject] = useState({
-    name: '',
-    type: 'Web App' as ProjectItem['type'],
-    env: 'Staging' as ProjectItem['env'],
-    targetUrl: '',
-    description: ''
-  });
-
-  const handleCreateProject = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!newProject.name) return;
-
-    let serviceType = 'web_app';
-    if (newProject.type === 'API') serviceType = 'api';
-    else if (newProject.type === 'Malware') serviceType = 'malware';
-
+  const fetchTargets = async () => {
     try {
-      const { data } = await api.post('/projects', {
-        name: newProject.name,
-        serviceType,
-        description: newProject.targetUrl || newProject.description,
-        status: 'active'
-      });
-      if (data?.data) {
-        const p = data.data;
-        const created: ProjectItem = {
-          id: p._id || String(Date.now()),
-          name: p.name,
-          type: newProject.type,
-          env: newProject.env,
-          status: 'active',
-          critical: 0,
-          high: 0,
-          medium: 0,
-          progress: 10,
-          updated: 'Just now',
-          targetUrl: newProject.targetUrl || 'https://target.local'
-        };
-        setProjects(prev => [created, ...prev]);
+      // API 20: Get All Targets
+      const res = await api.get('/targets');
+      if (res.data?.data?.items) {
+        setTargets(res.data.data.items);
       }
     } catch (err) {
-      const created: ProjectItem = {
-        id: String(Date.now()),
-        name: newProject.name,
-        type: newProject.type,
-        env: newProject.env,
-        status: 'active',
-        critical: 0,
-        high: 0,
-        medium: 0,
-        progress: 10,
-        updated: 'Just now',
-        targetUrl: newProject.targetUrl || 'https://target.local'
-      };
-      setProjects(prev => [created, ...prev]);
+      console.error('Failed to fetch targets', err);
+    } finally {
+      setLoading(false);
     }
-
-    setShowCreateModal(false);
-    setNewProject({
-      name: '',
-      type: 'Web App',
-      env: 'Staging',
-      targetUrl: '',
-      description: ''
-    });
   };
 
+  useEffect(() => {
+    fetchTargets();
+  }, []);
 
-  const filtered = projects.filter(p => {
-    const matchesFilter =
-      filter === 'All'
-        ? true
-        : filter === 'Active'
-        ? ['active', 'in_progress'].includes(p.status)
-        : filter === 'Completed'
-        ? p.status === 'completed'
-        : p.status === 'archived';
-
-    const matchesSearch =
-      p.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      p.targetUrl.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      p.type.toLowerCase().includes(searchTerm.toLowerCase());
-
-    return matchesFilter && matchesSearch;
-  });
+  const filtered = targets.filter(t =>
+    t.hostname.toLowerCase().includes(searchTerm.toLowerCase()) ||
+    t.url.toLowerCase().includes(searchTerm.toLowerCase())
+  );
 
   return (
-    <div className="p-8 space-y-6 max-w-7xl mx-auto">
+    <div className="p-8 space-y-8 max-w-7xl mx-auto">
       {/* Header */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
         <div>
-          <h1 className="text-2xl font-bold text-white mb-1">Security Projects</h1>
-          <p className="text-sm text-text-muted">Manage target boundaries, active assessments, and pentest scopes.</p>
+          <div className="flex items-center gap-2 text-xs font-semibold text-brand-cyan uppercase tracking-wider mb-1">
+            <Globe size={14} /> Attack Surface Inventory
+          </div>
+          <h1 className="text-3xl font-bold text-white tracking-tight">
+            Target Assets & Hostnames
+          </h1>
+          <p className="text-sm text-text-muted mt-1">
+            Centralized inventory of authorized web applications, hostnames, and audit lifecycles (API 20).
+          </p>
         </div>
-        <button
-          onClick={() => setShowCreateModal(true)}
-          className="btn-primary flex items-center gap-2 px-4 py-2.5 rounded-xl text-xs font-semibold shadow-lg shadow-brand-cyan/20"
-        >
-          <Plus size={16} /> Create Project
-        </button>
+
+        <div className="flex items-center gap-3">
+          <Link
+            to="/dashboard/scopes"
+            className="px-4 py-2.5 rounded-xl bg-white/5 hover:bg-white/10 text-white border border-white/10 text-xs font-semibold transition-colors"
+          >
+            Manage Scopes
+          </Link>
+          <Link
+            to="/dashboard/assessment/new"
+            className="btn-primary text-xs flex items-center gap-2 px-4 py-2.5 rounded-xl shadow-lg shadow-brand-cyan/20"
+          >
+            <Plus size={16} /> New Assessment
+          </Link>
+        </div>
       </div>
 
-      {/* Filter and Search Bar */}
-      <div className="flex flex-col md:flex-row gap-4 justify-between items-stretch md:items-center">
-        <div className="flex bg-white/5 p-1 rounded-xl border border-white/10 w-fit text-xs">
-          {['All', 'Active', 'Completed', 'Archived'].map(f => (
-            <button
-              key={f}
-              onClick={() => setFilter(f)}
-              className={`px-4 py-1.5 rounded-lg font-medium transition-colors ${
-                filter === f ? 'bg-white/10 text-white font-semibold' : 'text-text-muted hover:text-white'
-              }`}
-            >
-              {f} ({
-                f === 'All'
-                  ? projects.length
-                  : f === 'Active'
-                  ? projects.filter(p => ['active', 'in_progress'].includes(p.status)).length
-                  : projects.filter(p => p.status === f.toLowerCase()).length
-              })
-            </button>
-          ))}
-        </div>
+      {/* Metrics Row */}
+      <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+        <GlassCard className="p-5 border-white/10">
+          <div className="text-xs text-text-muted">Total Monitored Targets</div>
+          <div className="text-2xl font-bold text-white mt-1">{targets.length}</div>
+          <div className="text-[11px] text-green-400 mt-1 flex items-center gap-1">
+            <CheckCircle2 size={12} /> {targets.filter(t => t.isActive).length} Active Environments
+          </div>
+        </GlassCard>
 
-        <div className="relative flex-1 max-w-sm">
-          <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 text-text-muted" size={16} />
+        <GlassCard className="p-5 border-white/10">
+          <div className="text-xs text-text-muted">Total Assessment Iterations</div>
+          <div className="text-2xl font-bold text-brand-cyan mt-1">
+            {targets.reduce((acc, t) => acc + (t.scanCount || 0), 0)} Runs
+          </div>
+          <div className="text-[11px] text-text-muted mt-1">
+            Aggregated across target versions
+          </div>
+        </GlassCard>
+
+        <GlassCard className="p-5 border-white/10">
+          <div className="text-xs text-text-muted">Latest Active Version</div>
+          <div className="text-2xl font-bold text-white mt-1">
+            v{Math.max(...targets.map(t => t.scanVersionCounter || 1), 1)}
+          </div>
+          <div className="text-[11px] text-sky-400 mt-1">
+            Continuous posture tracking
+          </div>
+        </GlassCard>
+      </div>
+
+      {/* Search Bar */}
+      <div className="flex items-center justify-between gap-4">
+        <div className="relative flex-1 max-w-md">
+          <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 text-text-muted" size={15} />
           <input
             type="text"
+            placeholder="Search targets by hostname or URL..."
             value={searchTerm}
-            onChange={(e) => setSearchTerm(e.target.value)}
-            placeholder="Search by name, URL, or type..."
+            onChange={e => setSearchTerm(e.target.value)}
             className="w-full bg-white/5 border border-white/10 rounded-xl py-2 pl-10 pr-4 text-xs text-white placeholder-text-muted focus:outline-none focus:border-brand-cyan transition-colors"
           />
         </div>
+        <div className="text-xs text-text-muted">
+          Showing <span className="font-semibold text-white">{filtered.length}</span> targets
+        </div>
       </div>
 
-      {/* Projects Grid */}
-      <div className="grid md:grid-cols-2 xl:grid-cols-3 gap-6">
-        {filtered.map(project => (
-          <GlassCard key={project.id} className="flex flex-col border-white/10 hover:border-brand-cyan/30 transition-all duration-200">
-            <div className="flex justify-between items-start mb-3">
-              <span className="px-2.5 py-1 rounded-lg bg-white/5 border border-white/10 text-xs font-medium text-white flex items-center gap-1.5">
-                {project.type === 'Web App' ? <Globe size={13} className="text-brand-cyan" /> : <Server size={13} className="text-brand-purple" />}
-                {project.type}
-              </span>
-              <StatusBadge status={project.status} />
-            </div>
-
-            <h3
-              onClick={() => navigate(`/dashboard/projects/${project.id}`)}
-              className="text-lg font-bold text-white mb-1 hover:text-brand-cyan cursor-pointer transition-colors line-clamp-1"
+      {/* Target Cards */}
+      {loading ? (
+        <div className="text-center py-16 text-text-muted text-xs">Loading target assets...</div>
+      ) : filtered.length === 0 ? (
+        <GlassCard className="p-12 text-center border-dashed border-white/10">
+          <Globe size={40} className="mx-auto text-text-muted mb-3 opacity-50" />
+          <h3 className="text-sm font-semibold text-white">No targets found</h3>
+          <p className="text-xs text-text-muted mt-1">Launch an assessment to register a new target URL.</p>
+        </GlassCard>
+      ) : (
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+          {filtered.map(target => (
+            <GlassCard
+              key={target._id}
+              className="p-6 border-white/10 hover:border-brand-cyan/40 transition-all flex flex-col justify-between group"
             >
-              {project.name}
-            </h3>
-            <p className="text-xs text-brand-cyan font-mono truncate mb-4">{project.targetUrl}</p>
+              <div className="space-y-4">
+                <div className="flex items-start justify-between gap-2">
+                  <div className="flex items-center gap-3">
+                    <div className="w-10 h-10 rounded-xl bg-brand-cyan/15 text-brand-cyan border border-brand-cyan/25 flex items-center justify-center font-bold">
+                      <Globe size={20} />
+                    </div>
+                    <div>
+                      <h3 className="text-sm font-bold text-white tracking-tight group-hover:text-brand-cyan transition-colors truncate max-w-[180px]">
+                        {target.hostname}
+                      </h3>
+                      <span className="text-[10px] font-mono text-text-muted">{target._id}</span>
+                    </div>
+                  </div>
 
-            <div className="grid grid-cols-3 gap-2 p-2.5 rounded-xl bg-white/[0.03] border border-white/5 mb-5 text-center">
-              <div>
-                <div className="text-base font-bold text-red-400">{project.critical}</div>
-                <div className="text-[10px] text-text-muted uppercase">Critical</div>
-              </div>
-              <div>
-                <div className="text-base font-bold text-orange-400">{project.high}</div>
-                <div className="text-[10px] text-text-muted uppercase">High</div>
-              </div>
-              <div>
-                <div className="text-base font-bold text-yellow-400">{project.medium}</div>
-                <div className="text-[10px] text-text-muted uppercase">Medium</div>
-              </div>
-            </div>
-
-            <div className="mt-auto space-y-3">
-              <div>
-                <div className="flex justify-between text-[11px] text-text-muted mb-1.5">
-                  <span>Audit Progress</span>
-                  <span className="font-semibold text-white">{project.progress}%</span>
-                </div>
-                <div className="w-full h-1.5 bg-white/10 rounded-full overflow-hidden">
-                  <div
-                    className="h-full bg-gradient-brand rounded-full transition-all duration-300"
-                    style={{ width: `${project.progress}%` }}
-                  />
-                </div>
-              </div>
-
-              <div className="flex justify-between items-center pt-3 border-t border-white/10">
-                <span className="text-[11px] text-text-muted">Updated {project.updated}</span>
-                <div className="flex items-center gap-2">
-                  <button
-                    onClick={() => navigate(`/dashboard/assessment/new?project=${project.id}`)}
-                    className="p-1.5 rounded-lg bg-brand-cyan/15 text-brand-cyan hover:bg-brand-cyan/25 transition-colors text-xs font-semibold"
-                    title="Launch scan on this project"
-                  >
-                    Scan
-                  </button>
-                  <button
-                    onClick={() => navigate(`/dashboard/projects/${project.id}`)}
-                    className="px-3 py-1.5 rounded-lg bg-white/5 hover:bg-white/10 text-white text-xs font-semibold border border-white/10 transition-colors flex items-center gap-1"
-                  >
-                    View <ArrowRight size={12} />
-                  </button>
-                </div>
-              </div>
-            </div>
-          </GlassCard>
-        ))}
-
-        {filtered.length === 0 && (
-          <div className="col-span-full py-16 text-center text-text-muted glass-panel rounded-2xl border border-white/10">
-            No projects found matching your criteria.
-          </div>
-        )}
-      </div>
-
-      {/* Create Project Modal */}
-      {showCreateModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/75 backdrop-blur-md">
-          <GlassCard className="w-full max-w-lg p-6 border-brand-cyan/30 shadow-2xl relative">
-            <button
-              onClick={() => setShowCreateModal(false)}
-              className="absolute top-5 right-5 text-text-muted hover:text-white p-1 rounded-lg hover:bg-white/10 transition-colors"
-            >
-              <X size={18} />
-            </button>
-
-            <div className="flex items-center gap-2.5 mb-5">
-              <div className="w-9 h-9 rounded-xl bg-brand-cyan/20 text-brand-cyan flex items-center justify-center">
-                <ShieldCheck size={20} />
-              </div>
-              <div>
-                <h2 className="text-lg font-bold text-white">Create New Project</h2>
-                <p className="text-xs text-text-muted">Configure a new assessment target boundary</p>
-              </div>
-            </div>
-
-            <form onSubmit={handleCreateProject} className="space-y-4">
-              <div>
-                <label className="block text-xs font-semibold text-text-muted uppercase tracking-wider mb-1.5">
-                  Project Name
-                </label>
-                <input
-                  type="text"
-                  value={newProject.name}
-                  onChange={(e) => setNewProject({ ...newProject, name: e.target.value })}
-                  placeholder="e.g. Customer Portal Redesign Audit"
-                  className="w-full bg-white/5 border border-white/10 rounded-xl py-2 px-3 text-xs text-white focus:outline-none focus:border-brand-cyan transition-colors"
-                  required
-                />
-              </div>
-
-              <div className="grid grid-cols-2 gap-3">
-                <div>
-                  <label className="block text-xs font-semibold text-text-muted uppercase tracking-wider mb-1.5">
-                    Service Type
-                  </label>
-                  <select
-                    value={newProject.type}
-                    onChange={(e) => setNewProject({ ...newProject, type: e.target.value as any })}
-                    className="w-full bg-background-darker border border-white/10 rounded-xl py-2 px-3 text-xs text-white outline-none focus:border-brand-cyan"
-                  >
-                    <option value="Web App">Web Application</option>
-                    <option value="API">REST / GraphQL API</option>
-                    <option value="Malware">Malware Inspection</option>
-                    <option value="Infrastructure">Cloud Infrastructure</option>
-                  </select>
+                  <span className={`px-2 py-0.5 rounded-full text-[10px] font-semibold border ${
+                    target.isActive
+                      ? 'bg-green-500/10 text-green-400 border-green-500/25'
+                      : 'bg-white/5 text-text-muted border-white/10'
+                  }`}>
+                    {target.isActive ? 'Active' : 'Inactive'}
+                  </span>
                 </div>
 
-                <div>
-                  <label className="block text-xs font-semibold text-text-muted uppercase tracking-wider mb-1.5">
-                    Environment
-                  </label>
-                  <select
-                    value={newProject.env}
-                    onChange={(e) => setNewProject({ ...newProject, env: e.target.value as any })}
-                    className="w-full bg-background-darker border border-white/10 rounded-xl py-2 px-3 text-xs text-white outline-none focus:border-brand-cyan"
-                  >
-                    <option value="Production">Production</option>
-                    <option value="Staging">Staging</option>
-                    <option value="Development">Development</option>
-                    <option value="Sandbox">Sandbox</option>
-                  </select>
+                <div className="space-y-1.5 text-xs">
+                  <div className="text-text-muted text-[11px] font-semibold uppercase tracking-wider">Target URL</div>
+                  <div className="font-mono text-slate-300 break-all bg-white/[0.02] p-2 rounded-lg border border-white/5">
+                    {target.url}
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-2 gap-3 pt-2 border-t border-white/5 text-xs">
+                  <div>
+                    <span className="text-text-muted block text-[10px] uppercase font-semibold">Total Scans</span>
+                    <span className="font-mono text-white font-bold">{target.scanCount} Runs</span>
+                  </div>
+                  <div>
+                    <span className="text-text-muted block text-[10px] uppercase font-semibold">Version Counter</span>
+                    <span className="font-mono text-brand-cyan font-bold">v{target.scanVersionCounter}</span>
+                  </div>
                 </div>
               </div>
 
-              <div>
-                <label className="block text-xs font-semibold text-text-muted uppercase tracking-wider mb-1.5">
-                  Target Endpoint or Root URL
-                </label>
-                <input
-                  type="url"
-                  value={newProject.targetUrl}
-                  onChange={(e) => setNewProject({ ...newProject, targetUrl: e.target.value })}
-                  placeholder="https://app.example.com"
-                  className="w-full bg-white/5 border border-white/10 rounded-xl py-2 px-3 text-xs text-white font-mono focus:outline-none focus:border-brand-cyan transition-colors"
-                />
-              </div>
-
-              <div className="flex items-center justify-end gap-3 pt-4 border-t border-white/10">
-                <button
-                  type="button"
-                  onClick={() => setShowCreateModal(false)}
-                  className="px-4 py-2 rounded-xl text-xs text-text-muted hover:text-white"
+              <div className="mt-5 pt-3 border-t border-white/5 flex items-center justify-between text-xs">
+                <span className="text-[11px] text-text-muted">
+                  Last Scanned: {new Date(target.lastScannedAt).toLocaleDateString()}
+                </span>
+                <Link
+                  to={`/dashboard/projects/${target._id}`}
+                  className="text-brand-cyan hover:text-white flex items-center gap-1 font-semibold text-xs group-hover:translate-x-0.5 transition-all"
                 >
-                  Cancel
-                </button>
-                <button
-                  type="submit"
-                  className="btn-primary text-xs px-5 py-2.5 rounded-xl font-semibold flex items-center gap-1.5"
-                >
-                  <CheckCircle2 size={16} /> Create Project
-                </button>
+                  View Details <ArrowRight size={14} />
+                </Link>
               </div>
-            </form>
-          </GlassCard>
+            </GlassCard>
+          ))}
         </div>
       )}
     </div>

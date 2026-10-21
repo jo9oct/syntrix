@@ -31,8 +31,6 @@ const MAX_BODY_BYTES_TO_INSPECT = 64 * 1024;
 const MAX_SCRIPT_REFERENCES = 50;
 const MAX_SCRIPT_ENDPOINTS_PER_PAGE = 500;
 const MAX_SCRIPT_SOURCE_BYTES = 1024 * 1024;
-
-// Crawl-wide limits prevent a large site from causing unbounded discovery.
 const MAX_SCRIPT_REFERENCES_PER_CRAWL = 250;
 const MAX_SCRIPT_ENDPOINTS_PER_CRAWL = 5000;
 
@@ -69,7 +67,7 @@ const logCrawlDiagnostic = (event, details = {}) => {
       }),
     );
   } catch {
-    // Diagnostics must never interrupt a crawl.
+    // Logging must never interrupt a crawl.
   }
 };
 
@@ -93,7 +91,9 @@ const normalizeRequestError = (error, signal) => {
   }
 
   if (
-    ["ECONNREFUSED", "ECONNRESET", "EHOSTUNREACH", "ENETUNREACH"].includes(code)
+    ["ECONNREFUSED", "ECONNRESET", "EHOSTUNREACH", "ENETUNREACH"].includes(
+      code,
+    )
   ) {
     return "CRAWL_CONNECTION_FAILED";
   }
@@ -174,11 +174,12 @@ const sanitizeObservedUrl = (value, baseUrl) => {
     const url = new URL(value);
     const base = new URL(baseUrl);
 
-    if (!["http:", "https:"].includes(url.protocol)) {
-      return null;
-    }
-
-    if (url.username || url.password || url.origin !== base.origin) {
+    if (
+      !["http:", "https:"].includes(url.protocol) ||
+      url.username ||
+      url.password ||
+      url.origin !== base.origin
+    ) {
       return null;
     }
 
@@ -199,11 +200,12 @@ const sanitizeNavigationUrl = (value, baseUrl) => {
     const url = new URL(value, baseUrl);
     const base = new URL(baseUrl);
 
-    if (!["http:", "https:"].includes(url.protocol)) {
-      return null;
-    }
-
-    if (url.username || url.password || url.origin !== base.origin) {
+    if (
+      !["http:", "https:"].includes(url.protocol) ||
+      url.username ||
+      url.password ||
+      url.origin !== base.origin
+    ) {
       return null;
     }
 
@@ -249,7 +251,7 @@ const extractScriptUrls = (html, baseUrl) => {
     }
   }
 
-  return [...scripts].slice(0, MAX_SCRIPT_REFERENCES);
+  return [...scripts];
 };
 
 const getParameterNamesFromUrl = (value) => {
@@ -291,7 +293,7 @@ const getParameterNamesFromBody = (body, contentType) => {
       );
     }
   } catch {
-    // Ignore malformed bodies. Never retain raw content.
+    // Never retain raw request bodies.
   }
 
   return [];
@@ -443,21 +445,33 @@ const collectDynamicDom = async (page) => {
   );
 };
 
+/**
+ * Render using an externally supplied authenticated BrowserContext when
+ * provided. Otherwise use the supplied browser.
+ *
+ * The returned response metadata describes the actual browser navigation,
+ * including redirects and HTTP status codes.
+ */
 const renderPage = async ({
   browser,
+  browserContext = null,
   url,
   scope,
   headers = {},
   signal,
   validateSafeUrl = assertSafeUrl,
 }) => {
-  if (!browser || signal?.aborted) {
+  if ((!browser && !browserContext) || signal?.aborted) {
     return null;
   }
 
   const targetOrigin = new URL(url).origin;
-  const page = await browser.newPage();
+  const page = browserContext
+    ? await browserContext.newPage()
+    : await browser.newPage();
+
   const apiRequests = new Map();
+  let stage = "configure";
 
   const rememberApiRequest = (request) => {
     try {
@@ -490,12 +504,11 @@ const renderPage = async ({
       );
 
       const key = JSON.stringify([sanitizedUrl, method, resourceType]);
+      const existing = apiRequests.get(key);
 
-      if (!apiRequests.has(key) && apiRequests.size >= MAX_API_REQUESTS) {
+      if (!existing && apiRequests.size >= MAX_API_REQUESTS) {
         return;
       }
-
-      const existing = apiRequests.get(key);
 
       apiRequests.set(key, {
         url: sanitizedUrl,
@@ -507,11 +520,9 @@ const renderPage = async ({
         statusCode: existing?.statusCode ?? null,
       });
     } catch {
-      // Observation must never interrupt the crawl.
+      // Request observation must not interrupt crawling.
     }
   };
-
-  let stage = "configure";
 
   try {
     page.setDefaultNavigationTimeout(RENDER_TIMEOUT_MS);
@@ -597,16 +608,30 @@ const renderPage = async ({
               : null,
         });
       } catch {
-        // Ignore malformed or unavailable response metadata.
+        // Ignore unavailable response metadata.
       }
     });
 
     stage = "navigation";
 
-    await page.goto(url, {
+    const navigationResponse = await page.goto(url, {
       waitUntil: "domcontentloaded",
       timeout: RENDER_TIMEOUT_MS,
     });
+
+    const navigationStatusCode = navigationResponse?.status() ?? null;
+    const navigationHeaders = navigationResponse?.headers() ?? {};
+    const finalUrl = typeof page.url === "function" ? page.url() : url;
+
+    // Redirects must remain within the original authorized origin and scope.
+    const safeFinalUrl = sanitizeNavigationUrl(finalUrl, url);
+
+    if (!safeFinalUrl) {
+      return null;
+    }
+
+    assertInScope(safeFinalUrl, scope);
+    await validateSafeUrl(safeFinalUrl);
 
     stage = "settle";
     await waitForRender(signal);
@@ -616,6 +641,7 @@ const renderPage = async ({
     }
 
     stage = "read_html";
+
     const html = await page.content();
 
     if (
@@ -637,13 +663,14 @@ const renderPage = async ({
     }
 
     stage = "collect_dom";
+
     const dynamicDom = await collectDynamicDom(page);
 
     const sanitizeDynamicLinks = (links) => {
       const result = new Set();
 
       for (const link of links || []) {
-        const sanitized = sanitizeNavigationUrl(link, url);
+        const sanitized = sanitizeNavigationUrl(link, safeFinalUrl);
 
         if (sanitized) {
           result.add(sanitized);
@@ -662,7 +689,7 @@ const renderPage = async ({
 
       for (const form of forms || []) {
         try {
-          const action = new URL(form.action || url, url);
+          const action = new URL(form.action || safeFinalUrl, safeFinalUrl);
 
           if (
             !["http:", "https:"].includes(action.protocol) ||
@@ -699,6 +726,11 @@ const renderPage = async ({
 
     return {
       html,
+      statusCode: Number.isInteger(navigationStatusCode)
+        ? navigationStatusCode
+        : null,
+      headers: navigationHeaders,
+      finalUrl: safeFinalUrl,
       dynamicInputs: (dynamicDom.inputs || []).slice(0, MAX_DYNAMIC_INPUTS),
       dynamicForms: sanitizeDynamicForms(dynamicDom.forms),
       discoveredLinks: sanitizeDynamicLinks(dynamicDom.discoveredLinks),
@@ -749,18 +781,13 @@ const collectStaticAndRenderedLinks = ({
         }
       }
     } catch {
-      // A failed representation must not discard the other one.
+      // Continue using the other representation.
     }
   }
 
   return [...links];
 };
 
-/**
- * Fetches same-origin JavaScript resources as text.
- * Script files are not crawl pages and do not consume maxPaths.
- * The requested URL and endpoint sets are shared across the crawl.
- */
 const discoverJavaScriptEndpoints = async ({
   html,
   baseUrl,
@@ -816,7 +843,6 @@ const discoverJavaScriptEndpoints = async ({
       break;
     }
 
-    // Mark before the request to prevent repeated attempts on other pages.
     requestedScripts.add(safeScriptUrl);
 
     try {
@@ -881,10 +907,10 @@ const discoverJavaScriptEndpoints = async ({
       continue;
     }
 
-    const remainingGlobal =
-      MAX_SCRIPT_ENDPOINTS_PER_CRAWL - reportedEndpoints.size;
-    const remainingPage = MAX_SCRIPT_ENDPOINTS_PER_PAGE - pageEndpoints.size;
-    const maxEndpoints = Math.min(remainingGlobal, remainingPage);
+    const maxEndpoints = Math.min(
+      MAX_SCRIPT_ENDPOINTS_PER_CRAWL - reportedEndpoints.size,
+      MAX_SCRIPT_ENDPOINTS_PER_PAGE - pageEndpoints.size,
+    );
 
     if (maxEndpoints <= 0) {
       break;
@@ -933,11 +959,6 @@ const discoverJavaScriptEndpoints = async ({
   return [...pageEndpoints];
 };
 
-/**
- * Discovers OpenAPI/Swagger JSON specifications.
- * Documented operations are metadata only and are never requested.
- * Both sets are shared across the entire crawl.
- */
 const discoverOpenApiEndpoints = async ({
   html,
   baseUrl,
@@ -1015,7 +1036,6 @@ const discoverOpenApiEndpoints = async ({
       continue;
     }
 
-    // Count attempted requests globally, including unsuccessful requests.
     attemptedSpecifications.add(safeSpecificationUrl);
 
     try {
@@ -1071,10 +1091,10 @@ const discoverOpenApiEndpoints = async ({
       continue;
     }
 
-    const remainingGlobal =
-      MAX_OPENAPI_ENDPOINTS_PER_CRAWL - reportedEndpoints.size;
-    const remainingPage = MAX_OPENAPI_ENDPOINTS_PER_PAGE - pageEndpoints.size;
-    const maxEndpoints = Math.min(remainingGlobal, remainingPage);
+    const maxEndpoints = Math.min(
+      MAX_OPENAPI_ENDPOINTS_PER_CRAWL - reportedEndpoints.size,
+      MAX_OPENAPI_ENDPOINTS_PER_PAGE - pageEndpoints.size,
+    );
 
     if (maxEndpoints <= 0) {
       break;
@@ -1104,12 +1124,10 @@ const discoverOpenApiEndpoints = async ({
         continue;
       }
 
-      // Deduplicate endpoint identity across specifications.
       const identity = `${method} ${path}`;
 
       if (reportedEndpoints.has(identity)) {
-        const existing = reportedEndpoints.get(identity);
-        pageEndpoints.set(identity, existing);
+        pageEndpoints.set(identity, reportedEndpoints.get(identity));
         continue;
       }
 
@@ -1177,6 +1195,7 @@ const enqueueSitemapUrls = async ({
   queued,
   visited,
   maxPaths,
+  requestPage = get,
   discoverSitemaps = discoverSitemapUrls,
   validateSafeUrl = assertSafeUrl,
 }) => {
@@ -1185,6 +1204,8 @@ const enqueueSitemapUrls = async ({
     scope,
     headers,
     signal,
+    request: requestPage,
+    validateSafeUrl,
   });
 
   for (const sitemapUrl of sitemapUrls) {
@@ -1217,6 +1238,8 @@ const crawl = async ({
   requestPage = get,
   discoverSitemaps = discoverSitemapUrls,
   launch = launchBrowser,
+  browser: suppliedBrowser = null,
+  browserContext = null,
   validateSafeUrl = assertSafeUrl,
   createLimiter = createRateLimiter,
 } = {}) => {
@@ -1232,6 +1255,14 @@ const crawl = async ({
     typeof createLimiter !== "function"
   ) {
     throw new TypeError("Crawler dependencies must be functions.");
+  }
+
+  if (suppliedBrowser && typeof suppliedBrowser.newPage !== "function") {
+    throw new TypeError("browser must provide a newPage() method.");
+  }
+
+  if (browserContext && typeof browserContext.newPage !== "function") {
+    throw new TypeError("browserContext must provide a newPage() method.");
   }
 
   if (
@@ -1266,21 +1297,25 @@ const crawl = async ({
   queued.add(firstUrl);
 
   const results = [];
-  let browser = null;
+
+  let browser = suppliedBrowser;
+  let ownsBrowser = false;
   let sitemapDiscoveryAttempted = false;
 
-  // Shared crawl-wide discovery budgets and deduplication.
   const attemptedOpenApiSpecifications = new Set();
   const reportedOpenApiEndpoints = new Map();
   const requestedScripts = new Set();
   const reportedScriptEndpoints = new Set();
 
-  try {
-    browser = await launch();
-  } catch (error) {
-    logCrawlDiagnostic("browser.launch_failed", {
-      errorCode: normalizeRenderError(error),
-    });
+  if (!browser && !browserContext) {
+    try {
+      browser = await launch();
+      ownsBrowser = Boolean(browser);
+    } catch (error) {
+      logCrawlDiagnostic("browser.launch_failed", {
+        errorCode: normalizeRenderError(error),
+      });
+    }
   }
 
   try {
@@ -1304,97 +1339,61 @@ const crawl = async ({
         break;
       }
 
-      let response;
+      let response = null;
+      let requestError = null;
 
       try {
         response = await requestPage(current.url, { headers, signal });
       } catch (error) {
-        const failedPage = {
-          url: current.url,
-          depth: current.depth,
-          status: "failed",
-          statusCode: null,
-          headers: {},
-          body: null,
-          dynamicInputs: [],
-          dynamicForms: [],
-          discoveredLinks: [],
-          apiRequests: [],
-          openApiEndpoints: [],
-          javascriptEndpoints: [],
-          errorCode: normalizeRequestError(error, signal),
-        };
-
-        results.push(failedPage);
-
-        if (typeof onPage === "function") {
-          await onPage(failedPage);
-        }
-
-        if (signal?.aborted) {
+        if (signal?.aborted || error?.code === "CRAWL_CANCELLED") {
           break;
         }
 
-        if (!sitemapDiscoveryAttempted && current.depth === 0 && maxDepth > 0) {
-          sitemapDiscoveryAttempted = true;
-
-          try {
-            await enqueueSitemapUrls({
-              startUrl: firstUrl,
-              scope,
-              headers,
-              signal,
-              queue,
-              queued,
-              visited,
-              maxPaths,
-              discoverSitemaps,
-              validateSafeUrl,
-            });
-          } catch {
-            logCrawlDiagnostic("sitemap.discovery_failed", {
-              reason: "SITEMAP_DISCOVERY_ERROR",
-            });
-          }
-        }
-
-        continue;
+        requestError = normalizeRequestError(error, signal);
       }
 
-      const statusCode = Number.isInteger(response?.statusCode)
+      let statusCode = Number.isInteger(response?.statusCode)
         ? response.statusCode
         : Number.isInteger(response?.status)
           ? response.status
           : null;
 
-      const classification = classifyHttpStatus(statusCode);
-
-      const responseHeaders =
+      let responseHeaders =
         response?.headers && typeof response.headers === "object"
           ? response.headers
           : {};
 
+      let classification = classifyHttpStatus(statusCode);
+
       const staticHtml =
         typeof response?.body === "string" ? response.body : "";
-
-      const discoveryHtml =
-        classification.status === "success" ? staticHtml : "";
 
       let renderedHtml = "";
       let dynamicInputs = [];
       let dynamicForms = [];
       let dynamicLinks = [];
       let apiRequests = [];
+      let renderSucceeded = false;
+      let renderedFinalUrl = current.url;
 
-      if (
-        classification.status === "success" &&
-        staticHtml &&
-        isHtmlResponse(responseHeaders, response) &&
-        browser
-      ) {
+      /*
+       * Authenticated-context fix:
+       * Always try the supplied browser context, even if the normal HTTP
+       * request failed, returned 401/403, or did not return HTML.
+       */
+      const shouldRender =
+        Boolean(browser || browserContext) &&
+        !signal?.aborted &&
+        (Boolean(browserContext) ||
+          (classification.status === "success" &&
+            Boolean(staticHtml) &&
+            isHtmlResponse(responseHeaders, response)));
+
+      if (shouldRender) {
         try {
           const rendered = await renderPage({
             browser,
+            browserContext,
             url: current.url,
             scope,
             headers,
@@ -1402,12 +1401,36 @@ const crawl = async ({
             validateSafeUrl,
           });
 
-          if (rendered) {
-            renderedHtml = rendered.html || "";
+          if (rendered?.html) {
+            renderedHtml = rendered.html;
             dynamicInputs = rendered.dynamicInputs || [];
             dynamicForms = rendered.dynamicForms || [];
             dynamicLinks = rendered.discoveredLinks || [];
             apiRequests = rendered.apiRequests || [];
+            renderedFinalUrl = rendered.finalUrl || current.url;
+            renderSucceeded = true;
+
+            /*
+             * If the normal HTTP response was unavailable or unsuitable,
+             * classify the actual browser navigation response instead.
+             */
+            if (
+              !response ||
+              classification.status !== "success" ||
+              !isHtmlResponse(responseHeaders, response)
+            ) {
+              if (Number.isInteger(rendered.statusCode)) {
+                statusCode = rendered.statusCode;
+                responseHeaders = rendered.headers || {};
+                classification = classifyHttpStatus(statusCode);
+              } else {
+                // A missing browser response is not proof of success.
+                classification = {
+                  status: "failed",
+                  errorCode: requestError || "CRAWL_INVALID_RESPONSE",
+                };
+              }
+            }
           }
         } catch (error) {
           if (signal?.aborted || error?.code === "CRAWL_CANCELLED") {
@@ -1424,13 +1447,38 @@ const crawl = async ({
         break;
       }
 
+      /*
+       * Do not label a 401/403 page as successful simply because Chromium
+       * returned HTML. Only a successful HTTP response permits discovery.
+       */
+      const effectiveHeaders = responseHeaders;
+      const effectiveResponse = {
+        ...(response || {}),
+        headers: effectiveHeaders,
+      };
+
+      const effectiveIsHtml =
+        isHtmlResponse(effectiveHeaders, effectiveResponse) ||
+        (renderSucceeded &&
+          String(getHeader(effectiveHeaders, "content-type"))
+            .toLowerCase()
+            .includes("text/html"));
+
+      const discoveryHtml =
+        classification.status === "success"
+          ? renderedHtml || staticHtml
+          : "";
+
       const staticAndRenderedLinks = collectStaticAndRenderedLinks({
-        staticHtml,
-        renderedHtml,
-        baseUrl: current.url,
+        staticHtml: discoveryHtml ? staticHtml : "",
+        renderedHtml: discoveryHtml ? renderedHtml : "",
+        baseUrl: renderedFinalUrl,
       });
 
-      const canonicalUrl = extractCanonicalUrl(discoveryHtml, current.url);
+      const canonicalUrl = extractCanonicalUrl(
+        discoveryHtml,
+        renderedFinalUrl,
+      );
 
       const initialDiscoveredUrls = [
         ...(canonicalUrl ? [canonicalUrl] : []),
@@ -1440,7 +1488,7 @@ const crawl = async ({
 
       const reportDiscoveredLinks = new Set(
         initialDiscoveredUrls
-          .map((value) => sanitizeObservedUrl(value, current.url))
+          .map((value) => sanitizeObservedUrl(value, renderedFinalUrl))
           .filter(Boolean),
       );
 
@@ -1449,12 +1497,18 @@ const crawl = async ({
         depth: current.depth,
         status: classification.status,
         statusCode,
-        headers: responseHeaders,
+        headers: effectiveHeaders,
         body: discoveryHtml || null,
-        dynamicInputs,
-        dynamicForms,
-        discoveredLinks: [...reportDiscoveredLinks].slice(0, MAX_DYNAMIC_LINKS),
-        apiRequests,
+        dynamicInputs:
+          classification.status === "success" ? dynamicInputs : [],
+        dynamicForms:
+          classification.status === "success" ? dynamicForms : [],
+        discoveredLinks: [...reportDiscoveredLinks].slice(
+          0,
+          MAX_DYNAMIC_LINKS,
+        ),
+        apiRequests:
+          classification.status === "success" ? apiRequests : [],
         openApiEndpoints: [],
         javascriptEndpoints: [],
         errorCode: classification.errorCode,
@@ -1462,8 +1516,6 @@ const crawl = async ({
 
       results.push(page);
 
-      // Preserve existing callback timing. Discovery metadata is completed
-      // after this callback, but is present in the final crawl result.
       if (typeof onPage === "function") {
         await onPage(page);
       }
@@ -1485,6 +1537,7 @@ const crawl = async ({
             queued,
             visited,
             maxPaths,
+            requestPage,
             discoverSitemaps,
             validateSafeUrl,
           });
@@ -1502,20 +1555,17 @@ const crawl = async ({
       if (
         classification.status !== "success" ||
         current.depth >= maxDepth ||
-        !isHtmlResponse(responseHeaders, response)
+        !effectiveIsHtml
       ) {
         continue;
       }
 
-      const combinedHtml = [discoveryHtml, renderedHtml]
-        .filter(Boolean)
-        .join("\n");
+      const combinedHtml = [discoveryHtml].filter(Boolean).join("\n");
 
-      // OpenAPI/Swagger documents are parsed as metadata only.
       try {
         page.openApiEndpoints = await discoverOpenApiEndpoints({
           html: combinedHtml,
-          baseUrl: current.url,
+          baseUrl: renderedFinalUrl,
           scope,
           headers,
           signal,
@@ -1542,7 +1592,7 @@ const crawl = async ({
       try {
         page.javascriptEndpoints = await discoverJavaScriptEndpoints({
           html: combinedHtml,
-          baseUrl: current.url,
+          baseUrl: renderedFinalUrl,
           scope,
           headers,
           signal,
@@ -1567,7 +1617,7 @@ const crawl = async ({
       }
 
       for (const endpoint of page.javascriptEndpoints) {
-        const observed = sanitizeObservedUrl(endpoint, current.url);
+        const observed = sanitizeObservedUrl(endpoint, renderedFinalUrl);
 
         if (observed) {
           reportDiscoveredLinks.add(observed);
@@ -1602,7 +1652,7 @@ const crawl = async ({
       }
     }
   } finally {
-    if (browser) {
+    if (ownsBrowser && browser) {
       await browser.close().catch(() => {});
     }
   }

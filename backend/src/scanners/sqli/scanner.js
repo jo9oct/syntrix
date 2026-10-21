@@ -1,170 +1,416 @@
-// STATUS: UPDATED
+/*
+ * STATUS: UPDATED
+ * File: src/scanners/sqli/scanner.js
+ */
 
 import { get } from "../../request/request.js";
+import { getAuthenticatedRequestOptions } from "../../request/authenticatedRequestOptions.js";
 import { createSecurityEvidence } from "../shared/evidenceBuilder.js";
-import { calculateConfidence } from "../shared/confidence.js";
 import { normalizeFinding } from "../shared/findingNormalizer.js";
 import {
   createSecurityScanner,
   getTargetUrl,
 } from "../shared/scannerContract.js";
 import { getParameters, setParameter } from "../shared/parameterTester.js";
-import { getPayloads } from "../shared/payloadManager.js";
 import { assertSafeUrl } from "../../recon/shared/resolver.js";
 
-const MAX_PARAMETERS = 5;
-const MAX_PAYLOADS_PER_PARAMETER = 2;
-const MAX_TARGETS = 11;
+import { testErrorBased } from "./errorBased.js";
+import { testBooleanBased } from "./booleanBased.js";
+import { testTimeBased } from "./timeBased.js";
+import { testUnionBased } from "./unionBased.js";
 
-const SQL_ERROR_PATTERNS = [
-  /sql syntax/i,
-  /mysql/i,
-  /postgresql/i,
-  /sqlite/i,
-  /ora-\d+/i,
-  /microsoft sql server/i,
-  /odbc sql/i,
-  /database error/i,
+const MAX_TARGETS = 3;
+const MAX_PARAMETERS_PER_TARGET = 3;
+const MAX_REQUESTS = 120;
+const REQUEST_TIMEOUT_MS = 8000;
+
+const TECHNIQUES = [
+  ["error-based", testErrorBased],
+  ["boolean-based", testBooleanBased],
+  ["time-based", testTimeBased],
+  ["union-based", testUnionBased],
 ];
 
-const containsSqlError = (body) =>
-  typeof body === "string" &&
-  SQL_ERROR_PATTERNS.some((pattern) => pattern.test(body));
+const createEmptyResult = (cancelled = false) => ({
+  data: {
+    testedParameters: [],
+    errorSignatureDetected: false,
+    booleanDifferentialDetected: false,
+    timeDifferentialDetected: false,
+    unionMarkerDetected: false,
+  },
+  findings: [],
+  evidence: [],
+  fingerprints: [],
+  verificationRecords: [],
+  metadata: {
+    cancelled,
+    parametersTested: 0,
+    requestsTested: 0,
+    requestFailures: 0,
+    targetsTested: 0,
+    requestLimit: MAX_REQUESTS,
+    techniques: {
+      errorBased: { tested: 0, failures: 0, detected: false },
+      booleanBased: { tested: 0, failures: 0, detected: false },
+      timeBased: { tested: 0, failures: 0, detected: false },
+      unionBased: { tested: 0, failures: 0, detected: false },
+    },
+  },
+});
 
-const getTargets = (context, rootUrl) =>
-  [
-    ...new Set([
-      rootUrl,
-      ...(Array.isArray(context?.discoveredUrls) ? context.discoveredUrls : []),
-    ]),
-  ].slice(0, MAX_TARGETS);
+const isCancellationError = (error, signal) =>
+  signal?.aborted === true ||
+  error?.name === "AbortError" ||
+  error?.code === "ERR_CANCELED";
+
+const normalizeTargets = (context, rootUrl) => {
+  const candidates = [
+    rootUrl,
+    ...(Array.isArray(context?.discoveredUrls)
+      ? context.discoveredUrls
+      : []),
+  ];
+
+  const result = [];
+  const seen = new Set();
+
+  for (const candidate of candidates) {
+    if (typeof candidate !== "string") {
+      continue;
+    }
+
+    try {
+      const url = new URL(candidate);
+      url.hash = "";
+      const normalized = url.toString();
+
+      if (!seen.has(normalized)) {
+        seen.add(normalized);
+        result.push(normalized);
+      }
+    } catch {
+      // Ignore malformed discovered URLs.
+    }
+
+    if (result.length >= MAX_TARGETS) {
+      break;
+    }
+  }
+
+  return result;
+};
+
+const getFindingDetails = (technique) => {
+  switch (technique) {
+    case "error-based":
+      return {
+        title: "Potential SQL Error Disclosure",
+        severity: "low",
+        remediation:
+          "Use parameterized queries or prepared statements and avoid exposing database diagnostics to clients.",
+      };
+
+    case "boolean-based":
+      return {
+        title: "Potential Boolean-Based SQL Injection",
+        severity: "medium",
+        remediation:
+          "Use parameterized queries or prepared statements so user-controlled input cannot alter SQL query structure.",
+      };
+
+    case "time-based":
+      return {
+        title: "Potential Time-Based SQL Injection",
+        severity: "medium",
+        remediation:
+          "Use parameterized queries or prepared statements. Validate timing behavior under stable conditions before confirming this finding.",
+      };
+
+    case "union-based":
+      return {
+        title: "Potential UNION-Based SQL Injection",
+        severity: "medium",
+        remediation:
+          "Use parameterized queries or prepared statements. Confirm that the marker originates from query execution rather than input reflection.",
+      };
+
+    default:
+      return {
+        title: "Potential SQL Injection",
+        severity: "low",
+        remediation: "Use parameterized queries or prepared statements.",
+      };
+  }
+};
+
+const getTechniqueMetadataKey = (technique) => {
+  switch (technique) {
+    case "error-based":
+      return "errorBased";
+    case "boolean-based":
+      return "booleanBased";
+    case "time-based":
+      return "timeBased";
+    case "union-based":
+      return "unionBased";
+    default:
+      return null;
+  }
+};
 
 const scanner = createSecurityScanner({
   id: "security.sqli",
   name: "SQL Injection Detection",
   description:
-    "Performs a conservative SQL error-surface assessment using controlled parameter input.",
+    "Performs bounded error-based, Boolean-based, time-based, and UNION-based SQL injection checks against URL query parameters.",
 
   async run(context) {
     const rootUrl = getTargetUrl(context);
-
     await assertSafeUrl(rootUrl);
 
-    const emptyResult = (cancelled = false) => ({
-      data: {
-        testedParameters: [],
-        errorSignatureDetected: false,
-      },
-      findings: [],
-      evidence: [],
-      fingerprints: [],
-      verificationRecords: [],
-      metadata: {
-        cancelled,
-        parametersTested: 0,
-        requestsTested: 0,
-        targetsTested: 0,
-      },
-    });
-
     if (context?.signal?.aborted) {
-      return emptyResult(true);
+      return createEmptyResult(true);
     }
 
-    const payloads = getPayloads("sqli").slice(0, MAX_PAYLOADS_PER_PARAMETER);
+    const targets = normalizeTargets(context, rootUrl);
+    const requestHeaders = context?.session?.getHeaders?.() ?? {};
+    const authenticatedRequestOptions =
+      getAuthenticatedRequestOptions(context);
 
     const findings = [];
     const evidence = [];
     const testedParameters = new Set();
-    const testedTargets = getTargets(context, rootUrl);
+    const findingKeys = new Set();
+
+    const techniqueMetadata = {
+      errorBased: { tested: 0, failures: 0, detected: false },
+      booleanBased: { tested: 0, failures: 0, detected: false },
+      timeBased: { tested: 0, failures: 0, detected: false },
+      unionBased: { tested: 0, failures: 0, detected: false },
+    };
 
     let requestsTested = 0;
+    let requestFailures = 0;
+    let cancelled = false;
 
-    const requestHeaders = context?.session?.getHeaders?.() ?? {};
+    const request = async (url) => {
+      if (context?.signal?.aborted) {
+        const error = new Error("SQL injection scan was cancelled.");
+        error.name = "AbortError";
+        error.code = "ERR_CANCELED";
+        throw error;
+      }
 
-    for (const targetUrl of testedTargets) {
-      if (context?.signal?.aborted) break;
+      if (requestsTested >= MAX_REQUESTS) {
+        return { skipped: true };
+      }
 
-      await assertSafeUrl(targetUrl);
+      await assertSafeUrl(url);
 
-      const parameters = getParameters(targetUrl).slice(0, MAX_PARAMETERS);
+      requestsTested += 1;
 
-      for (const parameter of parameters) {
-        if (context?.signal?.aborted) break;
+      try {
+        const response = await get(url, {
+          signal: context?.signal,
+          timeoutMs: REQUEST_TIMEOUT_MS,
+          headers: requestHeaders,
+          ...authenticatedRequestOptions,
+        });
 
-        testedParameters.add(parameter);
+        return { response };
+      } catch (error) {
+        if (isCancellationError(error, context?.signal)) {
+          throw error;
+        }
 
-        for (const payload of payloads) {
-          if (context?.signal?.aborted) break;
+        requestFailures += 1;
+        return { error };
+      }
+    };
 
-          const testUrl = setParameter(targetUrl, parameter, payload);
+    const addFinding = ({ targetUrl, parameter, result }) => {
+      if (!result?.signal) {
+        return;
+      }
 
-          await assertSafeUrl(testUrl);
+      const technique = result.technique;
+      const key = [
+        technique,
+        new URL(targetUrl).origin,
+        new URL(targetUrl).pathname,
+        parameter,
+      ].join(":");
 
-          const response = await get(testUrl, {
-            signal: context?.signal,
+      if (findingKeys.has(key)) {
+        return;
+      }
+
+      findingKeys.add(key);
+
+      const details = getFindingDetails(technique);
+      const signal = result.signal;
+
+      const finding = normalizeFinding({
+        scannerId: "security.sqli",
+        title: details.title,
+        description: signal.description,
+        severity: details.severity,
+        confidence: signal.confidence || "low",
+        category: "sqli",
+        remediation: details.remediation,
+        metadata: {
+          parameter,
+          technique,
+          responseBodyRedacted: true,
+          requiresManualVerification: true,
+        },
+      });
+
+      findings.push(finding);
+
+      evidence.push(
+        createSecurityEvidence({
+          request: {
+            method: "GET",
+            url: signal.testUrl,
             headers: requestHeaders,
-          });
+          },
+          response: {
+            status:
+              signal.response?.status ??
+              signal.response?.statusCode ??
+              null,
+            statusText: signal.response?.statusText ?? null,
+            headers: signal.response?.headers ?? {},
+            contentType:
+              signal.response?.headers?.["content-type"] ??
+              signal.response?.contentType ??
+              null,
+          },
+          parameter,
+          payload: true,
+          description: signal.description,
+          confidence: finding.confidence,
+          findingKey: key,
+          type: "http_exchange",
+          metadata: {
+            parameter,
+            technique,
+            requiresManualVerification: true,
+            responseBodyRedacted: true,
+          },
+        }),
+      );
 
-          requestsTested += 1;
+      const metadataKey = getTechniqueMetadataKey(technique);
 
-          if (!containsSqlError(response.data)) continue;
+      if (metadataKey) {
+        techniqueMetadata[metadataKey].detected = true;
+      }
+    };
 
-          findings.push(
-            normalizeFinding({
-              scannerId: "security.sqli",
-              title: "Potential SQL Error Disclosure",
-              description: `A database-related error signature was observed after controlled input was supplied to "${parameter}". This indicates a potential SQL error disclosure condition, but does not by itself confirm exploitable SQL injection.`,
-              severity: "high",
-              confidence: calculateConfidence({ confirmed: false }),
-              remediation:
-                "Use parameterized database queries, validate input, and avoid exposing database errors or database implementation details to clients.",
-              category: "sqli",
-              metadata: {
-                parameter,
-                payloadType: "controlled-sqli",
-                detection: "database-error-signature",
-              },
-            }),
-          );
-
-          evidence.push(
-            createSecurityEvidence({
-              request: {
-                method: "GET",
-                url: testUrl,
-                headers: requestHeaders,
-              },
-              response: {
-                status: response.status,
-                headers: response.headers,
-                body: response.data,
-              },
-              parameter,
-              payload,
-            }),
-          );
-
+    try {
+      for (const targetUrl of targets) {
+        if (
+          context?.signal?.aborted ||
+          requestsTested >= MAX_REQUESTS
+        ) {
           break;
         }
+
+        await assertSafeUrl(targetUrl);
+
+        const parameters = getParameters(targetUrl).slice(
+          0,
+          MAX_PARAMETERS_PER_TARGET,
+        );
+
+        for (const parameter of parameters) {
+          if (
+            context?.signal?.aborted ||
+            requestsTested >= MAX_REQUESTS
+          ) {
+            break;
+          }
+
+          testedParameters.add(parameter);
+
+          /*
+           * A baseline request is shared by error-based, Boolean-based,
+           * and timing checks for this parameter.
+           */
+          const baselineUrl = setParameter(targetUrl, parameter,
+            new URL(targetUrl).searchParams.get(parameter) ?? "");
+
+          const baselineOutcome = await request(baselineUrl);
+
+          if (baselineOutcome.skipped) {
+            break;
+          }
+
+          if (!baselineOutcome.response) {
+            continue;
+          }
+
+          for (const [technique, testTechnique] of TECHNIQUES) {
+            if (
+              context?.signal?.aborted ||
+              requestsTested >= MAX_REQUESTS
+            ) {
+              break;
+            }
+
+            const result = await testTechnique({
+              targetUrl,
+              parameter,
+              baselineResponse: baselineOutcome.response,
+              request,
+            });
+
+            const metadataKey = getTechniqueMetadataKey(technique);
+
+            techniqueMetadata[metadataKey].tested += result.tested;
+            techniqueMetadata[metadataKey].failures += result.failures;
+
+            addFinding({
+              targetUrl,
+              parameter,
+              result,
+            });
+          }
+        }
+      }
+    } catch (error) {
+      if (isCancellationError(error, context?.signal)) {
+        cancelled = true;
+      } else {
+        throw error;
       }
     }
+
+    cancelled ||= context?.signal?.aborted === true;
 
     return {
       data: {
         testedParameters: [...testedParameters],
-        errorSignatureDetected: findings.length > 0,
+        errorSignatureDetected: techniqueMetadata.errorBased.detected,
+        booleanDifferentialDetected: techniqueMetadata.booleanBased.detected,
+        timeDifferentialDetected: techniqueMetadata.timeBased.detected,
+        unionMarkerDetected: techniqueMetadata.unionBased.detected,
       },
       findings,
       evidence,
       fingerprints: [],
       verificationRecords: [],
       metadata: {
-        cancelled: context?.signal?.aborted === true,
+        cancelled,
         parametersTested: testedParameters.size,
         requestsTested,
-        targetsTested: testedTargets.length,
-        payloadsPerParameter: payloads.length,
+        requestFailures,
+        targetsTested: targets.length,
+        requestLimit: MAX_REQUESTS,
+        techniques: techniqueMetadata,
       },
     };
   },

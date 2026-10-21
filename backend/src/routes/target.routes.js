@@ -35,10 +35,7 @@ const router = Router();
 const verifyBearerTokenIfPresent = (req, res, next) => {
   const authorization = req.headers.authorization;
 
-  if (
-    typeof authorization === "string" &&
-    /^Bearer\b/i.test(authorization)
-  ) {
+  if (typeof authorization === "string" && /^Bearer\b/i.test(authorization)) {
     return protect(req, res, next);
   }
 

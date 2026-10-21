@@ -8,20 +8,11 @@ import * as findingRepository from "../database/repositories/finding.repository.
 import * as evidenceRepository from "../database/repositories/evidence.repository.js";
 import * as fingerprintRepository from "../database/repositories/fingerprint.repository.js";
 
-import {
-  buildReport,
-  SUPPORTED_FORMATS,
-} from "./reportBuilder.js";
+import { buildReport, SUPPORTED_FORMATS } from "./reportBuilder.js";
 
-import {
-  buildPdfDocument,
-  assertPdfSource,
-} from "./pdfReport.js";
+import { buildPdfDocument, assertPdfSource } from "./pdfReport.js";
 
-import {
-  storeReport,
-  removeStoredReport,
-} from "./reportStorage.js";
+import { storeReport, removeStoredReport } from "./reportStorage.js";
 
 const createReportError = (message, code, statusCode = 500) => {
   const error = new Error(message);
@@ -63,25 +54,23 @@ const calculateRisk = (scan, findings) => {
     }
   }
 
-  const score = Math.min(
-    100,
-    Math.max(0, Number(scan.riskScore) || 0),
-  );
+  const score = Math.min(100, Math.max(0, Number(scan.riskScore) || 0));
 
-  const highestSeverity = [
-    "critical",
-    "high",
-    "medium",
-    "low",
-    "info",
-  ].find((severity) => severityCounts[severity] > 0) || "info";
+  const highestSeverity =
+    ["critical", "high", "medium", "low", "info"].find(
+      (severity) => severityCounts[severity] > 0,
+    ) || "info";
 
   const level =
-    score >= 80 ? "critical" :
-    score >= 60 ? "high" :
-    score >= 40 ? "medium" :
-    score >= 20 ? "low" :
-    "info";
+    score >= 80
+      ? "critical"
+      : score >= 60
+        ? "high"
+        : score >= 40
+          ? "medium"
+          : score >= 20
+            ? "low"
+            : "info";
 
   return {
     score,
@@ -116,10 +105,7 @@ const generateReport = async ({
     );
   }
 
-  const report = await reportRepository.findById(
-    ownerId,
-    reportId,
-  );
+  const report = await reportRepository.findById(ownerId, reportId);
 
   if (!report || String(report.scanId) !== String(scanId)) {
     throw createReportError(
@@ -134,23 +120,13 @@ const generateReport = async ({
     return report;
   }
 
-  const scan = await scanRepository.findById(
-    ownerId,
-    scanId,
-  );
+  const scan = await scanRepository.findById(ownerId, scanId);
 
   if (!scan) {
-    throw createReportError(
-      "Scan was not found.",
-      "SCAN_NOT_FOUND",
-      404,
-    );
+    throw createReportError("Scan was not found.", "SCAN_NOT_FOUND", 404);
   }
 
-  const target = await targetRepository.findById(
-    ownerId,
-    scan.targetId,
-  );
+  const target = await targetRepository.findById(ownerId, scan.targetId);
 
   if (!target) {
     throw createReportError(
@@ -161,11 +137,7 @@ const generateReport = async ({
   }
 
   // Repositories enforce owner and scan scope.
-  const [
-    findings,
-    evidence,
-    fingerprints,
-  ] = await Promise.all([
+  const [findings, evidence, fingerprints] = await Promise.all([
     findingRepository.listByScan(ownerId, scanId, {
       limit: 1000,
       skip: 0,
@@ -190,17 +162,14 @@ const generateReport = async ({
     ],
 
     // Include persisted company-rule evaluations in reports.
-    companyRuleAnalysis:
-      scan.companyRuleAnalysis ?? null,
+    companyRuleAnalysis: scan.companyRuleAnalysis ?? null,
   };
 
   const normalizedTarget = {
     ...target,
     url: target.url ?? scan.targetUrl,
-    hostname:
-      target.hostname ?? getHostname(scan.targetUrl),
-    normalizedUrl:
-      target.normalizedUrl ?? scan.targetUrl,
+    hostname: target.hostname ?? getHostname(scan.targetUrl),
+    normalizedUrl: target.normalizedUrl ?? scan.targetUrl,
   };
 
   const risk = calculateRisk(scan, findings);
@@ -216,8 +185,7 @@ const generateReport = async ({
     fingerprints,
     risk,
     aiAnalysis,
-    companyRuleAnalysis:
-      normalizedScan.companyRuleAnalysis,
+    companyRuleAnalysis: normalizedScan.companyRuleAnalysis,
     generatedAt,
   });
 
@@ -243,12 +211,11 @@ const generateReport = async ({
       contentType: document.contentType,
     });
 
-    const completedReport =
-      await reportRepository.markCompleted(
-        ownerId,
-        reportId,
-        storedReport,
-      );
+    const completedReport = await reportRepository.markCompleted(
+      ownerId,
+      reportId,
+      storedReport,
+    );
 
     if (!completedReport) {
       throw createReportError(
@@ -274,6 +241,4 @@ const generateReport = async ({
   }
 };
 
-export {
-  generateReport,
-};
+export { generateReport };

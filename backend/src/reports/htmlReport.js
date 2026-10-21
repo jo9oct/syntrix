@@ -1,6 +1,5 @@
-﻿
- // STATUS: UPDATED
- // File: src/reports/htmlReport.js
+﻿// STATUS: UPDATED
+// File: src/reports/htmlReport.js
 
 const escapeHtml = (value) => {
   const text = String(value ?? "");
@@ -36,10 +35,7 @@ const formatValue = (value) => {
     return value;
   }
 
-  if (
-    typeof value === "number" ||
-    typeof value === "boolean"
-  ) {
+  if (typeof value === "number" || typeof value === "boolean") {
     return String(value);
   }
 
@@ -63,9 +59,7 @@ const getEvaluationStatus = (evaluation) => {
     return "unsupported";
   }
 
-  return evaluation.violated
-    ? "violated"
-    : "passed";
+  return evaluation.violated ? "violated" : "passed";
 };
 
 const renderCompanyRuleEvaluation = (evaluation) => {
@@ -74,13 +68,9 @@ const renderCompanyRuleEvaluation = (evaluation) => {
   return `
     <tr>
       <td>
-        <strong>${escapeHtml(
-          evaluation?.ruleName || "Unnamed rule"
-        )}</strong>
+        <strong>${escapeHtml(evaluation?.ruleName || "Unnamed rule")}</strong>
         <div class="muted">
-          ID: ${escapeHtml(
-            evaluation?.ruleId || "N/A"
-          )}
+          ID: ${escapeHtml(evaluation?.ruleId || "N/A")}
         </div>
       </td>
 
@@ -95,38 +85,32 @@ const renderCompanyRuleEvaluation = (evaluation) => {
           ? "Yes"
           : evaluation?.supported === false
             ? "No"
-            : "N/A"
+            : "N/A",
       )}</td>
 
-      <td>${escapeHtml(
-        evaluation?.scannerId || "N/A"
-      )}</td>
+      <td>${escapeHtml(evaluation?.scannerId || "N/A")}</td>
 
-      <td>${escapeHtml(
-        evaluation?.operator || "N/A"
-      )}</td>
+      <td>${escapeHtml(evaluation?.operator || "N/A")}</td>
 
       <td>
         <pre class="rule-value">${escapeHtml(
-          formatValue(evaluation?.expected)
+          formatValue(evaluation?.expected),
         )}</pre>
       </td>
 
       <td>
         <pre class="rule-value">${escapeHtml(
-          formatValue(evaluation?.actual)
+          formatValue(evaluation?.actual),
         )}</pre>
       </td>
 
-      <td>${escapeHtml(
-        evaluation?.source || "N/A"
-      )}</td>
+      <td>${escapeHtml(evaluation?.source || "N/A")}</td>
 
       <td>
         ${
           evaluation?.error
             ? `<pre class="rule-value rule-error">${escapeHtml(
-                formatValue(evaluation.error)
+                formatValue(evaluation.error),
               )}</pre>`
             : "N/A"
         }
@@ -135,9 +119,7 @@ const renderCompanyRuleEvaluation = (evaluation) => {
   `;
 };
 
-const renderCompanyRuleAnalysis = (
-  companyRuleAnalysis = null
-) => {
+const renderCompanyRuleAnalysis = (companyRuleAnalysis = null) => {
   if (!companyRuleAnalysis) {
     return `
       <section class="card">
@@ -149,13 +131,11 @@ const renderCompanyRuleAnalysis = (
     `;
   }
 
-  const evaluations =
-    Array.isArray(companyRuleAnalysis.evaluations)
-      ? companyRuleAnalysis.evaluations
-      : [];
+  const evaluations = Array.isArray(companyRuleAnalysis.evaluations)
+    ? companyRuleAnalysis.evaluations
+    : [];
 
-  const enabled =
-    companyRuleAnalysis.enabled ?? false;
+  const enabled = companyRuleAnalysis.enabled ?? false;
 
   return `
     <section class="card">
@@ -172,48 +152,48 @@ const renderCompanyRuleAnalysis = (
         <div class="metric">
           <div>Rules Evaluated</div>
           <div class="metric-value">
-            ${escapeHtml(
-              companyRuleAnalysis.rulesEvaluated ?? 0
-            )}
+            ${escapeHtml(companyRuleAnalysis.rulesEvaluated ?? 0)}
           </div>
         </div>
 
         <div class="metric">
           <div>Violated Rules</div>
           <div class="metric-value">
-            ${escapeHtml(
-              companyRuleAnalysis.violatedRules ?? 0
-            )}
+            ${escapeHtml(companyRuleAnalysis.violatedRules ?? 0)}
           </div>
         </div>
 
         <div class="metric">
           <div>Passed Rules</div>
           <div class="metric-value">
-            ${evaluations.filter(
-              (evaluation) =>
-                getEvaluationStatus(evaluation) === "passed"
-            ).length}
+            ${
+              evaluations.filter(
+                (evaluation) => getEvaluationStatus(evaluation) === "passed",
+              ).length
+            }
           </div>
         </div>
 
         <div class="metric">
           <div>Unsupported Rules</div>
           <div class="metric-value">
-            ${evaluations.filter(
-              (evaluation) =>
-                getEvaluationStatus(evaluation) === "unsupported"
-            ).length}
+            ${
+              evaluations.filter(
+                (evaluation) =>
+                  getEvaluationStatus(evaluation) === "unsupported",
+              ).length
+            }
           </div>
         </div>
 
         <div class="metric">
           <div>Evaluation Errors</div>
           <div class="metric-value">
-            ${evaluations.filter(
-              (evaluation) =>
-                getEvaluationStatus(evaluation) === "error"
-            ).length}
+            ${
+              evaluations.filter(
+                (evaluation) => getEvaluationStatus(evaluation) === "error",
+              ).length
+            }
           </div>
         </div>
       </div>
@@ -241,9 +221,7 @@ const renderCompanyRuleAnalysis = (
                   </tr>
                 </thead>
                 <tbody>
-                  ${evaluations
-                    .map(renderCompanyRuleEvaluation)
-                    .join("\n")}
+                  ${evaluations.map(renderCompanyRuleEvaluation).join("\n")}
                 </tbody>
               </table>
             </div>
@@ -262,52 +240,35 @@ const renderFinding = (finding) => `
 <section class="finding">
   <div class="finding-header">
     <div>
-      <h3>${escapeHtml(
-        finding?.title || "Untitled finding"
-      )}</h3>
+      <h3>${escapeHtml(finding?.title || "Untitled finding")}</h3>
       <p class="muted">
-        ${escapeHtml(
-          finding?.scannerId || "unknown-scanner"
-        )}
+        ${escapeHtml(finding?.scannerId || "unknown-scanner")}
       </p>
     </div>
 
     <div class="badges">
-      <span class="badge severity-${escapeHtml(
-        finding?.severity || "info"
-      )}">
-        ${escapeHtml(
-          finding?.severity || "info"
-        )}
+      <span class="badge severity-${escapeHtml(finding?.severity || "info")}">
+        ${escapeHtml(finding?.severity || "info")}
       </span>
 
       <span class="badge">
-        ${escapeHtml(
-          finding?.confidence || "low"
-        )} confidence
+        ${escapeHtml(finding?.confidence || "low")} confidence
       </span>
     </div>
   </div>
 
   <p>
-    ${escapeHtml(
-      finding?.description ||
-        "No description available."
-    )}
+    ${escapeHtml(finding?.description || "No description available.")}
   </p>
 
   <div class="finding-meta">
     <strong>Category:</strong>
-    ${escapeHtml(
-      finding?.category || "N/A"
-    )}
+    ${escapeHtml(finding?.category || "N/A")}
   </div>
 
   <div class="finding-meta">
     <strong>Status:</strong>
-    ${escapeHtml(
-      finding?.status || "detected"
-    )}
+    ${escapeHtml(finding?.status || "detected")}
   </div>
 
   ${
@@ -318,7 +279,7 @@ const renderFinding = (finding) => `
           <p>${escapeHtml(
             typeof finding.remediation === "string"
               ? finding.remediation
-              : JSON.stringify(finding.remediation)
+              : JSON.stringify(finding.remediation),
           )}</p>
         </div>
       `
@@ -610,9 +571,7 @@ const buildHtmlReport = ({
         <div class="metric">
           <div>Total Findings</div>
           <div class="metric-value">
-            ${escapeHtml(
-              risk?.totalFindings ?? findings.length
-            )}
+            ${escapeHtml(risk?.totalFindings ?? findings.length)}
           </div>
         </div>
 
@@ -651,7 +610,4 @@ const buildHtmlReport = ({
 </html>`;
 };
 
-export {
-  buildHtmlReport,
-  escapeHtml,
-};
+export { buildHtmlReport, escapeHtml };

@@ -49,25 +49,13 @@ const verifyBearerIfPresent = (req, res, next) => {
 };
 
 // Authentication -> Authorization -> Ownership
-router.use(
-  verifyBearerIfPresent,
-  requireAuthorization,
-  requireOwner,
-);
+router.use(verifyBearerIfPresent, requireAuthorization, requireOwner);
 
 // GET /api/v1/findings
-router.get(
-  "/",
-  validate(listFindingQuerySchema, "query"),
-  listFindings,
-);
+router.get("/", validate(listFindingQuerySchema, "query"), listFindings);
 
 // GET /api/v1/findings/:findingId
-router.get(
-  "/:findingId",
-  validate(findingIdSchema, "params"),
-  getFinding,
-);
+router.get("/:findingId", validate(findingIdSchema, "params"), getFinding);
 
 // PATCH /api/v1/findings/:findingId
 router.patch(

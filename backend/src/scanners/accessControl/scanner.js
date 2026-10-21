@@ -1,4 +1,8 @@
+// STATUS: UPDATED
+// File: src/scanners/accessControl/scanner.js
+
 import { get } from "../../request/request.js";
+import { getAuthenticatedRequestOptions } from "../../request/authenticatedRequestOptions.js";
 import { createSecurityEvidence } from "../shared/evidenceBuilder.js";
 import { calculateConfidence } from "../shared/confidence.js";
 import { normalizeFinding } from "../shared/findingNormalizer.js";
@@ -19,17 +23,22 @@ const SENSITIVE_PATHS = [
 const scanner = createSecurityScanner({
   id: "security.access-control",
   name: "Access Control",
-  description:
-    "Performs a bounded unauthenticated access-control surface assessment.",
+  description: "Performs a bounded access-control surface assessment.",
 
   async run(context) {
     const targetUrl = getTargetUrl(context);
+
+    await assertSafeUrl(targetUrl);
 
     const base = new URL(targetUrl);
 
     const findings = [];
     const evidence = [];
     const results = [];
+
+    const requestHeaders = context?.session?.getHeaders?.() ?? {};
+
+    const authenticatedRequestOptions = getAuthenticatedRequestOptions(context);
 
     for (const pathname of SENSITIVE_PATHS) {
       if (context?.signal?.aborted) {
@@ -42,9 +51,10 @@ const scanner = createSecurityScanner({
 
       const response = await get(candidate, {
         signal: context?.signal,
-        headers: context?.session?.getHeaders?.() ?? {},
+        headers: requestHeaders,
         maxRedirects: 0,
         validateStatus: () => true,
+        ...authenticatedRequestOptions,
       });
 
       results.push({
@@ -60,10 +70,10 @@ const scanner = createSecurityScanner({
             description: `A potentially administrative endpoint "${pathname}" returned a successful response to the assessment request.`,
             severity: "high",
             confidence: calculateConfidence({
-              confirmed: true,
+              confirmed: false,
             }),
             remediation:
-              "Enforce authorization checks on administrative and sensitive endpoints.",
+              "Enforce authorization checks on administrative and sensitive endpoints, and verify access using an appropriate authorized test account.",
             category: "access-control",
             metadata: {
               path: pathname,
@@ -78,7 +88,7 @@ const scanner = createSecurityScanner({
           request: {
             method: "GET",
             url: candidate,
-            headers: context?.session?.getHeaders?.() ?? {},
+            headers: requestHeaders,
           },
           response: {
             status: response.status,
@@ -95,6 +105,12 @@ const scanner = createSecurityScanner({
       },
       findings,
       evidence,
+      fingerprints: [],
+      verificationRecords: [],
+      metadata: {
+        cancelled: context?.signal?.aborted === true,
+        pathsTested: results.length,
+      },
     };
   },
 });

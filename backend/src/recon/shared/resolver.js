@@ -1,9 +1,13 @@
-// STATUS: UPDATED
+
+ // STATUS: UPDATED
 
 import dns from "node:dns/promises";
 import net from "node:net";
 
-import { blockedHostnames, privateIpv4Ranges } from "../../config/security.js";
+import {
+  blockedHostnames,
+  privateIpv4Ranges,
+} from "../../config/security.js";
 
 import { SsrfProtectionError } from "../../utils/errors.js";
 
@@ -38,7 +42,7 @@ const normalizeIpv6 = (address) => {
 
   let value = address.toLowerCase();
 
-  // Strip an IPv6 zone identifier, if present.
+  // Remove an IPv6 zone identifier.
   const zoneIndex = value.indexOf("%");
 
   if (zoneIndex !== -1) {
@@ -46,7 +50,6 @@ const normalizeIpv6 = (address) => {
   }
 
   // Convert embedded IPv4 notation into two IPv6 groups.
-  // Example: ::ffff:127.0.0.1 -> ::ffff:7f00:1
   if (value.includes(".")) {
     const lastColon = value.lastIndexOf(":");
 
@@ -61,9 +64,7 @@ const normalizeIpv6 = (address) => {
     }
 
     const octets = ipv4.split(".").map(Number);
-
     const high = ((octets[0] << 8) | octets[1]).toString(16);
-
     const low = ((octets[2] << 8) | octets[3]).toString(16);
 
     value = `${value.slice(0, lastColon + 1)}${high}:${low}`;
@@ -80,10 +81,8 @@ const normalizeIpv6 = (address) => {
   }
 
   const parseGroups = (part) => (part ? part.split(":") : []);
-
   const left = parseGroups(halves[0]);
   const right = halves.length === 2 ? parseGroups(halves[1]) : [];
-
   const missing = 8 - left.length - right.length;
 
   if (
@@ -146,7 +145,10 @@ const isIpv4MappedIpv6 = (address) => {
 const getMappedIpv4 = (address) => {
   const normalized = normalizeIpv6(address);
 
-  if (!normalized || !normalized.startsWith("00000000000000000000ffff")) {
+  if (
+    !normalized ||
+    !normalized.startsWith("00000000000000000000ffff")
+  ) {
     return null;
   }
 
@@ -232,7 +234,7 @@ const assertSafeHostname = (hostname) => {
     );
   }
 
-  // A literal IP must be validated as an address, not treated as a DNS name.
+  // IP literals must be validated as addresses, not DNS names.
   if (net.isIP(normalized)) {
     assertSafeAddress(normalized);
     return normalized;
@@ -284,14 +286,21 @@ const resolveHostname = async (hostname) => {
       verbatim: true,
     });
   } catch {
-    throw new SsrfProtectionError("Hostname could not be resolved safely.");
+    // Do not expose underlying DNS errors to callers.
+    throw new SsrfProtectionError(
+      "Hostname could not be resolved safely.",
+    );
   }
 
-  if (!Array.isArray(records) || records.length === 0) {
-    throw new SsrfProtectionError("Hostname did not resolve to an address.");
+    if (!Array.isArray(records) || records.length === 0) {
+    throw new SsrfProtectionError(
+      "Hostname did not resolve to an address.",
+    );
   }
 
-  const addresses = [...new Set(records.map((record) => record.address))];
+  const addresses = [
+    ...new Set(records.map((record) => record.address)),
+  ];
 
   // Fail closed if even one returned address is prohibited.
   for (const address of addresses) {
@@ -331,8 +340,9 @@ const resolveDnsRecords = async (hostname) => {
     resolveRecord(() => dns.resolveTxt(normalizedHostname)),
   ]);
 
-  // DNS record collection is informational. The outbound request path
-  // must still use resolveHostname() and enforce connection-time checks.
+  // Informational DNS records do not authorize outbound connections.
+  // Outbound requests must still use resolveHostname() and connection-time
+  // address validation.
   return {
     hostname: normalizedHostname,
     A: a.filter((address) => !isBlockedAddress(address)),
@@ -354,7 +364,9 @@ const assertSafeUrl = async (value) => {
   }
 
   if (!["http:", "https:"].includes(parsedUrl.protocol)) {
-    throw new SsrfProtectionError("Only HTTP and HTTPS URLs are permitted.");
+    throw new SsrfProtectionError(
+      "Only HTTP and HTTPS URLs are permitted.",
+    );
   }
 
   if (parsedUrl.username || parsedUrl.password) {

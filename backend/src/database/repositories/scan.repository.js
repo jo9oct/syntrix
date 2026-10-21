@@ -38,7 +38,6 @@ const assertObjectId = (value, fieldName) => {
 
 const normalizePagination = (limit, skip) => {
   const normalizedLimit = limit === undefined ? DEFAULT_LIMIT : Number(limit);
-
   const normalizedSkip = skip === undefined ? 0 : Number(skip);
 
   if (
@@ -124,8 +123,24 @@ const sanitizeStatusFields = (fields = {}) => {
   return safeFields;
 };
 
+/*
+ * Status transitions are explicit and audited.
+ *
+ * Retry lifecycle:
+ * running -> pending -> running
+ *
+ * A retry does not make a failed scan active again. Only a scan that
+ * is still running may return to pending through this transition.
+ */
 const getTransitionRule = (nextStatus) => {
   switch (nextStatus) {
+    case "pending":
+      return {
+        allowedFrom: ["running"],
+        reason: "scan_retry_scheduled",
+        type: "worker",
+      };
+
     case "running":
       return {
         allowedFrom: ["pending"],
@@ -354,6 +369,10 @@ const countCreatedSince = async (ownerId, startDate) => {
   });
 };
 
+/*
+ * Atomically update a scan status and append its transition history.
+ * A concurrent deletion or status change prevents the update.
+ */
 const updateStatus = async (ownerId, scanId, nextStatus, fields = {}) => {
   if (!ALLOWED_STATUSES.includes(nextStatus)) {
     throw createRepositoryError(

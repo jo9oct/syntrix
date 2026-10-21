@@ -1,6 +1,8 @@
 // STATUS: UPDATED
+// File: src/scanners/xss/scanner.js
 
 import { get } from "../../request/request.js";
+import { getAuthenticatedRequestOptions } from "../../request/authenticatedRequestOptions.js";
 import { createSecurityEvidence } from "../shared/evidenceBuilder.js";
 import { calculateConfidence } from "../shared/confidence.js";
 import { normalizeFinding } from "../shared/findingNormalizer.js";
@@ -89,6 +91,8 @@ const scanner = createSecurityScanner({
 
     const requestHeaders = context?.session?.getHeaders?.() ?? {};
 
+    const authenticatedRequestOptions = getAuthenticatedRequestOptions(context);
+
     for (const targetUrl of testedTargets) {
       if (context?.signal?.aborted) break;
 
@@ -106,6 +110,7 @@ const scanner = createSecurityScanner({
         const response = await get(testUrl, {
           signal: context?.signal,
           headers: requestHeaders,
+          ...authenticatedRequestOptions,
         });
 
         requestsTested += 1;
@@ -133,7 +138,9 @@ const scanner = createSecurityScanner({
           title: "Potential Reflected Input Injection",
           description: `The controlled marker was reflected in the response for parameter "${parameter}". Reflection alone does not confirm executable cross-site scripting.`,
           severity: "medium",
-          confidence: calculateConfidence({ confirmed: false }),
+          confidence: calculateConfidence({
+            confirmed: false,
+          }),
           remediation:
             "Apply context-aware output encoding, validate untrusted input, and ensure reflected data cannot be interpreted as executable HTML or JavaScript.",
           category: "xss",
@@ -158,18 +165,15 @@ const scanner = createSecurityScanner({
             },
             response: {
               status: response.status,
-              headers: response.headers,
-              body: response.data,
               contentType: response.headers?.["content-type"],
             },
-            parameter,
-            payload: marker,
             findingFingerprint,
             findingKey: findingFingerprint,
             metadata: {
               parameter,
               marker: "[REDACTED]",
               reflectionContext: reflection.context,
+              responseBodyRedacted: true,
             },
           }),
         );

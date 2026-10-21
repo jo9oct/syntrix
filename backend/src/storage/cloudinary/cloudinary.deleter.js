@@ -1,38 +1,25 @@
 ﻿// STATUS: UPDATED
 // File: src/storage/cloudinary/cloudinary.deleter.js
 
-import { cloudinary } from './cloudinary.client.js';
-import environment from '../../config/environment.js';
+import { cloudinary } from "./cloudinary.client.js";
+import environment from "../../config/environment.js";
 
 import {
   CLOUDINARY_DEFAULTS,
   CLOUDINARY_RESOURCE_TYPES,
-} from './cloudinary.constants.js';
+} from "./cloudinary.constants.js";
 
 const normalizePublicId = (publicId) => {
-  if (
-    typeof publicId !== 'string' ||
-    publicId.trim().length === 0
-  ) {
-    throw new Error(
-      'publicId is required to delete a Cloudinary report.',
-    );
+  if (typeof publicId !== "string" || publicId.trim().length === 0) {
+    throw new Error("publicId is required to delete a Cloudinary report.");
   }
 
-  return publicId
-    .trim()
-    .replace(/^\/+/, '')
-    .replace(/\/+$/, '');
+  return publicId.trim().replace(/^\/+/, "").replace(/\/+$/, "");
 };
 
 const normalizeResourceType = (resourceType) => {
-  if (
-    typeof resourceType !== 'string' ||
-    resourceType.trim().length === 0
-  ) {
-    throw new Error(
-      'resourceType is required to delete a Cloudinary report.',
-    );
+  if (typeof resourceType !== "string" || resourceType.trim().length === 0) {
+    throw new Error("resourceType is required to delete a Cloudinary report.");
   }
 
   const normalized = resourceType.trim();
@@ -42,22 +29,19 @@ const normalizeResourceType = (resourceType) => {
   );
 
   if (!allowedResourceTypes.has(normalized)) {
-    throw new Error(
-      'Unsupported Cloudinary resource type.',
-    );
+    throw new Error("Unsupported Cloudinary resource type.");
   }
 
   return normalized;
 };
 
 const resolvePublicId = (publicId) => {
-  const configuredFolder =
-    environment.cloudinary.folder?.trim()
-      .replace(/^\/+/, '')
-      .replace(/\/+$/, '');
+  const configuredFolder = environment.cloudinary.folder
+    ?.trim()
+    .replace(/^\/+/, "")
+    .replace(/\/+$/, "");
 
-  const normalizedPublicId =
-    normalizePublicId(publicId);
+  const normalizedPublicId = normalizePublicId(publicId);
 
   if (!configuredFolder) {
     return normalizedPublicId;
@@ -65,9 +49,7 @@ const resolvePublicId = (publicId) => {
 
   if (
     normalizedPublicId === configuredFolder ||
-    normalizedPublicId.startsWith(
-      `${configuredFolder}/`,
-    )
+    normalizedPublicId.startsWith(`${configuredFolder}/`)
   ) {
     return normalizedPublicId;
   }
@@ -79,33 +61,22 @@ const deleteReport = async ({
   publicId,
   resourceType = CLOUDINARY_RESOURCE_TYPES.RAW,
 }) => {
-  const normalizedResourceType =
-    normalizeResourceType(resourceType);
+  const normalizedResourceType = normalizeResourceType(resourceType);
 
-  const finalPublicId =
-    resolvePublicId(publicId);
+  const finalPublicId = resolvePublicId(publicId);
 
-  const result =
-    await cloudinary.uploader.destroy(
-      finalPublicId,
-      {
-        resource_type: normalizedResourceType,
-        type: CLOUDINARY_DEFAULTS.uploadType,
-        invalidate: CLOUDINARY_DEFAULTS.invalidate,
-      },
-    );
+  const result = await cloudinary.uploader.destroy(finalPublicId, {
+    resource_type: normalizedResourceType,
+    type: CLOUDINARY_DEFAULTS.uploadType,
+    invalidate: CLOUDINARY_DEFAULTS.invalidate,
+  });
 
   const deletionResult = result?.result;
 
-  if (
-    deletionResult !== 'ok' &&
-    deletionResult !== 'not found'
-  ) {
-    const error = new Error(
-      'Cloudinary did not confirm report deletion.',
-    );
+  if (deletionResult !== "ok" && deletionResult !== "not found") {
+    const error = new Error("Cloudinary did not confirm report deletion.");
 
-    error.code = 'CLOUDINARY_DELETE_UNCONFIRMED';
+    error.code = "CLOUDINARY_DELETE_UNCONFIRMED";
     error.details = {
       publicId: finalPublicId,
       resourceType: normalizedResourceType,
@@ -116,15 +87,13 @@ const deleteReport = async ({
   }
 
   return {
-    storageProvider: 'cloudinary',
+    storageProvider: "cloudinary",
     publicId: finalPublicId,
     resourceType: normalizedResourceType,
     result: deletionResult,
-    deleted: deletionResult === 'ok',
-    alreadyMissing: deletionResult === 'not found',
+    deleted: deletionResult === "ok",
+    alreadyMissing: deletionResult === "not found",
   };
 };
 
-export {
-  deleteReport,
-};
+export { deleteReport };

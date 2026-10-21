@@ -1,5 +1,6 @@
-// STATUS: CREATED
-// FILE: src/services/credentialVault.service.js
+
+/* STATUS: UPDATED */
+/* FILE: src/services/credentialVault.service.js */
 
 import { createCipheriv, createDecipheriv, randomBytes } from "node:crypto";
 
@@ -26,20 +27,60 @@ const getEncryptionKey = () => {
   return Buffer.from(value, "hex");
 };
 
+const validateCredentials = (credentials) => {
+  if (!credentials || typeof credentials !== "object") {
+    throw new TypeError("Valid authentication credentials are required.");
+  }
+
+  const hasUsername = Object.hasOwn(credentials, "username");
+  const hasPassword = Object.hasOwn(credentials, "password");
+  const hasCookie = Object.hasOwn(credentials, "sessionCookie");
+
+  if (hasCookie && !hasUsername && !hasPassword) {
+    if (
+      typeof credentials.sessionCookie !== "string" ||
+      !credentials.sessionCookie.trim() ||
+      /[\r\n\0]/.test(credentials.sessionCookie)
+    ) {
+      throw new TypeError("A valid session cookie is required.");
+    }
+
+    return {
+      sessionCookie: credentials.sessionCookie.trim(),
+    };
+  }
+
+  if (
+    !hasCookie &&
+    hasUsername &&
+    hasPassword &&
+    typeof credentials.username === "string" &&
+    credentials.username.trim() &&
+    typeof credentials.password === "string" &&
+    credentials.password.length > 0
+  ) {
+    return {
+      username: credentials.username,
+      password: credentials.password,
+    };
+  }
+
+  throw new TypeError("Provide username/password or sessionCookie.");
+};
+
 const encryptCredentials = (credentials) => {
   const iv = randomBytes(12);
-
   const cipher = createCipheriv("aes-256-gcm", getEncryptionKey(), iv);
 
   const plaintext = Buffer.from(
-    JSON.stringify({
-      username: credentials.username,
-      password: credentials.password,
-    }),
+    JSON.stringify(validateCredentials(credentials)),
     "utf8",
   );
 
-  const ciphertext = Buffer.concat([cipher.update(plaintext), cipher.final()]);
+  const ciphertext = Buffer.concat([
+    cipher.update(plaintext),
+    cipher.final(),
+  ]);
 
   return JSON.stringify({
     version: 1,
@@ -74,30 +115,14 @@ const decryptCredentials = (value) => {
     decipher.final(),
   ]);
 
-  const credentials = JSON.parse(plaintext.toString("utf8"));
-
-  if (
-    typeof credentials.username !== "string" ||
-    typeof credentials.password !== "string"
-  ) {
-    throw new Error("Invalid decrypted credential data.");
-  }
-
-  return credentials;
+  return validateCredentials(JSON.parse(plaintext.toString("utf8")));
 };
 
 const storeCredentials = async (credentials) => {
-  if (
-    !credentials ||
-    typeof credentials.username !== "string" ||
-    typeof credentials.password !== "string"
-  ) {
-    throw new TypeError("Valid credentials are required.");
-  }
-
+  const normalizedCredentials = validateCredentials(credentials);
   const reference = randomBytes(32).toString("hex");
   const key = `${REDIS_KEY_PREFIX}${reference}`;
-  const encryptedValue = encryptCredentials(credentials);
+  const encryptedValue = encryptCredentials(normalizedCredentials);
 
   const result = await redisConnection.set(
     key,

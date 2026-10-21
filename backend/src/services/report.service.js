@@ -30,11 +30,7 @@ const assertReportAccess = ({ ownerId, userType }) => {
   }
 
   if (!ownerId) {
-    throw createServiceError(
-      "ownerId is required.",
-      400,
-      "OWNER_ID_REQUIRED",
-    );
+    throw createServiceError("ownerId is required.", 400, "OWNER_ID_REQUIRED");
   }
 };
 
@@ -78,11 +74,7 @@ const createReport = async ({
   assertReportAccess({ ownerId, userType });
 
   if (!scanId) {
-    throw createServiceError(
-      "scanId is required.",
-      400,
-      "SCAN_ID_REQUIRED",
-    );
+    throw createServiceError("scanId is required.", 400, "SCAN_ID_REQUIRED");
   }
 
   // Resolve the current plan from the trusted user record.
@@ -100,11 +92,7 @@ const createReport = async ({
   const scan = await scanRepository.findById(ownerId, scanId);
 
   if (!scan) {
-    throw createServiceError(
-      "Scan was not found.",
-      404,
-      "SCAN_NOT_FOUND",
-    );
+    throw createServiceError("Scan was not found.", 404, "SCAN_NOT_FOUND");
   }
 
   // Reuse an active or completed report before checking the limit.
@@ -192,39 +180,23 @@ const getReport = async ({ ownerId, userType = "user", reportId }) => {
   const report = await reportRepository.findById(ownerId, reportId);
 
   if (!report) {
-    throw createServiceError(
-      "Report was not found.",
-      404,
-      "REPORT_NOT_FOUND",
-    );
+    throw createServiceError("Report was not found.", 404, "REPORT_NOT_FOUND");
   }
 
   return report;
 };
 
-const getReportsByScan = async ({
-  ownerId,
-  userType = "user",
-  scanId,
-}) => {
+const getReportsByScan = async ({ ownerId, userType = "user", scanId }) => {
   assertReportAccess({ ownerId, userType });
 
   if (!scanId) {
-    throw createServiceError(
-      "scanId is required.",
-      400,
-      "SCAN_ID_REQUIRED",
-    );
+    throw createServiceError("scanId is required.", 400, "SCAN_ID_REQUIRED");
   }
 
   const scan = await scanRepository.findById(ownerId, scanId);
 
   if (!scan) {
-    throw createServiceError(
-      "Scan was not found.",
-      404,
-      "SCAN_NOT_FOUND",
-    );
+    throw createServiceError("Scan was not found.", 404, "SCAN_NOT_FOUND");
   }
 
   const reports = await reportRepository.listByScan(ownerId, scanId, {

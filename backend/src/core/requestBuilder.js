@@ -1,6 +1,66 @@
 // STATUS: UPDATED
+// File: src/core/requestBuilder.js
 
 import { normalizeHeaders, normalizeMethod } from "../utils/normalization.js";
+
+const normalizeAuthOrigin = (value) => {
+  if (value === null || value === undefined) {
+    return null;
+  }
+
+  if (typeof value !== "string" || !value.trim()) {
+    throw new TypeError("Authenticated request origin is invalid.");
+  }
+
+  let parsed;
+
+  try {
+    parsed = new URL(value);
+  } catch {
+    throw new TypeError("Authenticated request origin is invalid.");
+  }
+
+  if (
+    !["http:", "https:"].includes(parsed.protocol) ||
+    parsed.username ||
+    parsed.password ||
+    parsed.pathname !== "/" ||
+    parsed.search ||
+    parsed.hash ||
+    parsed.origin !== value
+  ) {
+    throw new TypeError(
+      "Authenticated request origin must be a canonical HTTP or HTTPS origin.",
+    );
+  }
+
+  return parsed.origin;
+};
+
+const validateAuthenticationOptions = ({ authOrigin, resolveHeaders }) => {
+  if (resolveHeaders !== null && typeof resolveHeaders !== "function") {
+    throw new TypeError("resolveHeaders must be a function when provided.");
+  }
+
+  const normalizedAuthOrigin = normalizeAuthOrigin(authOrigin);
+
+  if (normalizedAuthOrigin && resolveHeaders === null) {
+    throw new TypeError(
+      "An authenticated origin requires a trusted header resolver.",
+    );
+  }
+
+  if (normalizedAuthOrigin === null && resolveHeaders !== null) {
+    throw new TypeError(
+      "A trusted header resolver requires an authenticated origin.",
+    );
+  }
+
+  return {
+    authOrigin: normalizedAuthOrigin,
+    resolveHeaders,
+  };
+};
 
 const createRequest = ({
   url,
@@ -15,10 +75,27 @@ const createRequest = ({
   maxRedirects,
   responseType = "text",
   metadata = {},
+
+  // Internal-only options. Supply these from trusted application code.
+  authOrigin = null,
+  resolveHeaders = null,
 }) => {
   if (typeof url !== "string" || url.trim().length === 0) {
     throw new TypeError("Request URL is required.");
   }
+
+  if (
+    metadata === null ||
+    typeof metadata !== "object" ||
+    Array.isArray(metadata)
+  ) {
+    throw new TypeError("Request metadata must be an object.");
+  }
+
+  const authenticationOptions = validateAuthenticationOptions({
+    authOrigin,
+    resolveHeaders,
+  });
 
   const normalizedMethod = normalizeMethod(method);
 
@@ -35,6 +112,7 @@ const createRequest = ({
     maxRedirects,
     responseType,
     metadata: { ...metadata },
+    ...authenticationOptions,
   });
 };
 
@@ -50,6 +128,8 @@ const createJsonRequest = ({
   scope = null,
   maxRedirects,
   metadata = {},
+  authOrigin = null,
+  resolveHeaders = null,
 }) =>
   createRequest({
     url,
@@ -67,6 +147,8 @@ const createJsonRequest = ({
     maxRedirects,
     responseType: "json",
     metadata,
+    authOrigin,
+    resolveHeaders,
   });
 
 const createHeadRequest = ({
@@ -77,6 +159,8 @@ const createHeadRequest = ({
   scope = null,
   maxRedirects,
   metadata = {},
+  authOrigin = null,
+  resolveHeaders = null,
 }) =>
   createRequest({
     url,
@@ -87,6 +171,8 @@ const createHeadRequest = ({
     scope,
     maxRedirects,
     metadata,
+    authOrigin,
+    resolveHeaders,
   });
 
 export { createRequest, createJsonRequest, createHeadRequest };

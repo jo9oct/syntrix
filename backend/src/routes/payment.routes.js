@@ -1,4 +1,4 @@
-// STATUS: UPDATED
+// STATUS: REPLACE
 // FILE: src/routes/payment.routes.js
 
 import { Router } from "express";
@@ -17,14 +17,14 @@ import { protect } from "../middleware/auth.js";
 
 const router = Router();
 
-// Public subscription plan catalog.
+// Public plan catalog.
 router.get("/plans", getPlans);
 
 // Authenticated subscription endpoints.
 router.get("/subscription", protect, getCurrentSubscription);
 router.post("/subscription/cancel", protect, cancelSubscription);
 
-// Authenticated, server-selected subscription plans.
+// The server determines the price and subscription plan.
 router.post("/chapa/pro/initialize", protect, initializeProPayment);
 router.post(
   "/chapa/enterprise/initialize",
@@ -32,11 +32,11 @@ router.post(
   initializeEnterprisePayment,
 );
 
-// Require authentication for payment verification.
+// Only authenticated users can request payment verification.
 router.get("/chapa/verify/:tx_ref", protect, verifyChapaPayment);
 
 // Chapa server-to-server callback.
-// Webhook authenticity must be verified in the controller/service.
+// The controller independently verifies the transaction with Chapa.
 router.post("/chapa/webhook", handleChapaWebhook);
 
 export default router;

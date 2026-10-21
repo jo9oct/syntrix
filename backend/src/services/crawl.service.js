@@ -2,7 +2,6 @@ import mongoose from "mongoose";
 import { createHmac } from "node:crypto";
 
 import { getPlan } from "../access/plan.service.js";
-
 import { createScope, isInScope } from "../core/scope.js";
 
 import {
@@ -11,15 +10,15 @@ import {
   MAX_DEPTH_HARD_LIMIT,
 } from "../core/crawler.js";
 
+import { get } from "../request/request.js";
+
 import {
   discoverPageInputs,
   mergeDiscoveryResults,
 } from "../discovery/inputDiscovery.js";
 
 import * as scanRepository from "../database/repositories/scan.repository.js";
-
 import * as crawlDataRepository from "../database/repositories/crawlData.repository.js";
-
 import * as crawlPageRepository from "../database/repositories/crawlPage.repository.js";
 
 const DEFAULT_PAGE_LIMIT = 50;
@@ -60,6 +59,15 @@ const ALLOWED_OPENAPI_METHODS = new Set([
   "OPTIONS",
   "HEAD",
   "TRACE",
+]);
+
+const SENSITIVE_HEADERS = new Set([
+  "authorization",
+  "proxy-authorization",
+  "cookie",
+  "set-cookie",
+  "x-api-key",
+  "x-auth-token",
 ]);
 
 const parsePositiveInteger = (value, fallback) => {
@@ -252,10 +260,8 @@ const normalizeStringArray = (
 };
 
 /**
- * Sanitize static input metadata.
- *
- * Never persist input.value, textarea contents, submitted form values,
- * passwords, cookies, tokens, or other submitted secrets.
+ * Persist input metadata only.
+ * Never persist submitted values, passwords, cookies, or tokens.
  */
 const sanitizeInputMetadata = (input) => {
   if (!input || typeof input !== "object" || Array.isArray(input)) {
@@ -362,20 +368,15 @@ const sanitizeInputMetadata = (input) => {
     required: safeBoolean(input.required),
     disabled: safeBoolean(input.disabled),
     autocomplete: safeOptionalString(input.autocomplete, 128),
-
-    // HTML validation metadata, not submitted field values.
     pattern: safeOptionalString(input.pattern, 512),
     min: safeOptionalString(input.min, 128),
     max: safeOptionalString(input.max, 128),
     step: safeOptionalString(input.step, 128),
     minlength: safeNonNegativeInteger(input.minlength),
     maxlength: safeNonNegativeInteger(input.maxlength),
-
     readonly: safeBoolean(input.readonly),
     multiple: safeBoolean(input.multiple),
-
     accept: safeStringArray(input.accept, MAX_ACCEPT_ITEMS, 256),
-
     options: safeOptions(input.options),
   };
 };
@@ -412,13 +413,8 @@ const deduplicateInputs = (inputs, limit) => {
   return result;
 };
 
-/**
- * Keep only form actions and links allowed by the effective scope.
- * Enforce the configured form and input limits before persistence.
- */
 const sanitizeDiscoveredInputs = ({ discovery, scope }) => {
   const forms = Array.isArray(discovery?.forms) ? discovery.forms : [];
-
   const inputs = Array.isArray(discovery?.inputs) ? discovery.inputs : [];
 
   let totalFormInputs = 0;
@@ -494,12 +490,6 @@ const sanitizeDiscoveredInputs = ({ discovery, scope }) => {
   };
 };
 
-/**
- * Persist API metadata only.
- *
- * Never accept request bodies, arbitrary headers, cookies, authorization
- * data, or parameter values from a discovery record.
- */
 const sanitizeApiRequests = ({ apiRequests, scope }) => {
   if (!Array.isArray(apiRequests)) {
     return [];
@@ -581,10 +571,6 @@ const sanitizeApiRequests = ({ apiRequests, scope }) => {
   return safeRequests;
 };
 
-/**
- * Persist validated OpenAPI operation metadata only.
- * Do not execute operations or persist parameter values.
- */
 const sanitizeOpenApiEndpoints = (endpoints) => {
   if (!Array.isArray(endpoints)) {
     return [];
@@ -683,6 +669,136 @@ const resolveCrawlLimits = (plan) => {
   };
 };
 
+/**
+ * Create a request function for crawler HTTP discovery.
+ *
+ * Browser-managed cookies are selected by Chromium for the requested URL.
+ * For separate HTTP requests, retrieve cookies for that exact URL only.
+ * Cookies are never shared with another origin.
+ *
+ * The underlying default transport is the validated request layer.
+ */
+
+const createCrawlRequestPage = ({
+  scope,
+  targetOrigin,
+  browserContext,
+  requestTransport = get,
+}) => {
+  return async (value, options = {}) => {
+    if (options.signal?.aborted) {
+      throw createServiceError(
+        "CRAWL_CANCELLED",
+        "The crawl was cancelled.",
+        499,
+      );
+    }
+
+    let url;
+
+    try {
+      url = new URL(value);
+    } catch {
+      throw createServiceError(
+        "INVALID_CRAWL_REQUEST_URL",
+        "A discovered crawl URL is invalid.",
+        400,
+      );
+    }
+
+    if (
+      !["http:", "https:"].includes(url.protocol) ||
+      url.username ||
+      url.password
+    ) {
+      throw createServiceError(
+        "INVALID_CRAWL_REQUEST_URL",
+        "A discovered crawl URL must use HTTP or HTTPS without embedded credentials.",
+        400,
+      );
+    }
+
+    if (!isInScope(url.toString(), scope)) {
+      throw createServiceError(
+        "CRAWL_REQUEST_OUT_OF_SCOPE",
+        "The discovered crawl URL is outside the allowed scope.",
+        403,
+      );
+    }
+
+    const sameOrigin = url.origin === targetOrigin;
+    const safeHeaders = {};
+
+    if (options.headers && typeof options.headers === "object") {
+      for (const [name, headerValue] of Object.entries(options.headers)) {
+        if (typeof name !== "string") {
+          continue;
+        }
+
+        const normalizedName = name.toLowerCase();
+
+        // Never forward caller-supplied authentication headers.
+        if (SENSITIVE_HEADERS.has(normalizedName)) {
+          continue;
+        }
+
+        if (
+          typeof headerValue === "string" ||
+          typeof headerValue === "number"
+        ) {
+          safeHeaders[name] = String(headerValue);
+        }
+      }
+    }
+
+    // Only the exact authenticated target origin may receive its cookies.
+    if (sameOrigin && browserContext) {
+      let cookies;
+
+      try {
+        cookies = await browserContext.cookies(url.toString());
+      } catch {
+        const error = new Error(
+          "Authenticated crawl cookies could not be retrieved.",
+        );
+
+        error.code = "AUTHENTICATED_COOKIE_LOOKUP_FAILED";
+        throw error;
+      }
+
+      if (options.signal?.aborted) {
+        throw createServiceError(
+          "CRAWL_CANCELLED",
+          "The crawl was cancelled.",
+          499,
+        );
+      }
+
+      const cookieHeader = cookies
+        .filter(
+          (cookie) =>
+            typeof cookie.name === "string" &&
+            typeof cookie.value === "string" &&
+            !/[\r\n;]/.test(cookie.name) &&
+            !/[\r\n]/.test(cookie.value),
+        )
+        .map((cookie) => `${cookie.name}=${cookie.value}`)
+        .join("; ");
+
+      if (cookieHeader) {
+        safeHeaders.Cookie = cookieHeader;
+      }
+    }
+
+    return requestTransport(url.toString(), {
+      ...options,
+      scope,
+      signal: options.signal,
+      headers: safeHeaders,
+    });
+  };
+};
+
 const runCrawlAndPersist = async ({
   ownerId,
   scanId,
@@ -691,6 +807,8 @@ const runCrawlAndPersist = async ({
   headers = {},
   signal,
   scopeSnapshot = null,
+  browserContext = null,
+  requestPage: customRequestPage,
 }) => {
   const ids = normalizeIds({ ownerId, scanId });
 
@@ -737,8 +855,7 @@ const runCrawlAndPersist = async ({
   }
 
   /*
-   * Build the scope before deleting or creating crawl data.
-   * A saved snapshot must constrain the entire crawl.
+   * Build and validate scope before deleting or creating crawl data.
    */
   let scope;
 
@@ -763,8 +880,23 @@ const runCrawlAndPersist = async ({
   getPageKeySecret();
 
   const plan = getPlan(planName);
-
   const { maxPaths, maxDepth, requestsPerSecond } = resolveCrawlLimits(plan);
+
+  /*
+   * Only create the authenticated HTTP wrapper when an authenticated
+   * browser context was supplied. Ordinary crawls keep their old behavior.
+   *
+   * A custom request function can be supplied for controlled testing or
+   * dependency injection; production should use the validated default.
+   */
+  const authenticatedRequestPage = browserContext
+    ? createCrawlRequestPage({
+        scope,
+        targetOrigin: parsedTarget.origin,
+        browserContext,
+        requestTransport: customRequestPage ?? get,
+      })
+    : customRequestPage;
 
   await crawlPageRepository.deleteByScan(ids);
 
@@ -786,6 +918,10 @@ const runCrawlAndPersist = async ({
       requestsPerSecond,
       headers,
       signal,
+      browserContext,
+      ...(authenticatedRequestPage
+        ? { requestPage: authenticatedRequestPage }
+        : {}),
 
       onPage: async (page) => {
         const originalPageUrl = page?.url;
@@ -793,9 +929,7 @@ const runCrawlAndPersist = async ({
         const pageKey = createPageKey(originalPageUrl);
 
         /*
-         * Recheck every page before persisting it.
-         * The crawler's request layer must also enforce scope before
-         * making requests, not only when invoking this callback.
+         * Recheck scope before persisting any discovered page.
          */
         if (!pageUrl || !pageKey || !isInScope(pageUrl, scope)) {
           return;
@@ -885,8 +1019,7 @@ const runCrawlAndPersist = async ({
 
     /*
      * OpenAPI metadata is attached after onPage has run.
-     * Update existing page records without upserting or incrementing
-     * page counters a second time.
+     * Update existing records without incrementing page counters again.
      */
     for (const page of result?.pages ?? []) {
       if (signal?.aborted) {

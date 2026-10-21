@@ -1,4 +1,8 @@
+// STATUS: UPDATED
+// File: src/scanners/cors/scanner.js
+
 import { get } from "../../request/request.js";
+import { getAuthenticatedRequestOptions } from "../../request/authenticatedRequestOptions.js";
 import { createSecurityEvidence } from "../shared/evidenceBuilder.js";
 import { calculateConfidence } from "../shared/confidence.js";
 import { normalizeFinding } from "../shared/findingNormalizer.js";
@@ -20,12 +24,17 @@ const scanner = createSecurityScanner({
 
     await assertSafeUrl(targetUrl);
 
+    const requestHeaders = {
+      ...(context?.session?.getHeaders?.() ?? {}),
+      Origin: TEST_ORIGIN,
+    };
+
+    const authenticatedRequestOptions = getAuthenticatedRequestOptions(context);
+
     const response = await get(targetUrl, {
       signal: context?.signal,
-      headers: {
-        ...(context?.session?.getHeaders?.() ?? {}),
-        Origin: TEST_ORIGIN,
-      },
+      headers: requestHeaders,
+      ...authenticatedRequestOptions,
     });
 
     const allowOrigin = response.headers?.["access-control-allow-origin"];
@@ -43,15 +52,17 @@ const scanner = createSecurityScanner({
           scannerId: "security.cors",
           title: "Potentially Unsafe CORS Origin and Credential Configuration",
           description:
-            "The application reflected a controlled external origin while allowing credentials.",
+            "The application reflected a controlled external origin while allowing credentials. Verify whether an untrusted website can actually read sensitive responses in a browser.",
           severity: "high",
           confidence: calculateConfidence({
-            confirmed: true,
-            repeated: true,
+            confirmed: false,
           }),
           remediation:
             "Allow only explicitly trusted origins and enable credentials only when required.",
           category: "cors",
+          metadata: {
+            detection: "reflected-origin-with-credentials",
+          },
         }),
       );
     } else if (allowOrigin === "*") {
@@ -60,14 +71,17 @@ const scanner = createSecurityScanner({
           scannerId: "security.cors",
           title: "Wildcard CORS Policy",
           description:
-            "The application exposes a wildcard Access-Control-Allow-Origin policy.",
+            "The application exposes a wildcard Access-Control-Allow-Origin policy. Assess whether the accessible resources are intended to be public.",
           severity: "low",
           confidence: calculateConfidence({
-            confirmed: true,
+            confirmed: false,
           }),
           remediation:
             "Restrict cross-origin access to trusted origins where appropriate.",
           category: "cors",
+          metadata: {
+            detection: "wildcard-allow-origin",
+          },
         }),
       );
     }
@@ -95,6 +109,12 @@ const scanner = createSecurityScanner({
           },
         }),
       ],
+      fingerprints: [],
+      verificationRecords: [],
+      metadata: {
+        cancelled: context?.signal?.aborted === true,
+        requestsTested: 1,
+      },
     };
   },
 });

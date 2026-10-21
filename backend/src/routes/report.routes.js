@@ -49,28 +49,12 @@ const verifyBearerIfPresent = (req, res, next) => {
   return protect(req, res, next);
 };
 
-router.use(
-  verifyBearerIfPresent,
-  requireAuthorization,
-  requireOwner,
-);
+router.use(verifyBearerIfPresent, requireAuthorization, requireOwner);
 
-router.post(
-  "/",
-  validate(createReportSchema, "body"),
-  createReport,
-);
+router.post("/", validate(createReportSchema, "body"), createReport);
 
-router.get(
-  "/",
-  validate(listReportQuerySchema, "query"),
-  getReportsByScan,
-);
+router.get("/", validate(listReportQuerySchema, "query"), getReportsByScan);
 
-router.get(
-  "/:reportId",
-  validate(reportIdSchema, "params"),
-  getReport,
-);
+router.get("/:reportId", validate(reportIdSchema, "params"), getReport);
 
 export default router;

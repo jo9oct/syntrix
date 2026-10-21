@@ -14,7 +14,7 @@ import { createRateLimiter } from "./src/middleware/rateLimit.middleware.js";
 import { notFoundMiddleware } from "./src/middleware/notFound.middleware.js";
 import { errorMiddleware } from "./src/middleware/error.middleware.js";
 
-//auth 
+//auth
 import authRoutes from "./src/routes/auth.routes.js";
 
 // Existing Web Security Assessment routes.
