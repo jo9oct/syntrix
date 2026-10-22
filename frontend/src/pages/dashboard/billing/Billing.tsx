@@ -5,8 +5,8 @@ import {
   RotateCcw, Download, ArrowRight, ExternalLink, Smartphone,
   Building, Clock, CheckCircle2, X, RefreshCw, Lock
 } from 'lucide-react';
-import { useSearchParams } from 'react-router-dom';
-import { useAuthStore } from '../../../store/authStore';
+import { useSearchParams, useNavigate, useLocation } from 'react-router-dom';
+import { useAuthStore, type UserRole, getRoleLandingPath } from '../../../store/authStore';
 import api from '../../../lib/api';
 
 interface PlanInfo {
@@ -61,6 +61,8 @@ const PLANS: PlanInfo[] = [
 
 export const Billing: React.FC = () => {
   const [searchParams] = useSearchParams();
+  const navigate = useNavigate();
+  const location = useLocation();
   const { user } = useAuthStore();
 
   const [currentTier, setCurrentTier] = useState<'free' | 'pro' | 'enterprise'>('free');
@@ -138,7 +140,7 @@ export const Billing: React.FC = () => {
     fetchSub();
 
     // Check URL parameters for return from Chapa or quick plan select
-    const planParam = searchParams.get('plan');
+    const planParam = searchParams.get('plan') || (location.state as any)?.selectedTier;
     if (planParam === 'pro' || planParam === 'enterprise') {
       const match = PLANS.find(p => p.id === planParam);
       if (match) setSelectedPlanForCheckout(match);
@@ -152,17 +154,26 @@ export const Billing: React.FC = () => {
 
   const verifyTransaction = async (txRef: string) => {
     setIsProcessing(true);
+    setErrorMessage(null);
     try {
       const { data } = await api.get(`/payment/chapa/verify/${txRef}`);
       if (data?.success) {
-        setCurrentTier(data.data.tier || 'pro');
-        setVerificationSuccess(data.data);
+        const verifiedTier = data.data.tier || 'pro';
+        setCurrentTier(verifiedTier);
+        setVerificationSuccess({
+          ...data.data,
+          tier: verifiedTier,
+        });
+
+        // 1. Refresh Zustand auth store from backend database (retains user role as-is)
+        await useAuthStore.getState().fetchMe();
+
         setTransactions(prev => [
           {
             id: txRef,
             date: 'Just now',
             amount: `${data.data.amount || 2500} ${data.data.currency || 'ETB'}`,
-            tier: (data.data.tier || 'pro').toUpperCase(),
+            tier: verifiedTier.toUpperCase(),
             method: (data.data.paymentMethod || 'telebirr').toUpperCase(),
             status: 'success'
           },
@@ -231,17 +242,7 @@ export const Billing: React.FC = () => {
   };
 
 
-  const handleDowngrade = async () => {
-    if (window.confirm('Are you sure you want to revert to the Free Community plan?')) {
-      try {
-        await api.post('/payment/subscription/cancel');
-        setCurrentTier('free');
-        setSubscriptionStatus('canceled');
-      } catch (e) {
-        setCurrentTier('free');
-      }
-    }
-  };
+
 
   return (
     <div className="p-4 sm:p-6 lg:p-8 space-y-8 max-w-7xl mx-auto font-sans">
@@ -328,13 +329,17 @@ export const Billing: React.FC = () => {
               >
                 <Sparkles size={16} /> Upgrade to Pro via Chapa
               </button>
-            ) : (
+            ) : currentTier === 'pro' ? (
               <button
-                onClick={handleDowngrade}
-                className="px-4 py-2.5 rounded-xl bg-white/5 hover:bg-white/10 text-xs text-text-muted hover:text-white border border-white/10 transition-colors"
+                onClick={() => setSelectedPlanForCheckout(PLANS[2])}
+                className="btn-primary text-xs px-5 py-3 rounded-xl font-bold flex items-center gap-2 shadow-lg shadow-brand-purple/30 bg-gradient-to-r from-brand-cyan to-brand-purple"
               >
-                Downgrade to Free
+                <Sparkles size={16} /> Upgrade to Enterprise
               </button>
+            ) : (
+              <span className="text-xs font-semibold px-4 py-2.5 rounded-xl bg-brand-purple/10 border border-brand-purple/30 text-brand-purple flex items-center gap-1.5">
+                <Check size={14} /> Highest Tier Active
+              </span>
             )}
           </div>
         </div>
@@ -379,6 +384,9 @@ export const Billing: React.FC = () => {
         <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
           {PLANS.map((plan) => {
             const isCurrent = currentTier === plan.id;
+            const isDowngrade =
+              (currentTier === 'enterprise' && (plan.id === 'pro' || plan.id === 'free')) ||
+              (currentTier === 'pro' && plan.id === 'free');
             const price = billingCycle === 'annual'
               ? Math.round(plan.priceAnnualETB / 12)
               : plan.priceMonthlyETB;
@@ -389,6 +397,8 @@ export const Billing: React.FC = () => {
                 className={`p-6 border transition-all flex flex-col justify-between ${
                   isCurrent
                     ? 'border-brand-cyan/40 bg-brand-cyan/[0.04]'
+                    : isDowngrade
+                    ? 'border-white/5 opacity-50'
                     : plan.id === 'pro'
                     ? 'border-brand-purple/30 hover:border-brand-cyan/40'
                     : 'border-white/10 hover:border-white/20'
@@ -417,22 +427,32 @@ export const Billing: React.FC = () => {
                   </div>
                 </div>
 
-                <button
-                  disabled={isCurrent}
-                  onClick={() => {
-                    if (plan.id === 'free') handleDowngrade();
-                    else setSelectedPlanForCheckout(plan);
-                  }}
-                  className={`w-full py-2.5 rounded-xl text-xs font-bold transition-all ${
-                    isCurrent
-                      ? 'bg-white/10 text-white cursor-default'
-                      : plan.id === 'pro'
-                      ? 'btn-primary'
-                      : 'bg-white/5 hover:bg-white/10 text-white border border-white/15'
-                  }`}
-                >
-                  {isCurrent ? 'Current Plan' : `Select ${plan.name}`}
-                </button>
+                {isCurrent ? (
+                  <button
+                    disabled
+                    className="w-full py-2.5 rounded-xl text-xs font-bold bg-white/10 text-white cursor-default border border-white/15"
+                  >
+                    Current Plan
+                  </button>
+                ) : isDowngrade ? (
+                  <button
+                    disabled
+                    className="w-full py-2.5 rounded-xl text-xs font-semibold bg-white/5 text-text-muted/40 border border-white/5 cursor-not-allowed"
+                  >
+                    {currentTier === 'enterprise' ? 'Included in Enterprise' : 'No Downgrade Available'}
+                  </button>
+                ) : (
+                  <button
+                    onClick={() => setSelectedPlanForCheckout(plan)}
+                    className={`w-full py-2.5 rounded-xl text-xs font-bold transition-all ${
+                      plan.id === 'pro' || plan.id === 'enterprise'
+                        ? 'btn-primary shadow-lg shadow-brand-cyan/20'
+                        : 'bg-white/5 hover:bg-white/10 text-white border border-white/15'
+                    }`}
+                  >
+                    Upgrade to {plan.name}
+                  </button>
+                )}
               </GlassCard>
             );
           })}
@@ -946,23 +966,35 @@ export const Billing: React.FC = () => {
               <CheckCircle2 size={36} />
             </div>
 
-            <h3 className="text-xl font-bold text-white mb-1">Payment Verified!</h3>
+            <h3 className="text-xl font-bold text-white mb-1">Payment Verified via Chapa!</h3>
             <p className="text-xs text-text-muted mb-4">
-              Your Chapa transaction has been confirmed. Your Sentrix workspace is upgraded to{' '}
+              Your Chapa transaction has been confirmed. Your subscription tier is now upgraded to{' '}
               <strong className="text-brand-cyan uppercase">{verificationSuccess.tier}</strong>.
             </p>
 
-            <div className="p-3 mb-6 rounded-xl bg-white/5 border border-white/10 text-xs font-mono text-left space-y-1">
-              <div className="text-text-muted">Transaction: <span className="text-white">{verificationSuccess.tx_ref}</span></div>
-              <div className="text-text-muted">Channel: <span className="text-white uppercase">{verificationSuccess.paymentMethod || 'Telebirr'}</span></div>
-              <div className="text-text-muted">Amount: <span className="text-green-400 font-bold">{verificationSuccess.amount} {verificationSuccess.currency || 'ETB'}</span></div>
+            <div className="p-3.5 mb-6 rounded-xl bg-white/5 border border-white/10 text-xs font-mono text-left space-y-1.5">
+              <div className="text-text-muted flex justify-between">
+                <span>Transaction:</span> <span className="text-white truncate max-w-[200px]">{verificationSuccess.tx_ref}</span>
+              </div>
+              <div className="text-text-muted flex justify-between">
+                <span>Channel:</span> <span className="text-white uppercase">{verificationSuccess.paymentMethod || 'Telebirr'}</span>
+              </div>
+              <div className="text-text-muted flex justify-between">
+                <span>Amount Paid:</span> <span className="text-green-400 font-bold">{verificationSuccess.amount} {verificationSuccess.currency || 'ETB'}</span>
+              </div>
+              <div className="text-text-muted flex justify-between">
+                <span>Current Tier:</span> <span className="text-brand-cyan font-bold uppercase">{verificationSuccess.tier}</span>
+              </div>
             </div>
 
             <button
-              onClick={() => setVerificationSuccess(null)}
-              className="btn-primary text-xs w-full py-2.5 rounded-xl font-bold shadow-lg shadow-brand-cyan/20"
+              onClick={() => {
+                setVerificationSuccess(null);
+              }}
+              className="btn-primary text-xs w-full py-3 rounded-xl font-bold shadow-lg shadow-brand-cyan/20 flex items-center justify-center gap-2"
             >
-              Continue to Workspace
+              <span>Continue to Workspace</span>
+              <ArrowRight size={14} />
             </button>
           </GlassCard>
         </div>

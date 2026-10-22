@@ -1,0 +1,10 @@
+services:
+  web:
+    build: .
+    container_name: sentrix-web
+    restart: unless-stopped
+    ports:
+      - "5173:5173"
+    environment:
+      - VITE_API_URL=http://localhost:3001/api/v1
+

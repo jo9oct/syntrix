@@ -8,7 +8,7 @@ import {
 import { Link, useNavigate } from 'react-router-dom';
 import { useAuthStore } from '../../store/authStore';
 
-export const Pricing: React.FC = () => {
+export const Pricing: React.FC<{ embedded?: boolean }> = ({ embedded = false }) => {
   const navigate = useNavigate();
   const { isAuthenticated } = useAuthStore();
   const [billingCycle, setBillingCycle] = useState<'monthly' | 'annual'>('monthly');
@@ -70,282 +70,325 @@ export const Pricing: React.FC = () => {
         'Priority Direct Email & Chat Support'
       ],
       notIncluded: [
-        'Dedicated Isolated Malware Detonation Sandbox',
-        'Custom 24/7 Incident Response SLA'
+        'Multi-Tenant Company Compliance Rule Customizer',
+        'Sovereign On-Premise Air-Gapped Deployment'
       ]
     },
     {
       id: 'enterprise',
-      name: 'Enterprise SecOps',
-      tagline: 'Multi-tenant unified console with 5 specialized expert workspaces.',
-      badge: 'Enterprise Grade',
-      priceMonthlyETB: 14900,
-      priceAnnualETB: 149000,
-      priceMonthlyUSD: 149,
-      priceAnnualUSD: 1490,
+      name: 'Enterprise Sovereign',
+      tagline: 'Custom company compliance rules, SLA guarantees, and dedicated infrastructure.',
+      badge: 'Sovereign Shield',
+      priceMonthlyETB: 8500,
+      priceAnnualETB: 85000,
+      priceMonthlyUSD: 99,
+      priceAnnualUSD: 990,
       popular: false,
-      accentBorder: 'border-brand-purple/40 hover:border-brand-purple/60',
-      ctaText: 'Get Enterprise',
-      ctaVariant: 'outline' as const,
+      accentBorder: 'border-brand-purple/40 hover:border-brand-purple/60 shadow-xl shadow-brand-purple/10',
+      ctaText: 'Contact Enterprise',
+      ctaVariant: 'primary' as const,
       features: [
-        'Everything in Pro Included',
-        'All 5 Specialized Workspaces (Engineer, Client, Malware, Dev, Admin)',
-        'Unlimited Team Seats & Granular RBAC Permissions',
-        'CI/CD Pipeline Security Gate (GitHub / GitLab Integration)',
-        'Dedicated Isolated Malware Detonation Sandbox',
-        'Custom Vulnerability Signatures & YARA Rule Uploads',
-        'Full Organization Governance & Tamper-Evident Logs',
-        'Enterprise Chapa Invoicing & Bank Wire Support',
-        'Dedicated Technical Account Manager & 99.9% SLA'
+        'Everything in Pro Security Engineer Tier',
+        'Custom Corporate Security Rules & Policies Engine',
+        'Advanced Automated Crawling with Interactive State',
+        'Full Multi-Tenant Governance & Role Allocation',
+        'Custom Cloudinary & S3 Storage Isolation',
+        '1-Year Audit Log Retention & Telemetry Export',
+        'Dedicated 99.9% Scanning Worker Queue SLA',
+        'Direct Security Architect Slack/Discord Channel'
       ],
       notIncluded: []
     }
   ];
 
-  const handleSelectPlan = (planId: string) => {
-    if (planId === 'free') {
-      navigate(isAuthenticated ? '/dashboard' : '/register');
-    } else {
-      navigate(isAuthenticated ? `/dashboard/billing?plan=${planId}&cycle=${billingCycle}` : `/login?redirect=/dashboard/billing&plan=${planId}`);
+  const handleSelectPlan = (tierId: string) => {
+    if (tierId === 'free') {
+      if (!isAuthenticated) {
+        navigate('/register');
+      } else {
+        navigate('/dashboard');
+      }
+      return;
     }
+
+    if (!isAuthenticated) {
+      navigate('/login', {
+        state: {
+          intendedTier: tierId,
+          intendedBillingCycle: billingCycle,
+          message: 'Please authenticate to complete your Chapa tier upgrade.'
+        }
+      });
+      return;
+    }
+
+    navigate('/dashboard/billing', {
+      state: {
+        selectedTier: tierId,
+        billingCycle
+      }
+    });
   };
+
+  const content = (
+    <div id="pricing" className="max-w-7xl mx-auto w-full px-4 sm:px-6 lg:px-8 relative z-10 scroll-mt-28">
+      {/* Header */}
+      <div className="text-center max-w-3xl mx-auto space-y-4 mb-12">
+        <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-brand-cyan/10 border border-brand-cyan/20 text-xs font-semibold text-brand-cyan tracking-wide">
+          <Sparkles size={14} /> Modern Transparent Pricing
+        </div>
+        <h2 className="text-3xl sm:text-5xl lg:text-6xl font-extrabold tracking-tight leading-tight text-white">
+          Security operations,{' '}
+          <span className="text-transparent bg-clip-text bg-gradient-brand">
+            scaled for everyone.
+          </span>
+        </h2>
+        <p className="text-text-muted text-sm sm:text-base leading-relaxed max-w-2xl mx-auto">
+          Choose the workspace capability that fits your posture. Powered by Chapa for instant checkout via Telebirr, CBEBirr, and debit/credit cards.
+        </p>
+
+        {/* Controls: Billing Cycle & Currency Switchers */}
+        <div className="flex flex-wrap items-center justify-center gap-4 pt-6">
+          {/* Monthly / Annual Toggle */}
+          <div className="inline-flex items-center p-1 rounded-2xl bg-white/5 border border-white/10 backdrop-blur-xl">
+            <button
+              onClick={() => setBillingCycle('monthly')}
+              className={`px-4 py-2 rounded-xl text-xs font-semibold transition-all ${
+                billingCycle === 'monthly'
+                  ? 'bg-gradient-brand text-white shadow-md'
+                  : 'text-text-muted hover:text-white'
+              }`}
+            >
+              Monthly Billing
+            </button>
+            <button
+              onClick={() => setBillingCycle('annual')}
+              className={`px-4 py-2 rounded-xl text-xs font-semibold transition-all flex items-center gap-1.5 ${
+                billingCycle === 'annual'
+                  ? 'bg-gradient-brand text-white shadow-md'
+                  : 'text-text-muted hover:text-white'
+              }`}
+            >
+              Annual Billing
+              <span className="px-1.5 py-0.5 rounded-full bg-green-500/20 text-green-400 text-[10px] font-bold border border-green-500/30">
+                2 Mo. Free
+              </span>
+            </button>
+          </div>
+
+          {/* Currency Switcher */}
+          <div className="inline-flex items-center p-1 rounded-2xl bg-white/5 border border-white/10 backdrop-blur-xl text-xs font-semibold">
+            <button
+              onClick={() => setCurrency('ETB')}
+              className={`px-3 py-2 rounded-xl transition-all ${
+                currency === 'ETB'
+                  ? 'bg-brand-cyan/20 text-brand-cyan border border-brand-cyan/30'
+                  : 'text-text-muted hover:text-white'
+              }`}
+            >
+              ETB (Chapa)
+            </button>
+            <button
+              onClick={() => setCurrency('USD')}
+              className={`px-3 py-2 rounded-xl transition-all ${
+                currency === 'USD'
+                  ? 'bg-brand-purple/20 text-brand-purple border border-brand-purple/30'
+                  : 'text-text-muted hover:text-white'
+              }`}
+            >
+              USD ($)
+            </button>
+          </div>
+        </div>
+      </div>
+
+      {/* Pricing Cards Grid */}
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-8 items-stretch mb-20">
+        {plans.map((plan) => {
+          const rawPrice =
+            currency === 'ETB'
+              ? billingCycle === 'annual'
+                ? plan.priceAnnualETB
+                : plan.priceMonthlyETB
+              : billingCycle === 'annual'
+              ? plan.priceAnnualUSD
+              : plan.priceMonthlyUSD;
+
+          const isFree = rawPrice === 0;
+
+          return (
+            <GlassCard
+              key={plan.id}
+              className={`p-6 sm:p-8 flex flex-col justify-between relative transition-all duration-300 hover:-translate-y-1 ${plan.accentBorder}`}
+            >
+              {plan.popular && (
+                <div className="absolute -top-3.5 left-1/2 -translate-x-1/2 px-4 py-1 rounded-full bg-gradient-brand text-white text-xs font-bold shadow-lg shadow-brand-cyan/30 flex items-center gap-1.5">
+                  <Zap size={12} fill="white" />
+                  {plan.badge}
+                </div>
+              )}
+
+              <div>
+                <div className="flex items-center justify-between mb-4">
+                  <h3 className="text-xl font-bold text-white tracking-tight">{plan.name}</h3>
+                  {!plan.popular && (
+                    <span className="text-[11px] font-semibold text-text-muted px-2.5 py-1 rounded-full bg-white/5 border border-white/10">
+                      {plan.badge}
+                    </span>
+                  )}
+                </div>
+
+                <p className="text-xs text-text-muted leading-relaxed min-h-[36px] mb-6">
+                  {plan.tagline}
+                </p>
+
+                {/* Price Display */}
+                <div className="mb-6 pb-6 border-b border-white/10">
+                  <div className="flex items-baseline gap-1">
+                    {isFree ? (
+                      <span className="text-4xl font-extrabold text-white">Free</span>
+                    ) : (
+                      <>
+                        <span className="text-2xl font-bold text-text-muted">
+                          {currency === 'ETB' ? 'ETB' : '$'}
+                        </span>
+                        <span className="text-4xl sm:text-5xl font-extrabold text-white tracking-tight">
+                          {rawPrice.toLocaleString()}
+                        </span>
+                      </>
+                    )}
+                    <span className="text-xs text-text-muted font-medium">
+                      /{billingCycle === 'annual' ? 'year' : 'month'}
+                    </span>
+                  </div>
+                  {billingCycle === 'annual' && !isFree && (
+                    <p className="text-[11px] text-green-400 font-medium mt-1.5 flex items-center gap-1">
+                      <Check size={12} /> Includes 2 months complimentary
+                    </p>
+                  )}
+                </div>
+
+                {/* Features List */}
+                <div className="space-y-3 mb-8">
+                  <div className="text-xs font-bold uppercase tracking-wider text-text-muted">
+                    Included capabilities:
+                  </div>
+                  {plan.features.map((feat, idx) => (
+                    <div key={idx} className="flex items-start gap-2.5 text-xs text-slate-200">
+                      <div className="w-4 h-4 rounded-full bg-brand-cyan/20 text-brand-cyan flex items-center justify-center shrink-0 mt-0.5">
+                        <Check size={11} strokeWidth={3} />
+                      </div>
+                      <span className="leading-snug">{feat}</span>
+                    </div>
+                  ))}
+
+                  {plan.notIncluded.length > 0 && (
+                    <div className="pt-2 space-y-2 opacity-50">
+                      {plan.notIncluded.map((notFeat, idx) => (
+                        <div key={idx} className="flex items-start gap-2.5 text-xs text-text-muted line-through">
+                          <div className="w-4 h-4 rounded-full bg-white/5 text-text-muted flex items-center justify-center shrink-0 mt-0.5">
+                            ×
+                          </div>
+                          <span className="leading-snug">{notFeat}</span>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              </div>
+
+              {/* Action Button */}
+              <button
+                onClick={() => handleSelectPlan(plan.id)}
+                className={`w-full py-3 px-4 rounded-xl font-bold text-xs sm:text-sm transition-all flex items-center justify-center gap-2 ${
+                  plan.ctaVariant === 'primary'
+                    ? 'btn-primary shadow-lg shadow-brand-cyan/20 hover:scale-[1.02]'
+                    : 'bg-white/10 hover:bg-white/15 text-white border border-white/15'
+                }`}
+              >
+                {plan.ctaText} <ArrowRight size={15} />
+              </button>
+            </GlassCard>
+          );
+        })}
+      </div>
+
+      {/* Trust & Chapa Payment Banner */}
+      <div className="glass-panel p-8 sm:p-10 rounded-3xl border border-white/10 mb-20 relative overflow-hidden">
+        <div className="absolute inset-0 bg-gradient-glow opacity-25"></div>
+        <div className="relative z-10 flex flex-col md:flex-row items-center justify-between gap-6">
+          <div className="space-y-2 text-center md:text-left">
+            <div className="inline-flex items-center gap-2 text-xs font-semibold text-brand-cyan">
+              <Lock size={14} /> PCI-DSS Compliant Chapa Gateway
+            </div>
+            <h3 className="text-xl sm:text-2xl font-bold text-white">
+              Instant activation via local & international payment rails.
+            </h3>
+            <p className="text-xs sm:text-sm text-text-muted max-w-xl">
+              Pay securely in Ethiopian Birr using Telebirr, CBEBirr, Awash Birr, or International Visa & Mastercard.
+            </p>
+          </div>
+          <div className="flex flex-wrap items-center justify-center gap-3">
+            {['Telebirr', 'CBEBirr', 'Chapa', 'Visa', 'Mastercard'].map((method) => (
+              <span
+                key={method}
+                className="px-3.5 py-1.5 rounded-xl text-xs font-bold bg-white/5 border border-white/10 text-white shadow-sm"
+              >
+                {method}
+              </span>
+            ))}
+          </div>
+        </div>
+      </div>
+
+      {/* FAQ Section */}
+      <div className="max-w-4xl mx-auto space-y-6">
+        <h3 className="text-2xl font-bold text-center text-white mb-8">
+          Frequently Answered Questions
+        </h3>
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          {[
+            {
+              q: 'How does Chapa payment work on Sentrix?',
+              a: 'When you choose the Pro or Enterprise tier, Sentrix generates an authenticated transaction reference and initiates the Chapa checkout session. You can complete payment seamlessly using Telebirr, CBEBirr, or card, and your workspace upgrades instantly.'
+            },
+            {
+              q: 'Can I start with the Free Community tier and upgrade later?',
+              a: 'Yes, absolutely. You can run basic surface scans on the Free tier indefinitely. When you need automated API fuzzing, verification retesting, or malware inspection, you can upgrade in one click.'
+            },
+            {
+              q: 'Is there an annual discount?',
+              a: 'Yes! Choosing annual billing provides 17% savings (equivalent to 2 full months free) on both Pro and Enterprise plans.'
+            },
+            {
+              q: 'Can I cancel or downgrade my subscription anytime?',
+              a: 'Yes. You can manage, cancel, or change your subscription at any time directly inside the Console Billing section without penalties.'
+            }
+          ].map((faq, idx) => (
+            <GlassCard key={idx} className="p-5 border-white/10">
+              <h4 className="text-sm font-bold text-white mb-2 flex items-center gap-2">
+                <HelpCircle size={15} className="text-brand-cyan shrink-0" />
+                {faq.q}
+              </h4>
+              <p className="text-xs text-text-muted leading-relaxed pl-6">
+                {faq.a}
+              </p>
+            </GlassCard>
+          ))}
+        </div>
+      </div>
+    </div>
+  );
+
+  if (embedded) {
+    return <section className="py-20 text-white relative overflow-hidden font-sans">{content}</section>;
+  }
 
   return (
     <div className="min-h-screen bg-background-darker text-white flex flex-col relative overflow-hidden font-sans">
       <PublicHeader />
-
-      {/* Main Content */}
-      <main className="flex-1 max-w-7xl mx-auto w-full px-4 sm:px-6 lg:px-8 pt-32 pb-24 relative z-10">
-        {/* Header */}
-        <div className="text-center max-w-3xl mx-auto space-y-4 mb-12">
-          <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-brand-cyan/10 border border-brand-cyan/20 text-xs font-semibold text-brand-cyan tracking-wide">
-            <Sparkles size={14} /> Modern Transparent Pricing
-          </div>
-          <h1 className="text-3xl sm:text-5xl lg:text-6xl font-extrabold tracking-tight leading-tight">
-            Security operations,{' '}
-            <span className="text-transparent bg-clip-text bg-gradient-brand">
-              scaled for everyone.
-            </span>
-          </h1>
-          <p className="text-text-muted text-sm sm:text-base leading-relaxed max-w-2xl mx-auto">
-            Choose the workspace capability that fits your posture. Powered by Chapa for instant checkout via Telebirr, CBEBirr, and debit/credit cards.
-          </p>
-
-          {/* Controls: Billing Cycle & Currency Switchers */}
-          <div className="flex flex-wrap items-center justify-center gap-4 pt-6">
-            {/* Monthly / Annual Toggle */}
-            <div className="inline-flex items-center p-1 rounded-2xl bg-white/5 border border-white/10 backdrop-blur-xl">
-              <button
-                onClick={() => setBillingCycle('monthly')}
-                className={`px-4 py-2 rounded-xl text-xs font-semibold transition-all ${
-                  billingCycle === 'monthly'
-                    ? 'bg-gradient-brand text-white shadow-md shadow-brand-cyan/20'
-                    : 'text-text-muted hover:text-white'
-                }`}
-              >
-                Monthly Billing
-              </button>
-              <button
-                onClick={() => setBillingCycle('annual')}
-                className={`px-4 py-2 rounded-xl text-xs font-semibold transition-all flex items-center gap-1.5 ${
-                  billingCycle === 'annual'
-                    ? 'bg-gradient-brand text-white shadow-md shadow-brand-cyan/20'
-                    : 'text-text-muted hover:text-white'
-                }`}
-              >
-                <span>Annual Billing</span>
-                <span className="px-1.5 py-0.5 rounded-full bg-green-500/20 text-green-400 text-[10px] font-bold border border-green-500/30">
-                  Save 17%
-                </span>
-              </button>
-            </div>
-
-            {/* Currency Selector */}
-            <div className="inline-flex items-center p-1 rounded-2xl bg-white/5 border border-white/10 text-xs">
-              <button
-                onClick={() => setCurrency('ETB')}
-                className={`px-3 py-1.5 rounded-xl font-bold transition-all ${
-                  currency === 'ETB' ? 'bg-white/15 text-brand-cyan' : 'text-text-muted hover:text-white'
-                }`}
-              >
-                ETB (Br)
-              </button>
-              <button
-                onClick={() => setCurrency('USD')}
-                className={`px-3 py-1.5 rounded-xl font-bold transition-all ${
-                  currency === 'USD' ? 'bg-white/15 text-brand-cyan' : 'text-text-muted hover:text-white'
-                }`}
-              >
-                USD ($)
-              </button>
-            </div>
-          </div>
-        </div>
-
-        {/* Pricing Cards Grid */}
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-8 items-stretch mb-16">
-          {plans.map((plan) => {
-            const isAnnual = billingCycle === 'annual';
-            const price = currency === 'ETB'
-              ? (isAnnual ? Math.round(plan.priceAnnualETB / 12) : plan.priceMonthlyETB)
-              : (isAnnual ? Math.round(plan.priceAnnualUSD / 12) : plan.priceMonthlyUSD);
-
-            return (
-              <div
-                key={plan.id}
-                className={`rounded-3xl p-6 sm:p-8 flex flex-col justify-between relative transition-all duration-300 glass-card ${plan.accentBorder} ${
-                  plan.popular ? 'bg-surface/80 md:-translate-y-2' : 'bg-surface/40'
-                }`}
-              >
-                {/* Popular Badge */}
-                {plan.popular && (
-                  <div className="absolute -top-3.5 left-1/2 -translate-x-1/2 px-4 py-1 rounded-full bg-gradient-brand text-white text-[11px] font-bold tracking-wider uppercase shadow-lg shadow-brand-cyan/30 flex items-center gap-1">
-                    <Sparkles size={12} /> {plan.badge}
-                  </div>
-                )}
-
-                <div>
-                  <div className="flex items-center justify-between gap-2 mb-2">
-                    <h3 className="text-xl font-bold text-white">{plan.name}</h3>
-                    {!plan.popular && (
-                      <span className="text-[10px] font-semibold uppercase px-2 py-0.5 rounded-full bg-white/10 text-text-muted">
-                        {plan.badge}
-                      </span>
-                    )}
-                  </div>
-                  <p className="text-xs text-text-muted leading-relaxed min-h-[36px] mb-6">
-                    {plan.tagline}
-                  </p>
-
-                  {/* Price */}
-                  <div className="mb-6 pb-6 border-b border-white/10">
-                    <div className="flex items-baseline gap-1">
-                      <span className="text-4xl sm:text-5xl font-extrabold text-white tracking-tight">
-                        {currency === 'ETB' ? `${price.toLocaleString()} ETB` : `$${price}`}
-                      </span>
-                      {plan.priceMonthlyETB > 0 && (
-                        <span className="text-xs text-text-muted font-medium">/ month</span>
-                      )}
-                    </div>
-                    {isAnnual && plan.priceMonthlyETB > 0 && (
-                      <div className="text-[11px] text-green-400 font-semibold mt-1">
-                        Billed annually ({currency === 'ETB' ? `${plan.priceAnnualETB.toLocaleString()} ETB/yr` : `$${plan.priceAnnualUSD}/yr`})
-                      </div>
-                    )}
-                    {plan.priceMonthlyETB === 0 && (
-                      <div className="text-[11px] text-brand-cyan font-medium mt-1">
-                        Zero setup fee • No credit card required
-                      </div>
-                    )}
-                  </div>
-
-                  {/* Features list */}
-                  <div className="space-y-3 mb-8">
-                    <div className="text-[11px] font-bold text-text-muted uppercase tracking-wider">
-                      Included Capabilities
-                    </div>
-                    {plan.features.map((feat, idx) => (
-                      <div key={idx} className="flex items-start gap-2.5 text-xs text-slate-200">
-                        <div className="p-0.5 rounded-full bg-brand-cyan/20 text-brand-cyan shrink-0 mt-0.5">
-                          <Check size={12} />
-                        </div>
-                        <span>{feat}</span>
-                      </div>
-                    ))}
-                    {plan.notIncluded.map((feat, idx) => (
-                      <div key={idx} className="flex items-start gap-2.5 text-xs text-text-muted/50 line-through">
-                        <div className="w-3.5 h-3.5 rounded-full bg-white/5 shrink-0 mt-0.5"></div>
-                        <span>{feat}</span>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-
-                {/* Action button */}
-                <button
-                  onClick={() => handleSelectPlan(plan.id)}
-                  className={`w-full py-3 px-4 rounded-xl text-xs font-bold transition-all flex items-center justify-center gap-2 ${
-                    plan.popular
-                      ? 'btn-primary shadow-lg shadow-brand-cyan/20'
-                      : plan.id === 'free'
-                      ? 'bg-white/10 hover:bg-white/15 text-white border border-white/15'
-                      : 'border border-brand-purple/40 hover:bg-brand-purple/10 text-white'
-                  }`}
-                >
-                  {plan.ctaText} <ArrowRight size={14} />
-                </button>
-              </div>
-            );
-          })}
-        </div>
-
-        {/* Chapa Payment Banner */}
-        <div className="glass-panel p-6 sm:p-8 rounded-3xl border border-white/10 mb-16 flex flex-col md:flex-row items-center justify-between gap-6 relative overflow-hidden">
-          <div className="absolute inset-0 bg-gradient-brand opacity-5 pointer-events-none"></div>
-
-          <div className="flex items-center gap-4">
-            <div className="w-12 h-12 rounded-2xl bg-gradient-brand flex items-center justify-center text-white shrink-0 shadow-lg shadow-brand-cyan/20">
-              <CreditCard size={24} />
-            </div>
-            <div>
-              <div className="flex items-center gap-2">
-                <h3 className="text-base font-bold text-white">Direct Integration with Chapa Gateway</h3>
-                <span className="px-2 py-0.5 rounded-full bg-green-500/20 text-green-400 text-[10px] font-bold border border-green-500/30">
-                  Instant Activation
-                </span>
-              </div>
-              <p className="text-xs text-text-muted mt-1 max-w-xl">
-                Upgrade in seconds with local payment channels: <strong>Telebirr, CBEBirr, Awash Bank, Bank of Abyssinia, and International Visa / Mastercard</strong>. Automated verification and immediate license activation.
-              </p>
-            </div>
-          </div>
-
-          <div className="flex items-center gap-2 flex-wrap justify-center sm:justify-end shrink-0 text-xs text-slate-300 font-semibold">
-            <span className="px-3 py-1.5 rounded-xl bg-white/5 border border-white/10">Telebirr</span>
-            <span className="px-3 py-1.5 rounded-xl bg-white/5 border border-white/10">CBEBirr</span>
-            <span className="px-3 py-1.5 rounded-xl bg-white/5 border border-white/10">Amole</span>
-            <span className="px-3 py-1.5 rounded-xl bg-white/5 border border-white/10">Visa / MC</span>
-          </div>
-        </div>
-
-        {/* FAQ Section */}
-        <div className="max-w-3xl mx-auto space-y-6">
-          <div className="text-center">
-            <h2 className="text-2xl font-bold text-white">Frequently Asked Questions</h2>
-            <p className="text-xs text-text-muted mt-1">Everything you need to know about our billing and platform capabilities</p>
-          </div>
-
-          <div className="space-y-4">
-            {[
-              {
-                q: 'How does Chapa payment work on Sentrix?',
-                a: 'When you choose the Pro or Enterprise tier, Sentrix generates an authenticated transaction reference and initiates the Chapa checkout session. You can complete payment seamlessly using Telebirr, CBEBirr, or card, and your workspace upgrades instantly.'
-              },
-              {
-                q: 'Can I start with the Free Community tier and upgrade later?',
-                a: 'Yes, absolutely. You can run basic surface scans on the Free tier indefinitely. When you need automated API fuzzing, verification retesting, or malware inspection, you can upgrade in one click.'
-              },
-              {
-                q: 'Is there an annual discount?',
-                a: 'Yes! Choosing annual billing provides 17% savings (equivalent to 2 full months free) on both Pro and Enterprise plans.'
-              },
-              {
-                q: 'Can I cancel or downgrade my subscription anytime?',
-                a: 'Yes. You can manage, cancel, or change your subscription at any time directly inside the Console Billing section without penalties.'
-              }
-            ].map((faq, idx) => (
-              <GlassCard key={idx} className="p-5 border-white/10">
-                <h4 className="text-sm font-bold text-white mb-2 flex items-center gap-2">
-                  <HelpCircle size={15} className="text-brand-cyan shrink-0" />
-                  {faq.q}
-                </h4>
-                <p className="text-xs text-text-muted leading-relaxed pl-6">
-                  {faq.a}
-                </p>
-              </GlassCard>
-            ))}
-          </div>
-        </div>
+      <main className="flex-1 pt-32 pb-24">
+        {content}
       </main>
     </div>
   );

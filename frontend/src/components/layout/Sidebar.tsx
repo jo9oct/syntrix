@@ -3,7 +3,6 @@ import { NavLink, useNavigate } from 'react-router-dom';
 import {
   LayoutDashboard,
   FolderKanban,
-  ShieldAlert,
   Bug,
   FileText,
   Settings,
@@ -18,7 +17,6 @@ export const navItems = [
   { to: '/dashboard', label: 'Dashboard', icon: LayoutDashboard, end: true },
   { to: '/dashboard/projects', label: 'Projects', icon: FolderKanban },
   { to: '/dashboard/assessment/new', label: 'New Assessment', icon: ShieldCheck },
-  { to: '/dashboard/findings', label: 'Findings', icon: ShieldAlert },
   { to: '/dashboard/remediation', label: 'Remediation', icon: ArrowRightLeft },
   { to: '/dashboard/retest', label: 'Retesting', icon: RotateCcw },
   { to: '/dashboard/reports', label: 'Reports', icon: FileText },
@@ -33,9 +31,7 @@ export const Sidebar: React.FC = () => {
   return (
     <div className="w-64 h-screen border-r border-white/10 bg-surface/50 backdrop-blur-xl p-4 flex flex-col">
       <div className="flex items-center gap-3 px-2 mb-6">
-        <div className="w-8 h-8 rounded-lg bg-gradient-brand flex items-center justify-center">
-          <ShieldCheck size={18} className="text-white" />
-        </div>
+        <img src="/logo.png" alt="Sentrix" className="w-8 h-8 rounded-lg object-contain shadow-md shadow-brand-cyan/20" />
         <h1 className="text-xl font-bold text-white tracking-tight">Sentrix.</h1>
       </div>
 

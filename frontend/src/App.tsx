@@ -35,6 +35,22 @@ const ProtectedRoute: React.FC<{ children: React.ReactNode }> = ({ children }) =
   return <>{children}</>;
 };
 
+const PublicRoute: React.FC<{ children: React.ReactNode }> = ({ children }) => {
+  const { isAuthenticated, user } = useAuthStore();
+  if (isAuthenticated) {
+    return <Navigate to={getRoleLandingPath(user?.role)} replace />;
+  }
+  return <>{children}</>;
+};
+
+const CatchAllRoute: React.FC = () => {
+  const { isAuthenticated, user } = useAuthStore();
+  if (isAuthenticated) {
+    return <Navigate to={getRoleLandingPath(user?.role)} replace />;
+  }
+  return <Navigate to="/" replace />;
+};
+
 const RoleGuard: React.FC<{ allowedRoles: UserRole[]; children: React.ReactNode }> = ({ allowedRoles, children }) => {
   const { user } = useAuthStore();
   const role = (user?.role || 'security_engineer') as UserRole;
@@ -48,15 +64,15 @@ function App() {
   return (
     <BrowserRouter>
       <Routes>
-        {/* Public routes */}
-        <Route path="/" element={<Home />} />
-        <Route path="/features" element={<Features />} />
-        <Route path="/analysis" element={<Analysis />} />
-        <Route path="/pricing" element={<Pricing />} />
-        <Route path="/about" element={<About />} />
-        <Route path="/contact" element={<Contact />} />
-        <Route path="/login" element={<Login />} />
-        <Route path="/register" element={<Register />} />
+        {/* Public routes (auto-redirect to role dashboard if authenticated) */}
+        <Route path="/" element={<PublicRoute><Home /></PublicRoute>} />
+        <Route path="/features" element={<PublicRoute><Features /></PublicRoute>} />
+        <Route path="/analysis" element={<PublicRoute><Analysis /></PublicRoute>} />
+        <Route path="/pricing" element={<PublicRoute><Pricing /></PublicRoute>} />
+        <Route path="/about" element={<PublicRoute><About /></PublicRoute>} />
+        <Route path="/contact" element={<PublicRoute><Contact /></PublicRoute>} />
+        <Route path="/login" element={<PublicRoute><Login /></PublicRoute>} />
+        <Route path="/register" element={<PublicRoute><Register /></PublicRoute>} />
 
         {/* Authenticated routes strictly protected & role-guarded */}
         <Route path="/dashboard" element={<ProtectedRoute><AppShell /></ProtectedRoute>}>
@@ -73,57 +89,57 @@ function App() {
             </RoleGuard>
           } />
 
-          {/* Malware Analysis Lab (Malware Analyst, Security Engineer, Admin) */}
+          {/* Malware Analysis Lab */}
           <Route path="malware" element={
-            <RoleGuard allowedRoles={['admin', 'malware_analyst', 'security_engineer']}>
+            <RoleGuard allowedRoles={['admin', 'malware_analyst', 'security_engineer', 'client_owner', 'client_member']}>
               <MalwareAnalysis />
             </RoleGuard>
           } />
 
-          {/* Remediation Kanban Board (Developer, Security Engineer, Admin) */}
+          {/* Remediation Kanban Board */}
           <Route path="remediation" element={
-            <RoleGuard allowedRoles={['admin', 'developer', 'security_engineer']}>
+            <RoleGuard allowedRoles={['admin', 'developer', 'security_engineer', 'client_owner', 'client_member']}>
               <Remediation />
             </RoleGuard>
           } />
 
-          {/* Retesting Queue (Developer, Security Engineer, Admin) */}
+          {/* Retesting Queue */}
           <Route path="retest" element={
-            <RoleGuard allowedRoles={['admin', 'developer', 'security_engineer']}>
+            <RoleGuard allowedRoles={['admin', 'developer', 'security_engineer', 'client_owner', 'client_member']}>
               <RetestPage />
             </RoleGuard>
           } />
 
-          {/* Assessment Wizard (Security Engineer, Admin) */}
+          {/* Assessment Wizard */}
           <Route path="assessment/new" element={
-            <RoleGuard allowedRoles={['admin', 'security_engineer']}>
+            <RoleGuard allowedRoles={['admin', 'security_engineer', 'client_owner', 'client_member']}>
               <AssessmentWizard />
             </RoleGuard>
           } />
 
-          {/* Security Scopes & Company Policies (Security Engineer, Admin) */}
+          {/* Security Scopes & Company Policies */}
           <Route path="scopes" element={
-            <RoleGuard allowedRoles={['admin', 'security_engineer']}>
+            <RoleGuard allowedRoles={['admin', 'security_engineer', 'client_owner', 'client_member']}>
               <Scopes />
             </RoleGuard>
           } />
 
           <Route path="rules" element={
-            <RoleGuard allowedRoles={['admin', 'security_engineer']}>
+            <RoleGuard allowedRoles={['admin', 'security_engineer', 'client_owner']}>
               <CompanyRules />
             </RoleGuard>
           } />
 
-          {/* Deleted Scans Archive (Security Engineer, Admin) */}
+          {/* Deleted Scans Archive */}
           <Route path="scans/deleted" element={
-            <RoleGuard allowedRoles={['admin', 'security_engineer']}>
+            <RoleGuard allowedRoles={['admin', 'security_engineer', 'client_owner', 'client_member']}>
               <DeletedScans />
             </RoleGuard>
           } />
 
           {/* Subscription & Billing (Client Owner, Admin) */}
           <Route path="billing" element={
-            <RoleGuard allowedRoles={['admin', 'client_owner']}>
+            <RoleGuard allowedRoles={['admin', 'client_owner', 'client_member']}>
               <Billing />
             </RoleGuard>
           } />
@@ -133,7 +149,7 @@ function App() {
           <Route path="assessment/:id/results" element={<ScanResults />} />
         </Route>
 
-        <Route path="*" element={<Navigate to="/" replace />} />
+        <Route path="*" element={<CatchAllRoute />} />
       </Routes>
     </BrowserRouter>
   );

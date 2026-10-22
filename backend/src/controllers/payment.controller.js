@@ -47,9 +47,10 @@ const getExpiryDate = (transaction) => {
   return expiresAt;
 };
 
-const transactionResponse = (transaction) => ({
+const transactionResponse = (transaction, updatedRole) => ({
   tx_ref: transaction.tx_ref,
   tier: transaction.tier,
+  role: updatedRole || transaction.requestedRole || undefined,
   amount: transaction.amount,
   currency: transaction.currency,
   status: transaction.status,
@@ -155,14 +156,7 @@ const initializePaymentForPlan = async (req, res, tier) => {
       });
     }
 
-    const configuredReturnUrl = process.env.CHAPA_RETURN_URL;
-
-    if (!configuredReturnUrl) {
-      return res.status(503).json({
-        success: false,
-        error: "CHAPA_RETURN_URL is not configured",
-      });
-    }
+    const configuredReturnUrl = process.env.CHAPA_RETURN_URL || "http://localhost:5173/dashboard/billing";
 
     let returnUrl;
 
@@ -175,11 +169,8 @@ const initializePaymentForPlan = async (req, res, tier) => {
       });
     }
 
-    if (
-      returnUrl.protocol !== "https:" ||
-      returnUrl.username ||
-      returnUrl.password
-    ) {
+    const isLocalhost = ["localhost", "127.0.0.1", "::1"].includes(returnUrl.hostname);
+    if (!isLocalhost && returnUrl.protocol !== "https:") {
       return res.status(503).json({
         success: false,
         error: "CHAPA_RETURN_URL must be a valid HTTPS URL",
@@ -212,11 +203,15 @@ const initializePaymentForPlan = async (req, res, tier) => {
       }
     }
 
+    const requestedRole = user.role;
+
     const tx_ref = `stx-${randomBytes(18).toString("hex")}`;
     const nameParts = name.split(/\s+/);
 
     returnUrl.searchParams.set("tx_ref", tx_ref);
     returnUrl.searchParams.set("status", "verify");
+    returnUrl.searchParams.set("plan", plan.id);
+    returnUrl.searchParams.set("role", requestedRole);
 
     // Create the authoritative transaction before contacting Chapa.
     transaction = await Transaction.create({
@@ -230,6 +225,7 @@ const initializePaymentForPlan = async (req, res, tier) => {
       activationStatus: "pending",
       customerName: name,
       customerEmail: email,
+      requestedRole,
     });
 
     const chapaResult = await chapaService.initializePayment({
@@ -464,7 +460,7 @@ const verifyAndActivatePayment = async (tx_ref) => {
     };
   }
 
-  const result = await chapaService.verifyPayment(tx_ref);
+  const result = await chapaService.verifyPayment(tx_ref, transaction.amount);
 
   if (
     !result?.success ||
@@ -636,34 +632,5 @@ export const handleChapaWebhook = async (req, res) => {
       error,
       "Webhook processing failed. Chapa may retry later.",
     );
-  }
-};
-
-/**
- * Downgrade the authenticated user's subscription to Free.
- */
-export const cancelSubscription = async (req, res) => {
-  try {
-    const user = await User.findById(req.user?._id);
-
-    if (!user) {
-      return res.status(404).json({
-        success: false,
-        error: "User not found",
-      });
-    }
-
-    user.subscriptionTier = "free";
-    user.subscriptionStatus = "canceled";
-    user.subscriptionExpiresAt = new Date();
-
-    await user.save();
-
-    return res.status(200).json({
-      success: true,
-      message: "Subscription downgraded to Free Community tier",
-    });
-  } catch (error) {
-    return sendPaymentError(res, error, "Failed to cancel subscription");
   }
 };

@@ -100,8 +100,17 @@ export const Remediation: React.FC = () => {
     if (selectedItem && selectedItem.id === itemId) {
       setSelectedItem(prev => (prev ? { ...prev, column: newCol } : null));
     }
+
+    const columnToBackendStatus: Record<KanbanItem['column'], string> = {
+      open: 'detected',
+      in_progress: 'verified',
+      ready_for_retest: 'accepted',
+      fixed: 'resolved'
+    };
+
     try {
-      await api.put(`/findings/${itemId}`, { status: newCol });
+      // API 6: PATCH /api/v1/findings/:findingId
+      await api.patch(`/findings/${itemId}`, { status: columnToBackendStatus[newCol] || 'detected' });
     } catch (err) {}
   };
 
@@ -121,9 +130,9 @@ export const Remediation: React.FC = () => {
     );
 
     try {
-      await api.put(`/findings/${selectedItem.id}`, {
-        commitRef: updatedCommit,
-        remediationNotes: updatedNotes
+      // API 6: PATCH /api/v1/findings/:findingId
+      await api.patch(`/findings/${selectedItem.id}`, {
+        remediation: updatedNotes
       });
     } catch (err) {}
 

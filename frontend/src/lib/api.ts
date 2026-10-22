@@ -7,6 +7,7 @@ const api = axios.create({
   headers: {
     'Content-Type': 'application/json',
   },
+  withCredentials: true,
 });
 
 api.interceptors.request.use((config) => {
@@ -24,15 +25,144 @@ api.interceptors.request.use((config) => {
   return config;
 });
 
+// Response interceptor: automatically fall back to Vite /api proxy if browser blocks direct cross-origin
+api.interceptors.response.use(
+  (response) => {
+    // If a scan was created, cache it in sentrix_recent_scans for dropdowns and history
+    if (response?.config?.url?.match(/scans$/i) && response?.config?.method?.toLowerCase() === 'post') {
+      try {
+        const createdScan = response.data?.data?.scan;
+        if (createdScan && createdScan._id) {
+          const raw = localStorage.getItem('sentrix_recent_scans');
+          const list = raw ? JSON.parse(raw) : [];
+          const updated = [createdScan, ...list.filter((s: any) => s._id !== createdScan._id)].slice(0, 50);
+          localStorage.setItem('sentrix_recent_scans', JSON.stringify(updated));
+        }
+      } catch (e) {
+        // ignore
+      }
+    }
+    return response;
+  },
+  async (error) => {
+    const originalRequest = error?.config;
+    if (
+      originalRequest &&
+      !originalRequest._retry &&
+      (!error.response || error.message === 'Network Error')
+    ) {
+      originalRequest._retry = true;
+      originalRequest.baseURL = '/api/v1';
+      return api(originalRequest);
+    }
+    return Promise.reject(error);
+  }
+);
+
 /**
  * Frontend Mock Adapter:
  * Ensures all 32 APIs defined in frontend_remade.md are answered directly from
  * rich in-memory / localStorage mock data, without needing a running backend.
  */
 api.interceptors.request.use(async (config) => {
-  // Use mock adapter for all standard api endpoints
   const url = config.url || '';
   const method = (config.method || 'get').toLowerCase();
+
+  // REAL BACKEND: Authentication endpoints & Users bypass mock adapter
+  if (url.includes('auth/') || url.match(/\/auth\//i) || url.includes('payment/') || url.match(/\/payment\//i) || url.includes('users')) {
+    return config;
+  }
+
+  // REAL BACKEND INTEGRATION for the 11 specific requested endpoints:
+  // 1. GET /scanners
+  if (url.match(/scanners$/i) && method === 'get') {
+    return config;
+  }
+
+  // 2. POST /scans (Create Scan)
+  if (url.match(/scans$/i) && method === 'post') {
+    return config;
+  }
+
+  // 4. POST /scans/:id/cancel (Cancel Scan)
+  if (url.match(/scans\/[^/]+\/cancel$/i) && method === 'post') {
+    return config;
+  }
+
+  // 3. GET /scans/:id (Scan details with 24-hex MongoDB ID)
+  if (url.match(/scans\/[a-f0-9]{24}(\?|$)/i) && method === 'get') {
+    return config;
+  }
+
+  // 5. GET /findings (All findings, single finding /findings/:id, or ?scanId=...)
+  if (url.match(/findings(\/|\?|$)/i) && method === 'get') {
+    return config;
+  }
+
+  // 6. PATCH /findings/:id (Update finding status/remediation)
+  if (url.match(/findings\/[^/]+$/i) && method === 'patch') {
+    return config;
+  }
+
+  // 7 & 8. GET /evidence (list by ?scanId=... or single /:id)
+  if (url.match(/evidence(\/|\?|$)/i) && method === 'get') {
+    return config;
+  }
+
+  // 9, 10, 11. Reports (POST /reports, GET /reports/:id, GET /reports?scanId=...)
+  if (url.match(/reports(\/|\?|$)/i)) {
+    return config;
+  }
+
+  // 12. Security Scopes (POST /scopes, GET /scopes, GET /scopes/:id, PATCH /scopes/:id, DELETE /scopes/:id)
+  if (url.match(/scopes(\/|\?|$)/i)) {
+    return config;
+  }
+
+  // 13. Company Rules (POST /company-rules, GET /company-rules, GET /company-rules/:id, PATCH /company-rules/:id, DELETE /company-rules/:id)
+  if (url.match(/company-rules(\/|\?|$)/i)) {
+    return config;
+  }
+
+  // 14. Crawls (GET /crawls/:scanId, GET /crawls/:scanId/pages, GET /crawls/:scanId/inputs)
+  if (url.match(/crawls(\/|\?|$)/i) && method === 'get') {
+    return config;
+  }
+
+  // 15. Targets (GET /targets, GET /targets/:targetId, GET /targets/:targetId/scans, GET /targets/:targetId/trends)
+  if (url.match(/targets(\/|\?|$)/i) && method === 'get') {
+    return config;
+  }
+
+  // 16. Scan Comparison (GET /scans/compare/:targetId/result)
+  if (url.match(/scans\/compare\/[^/]+\/result(\?|$)/i) && method === 'get') {
+    return config;
+  }
+
+  // 17. Deleted Scans Archive (GET /scans/deleted)
+  if (url.match(/scans\/deleted(\?|$)/i) && method === 'get') {
+    return config;
+  }
+
+  // 18. Soft-Delete Scan (PATCH /scans/:scanId/delete)
+  if (url.match(/scans\/[^/]+\/delete(\?|$)/i) && method === 'patch') {
+    return config;
+  }
+
+  // 19. Recover Deleted Scan (PATCH /scans/:scanId/recover)
+  if (url.match(/scans\/[^/]+\/recover(\?|$)/i) && method === 'patch') {
+    return config;
+  }
+
+  // 20. Backend Server Root & Health/Metrics (GET http://localhost:3001, GET /health, GET /health/metrics)
+  if (url.match(/health(\/|\?|$)/i) && method === 'get') {
+    return config;
+  }
+  if ((url.match(/^https?:\/\/[^/]+\/?$/i) || url === '' || url === '/') && method === 'get') {
+    return config;
+  }
+
+  // Use mock adapter for all standard api endpoints
 
   // Helper to create synthetic Axios response
   const mockResponse = (data: any, status = 200): AxiosResponse => ({
@@ -130,12 +260,21 @@ api.interceptors.request.use(async (config) => {
     return config;
   }
 
-  // All Scans
+  // All Scans (Combines real backend scans created in session with existing list)
   if (url.match(/scans$/i) && method === 'get') {
+    let recentScans: any[] = [];
+    try {
+      const raw = localStorage.getItem('sentrix_recent_scans');
+      recentScans = raw ? JSON.parse(raw) : [];
+    } catch (e) {
+      // ignore
+    }
+    const mockScans = mockService.getActiveScans();
+    const combined = [...recentScans, ...mockScans.filter((m: any) => !recentScans.some((r: any) => r._id === m._id))];
     config.adapter = async () => mockResponse({
       success: true,
       data: {
-        scans: mockService.getActiveScans()
+        scans: combined
       }
     });
     return config;
@@ -429,40 +568,11 @@ api.interceptors.request.use(async (config) => {
     }
   }
 
-  // 10. Admin Users & Platform Governance
-  const adminUserStatusMatch = url.match(/admin\/users\/([^/]+)\/status$/i);
-  if (adminUserStatusMatch && (method === 'put' || method === 'patch')) {
-    const updated = mockService.toggleAdminUserStatus(adminUserStatusMatch[1]);
-    config.adapter = async () => mockResponse({
-      success: true,
-      data: updated
-    });
-    return config;
-  }
+  // 10. Admin Users & Platform Governance - Handled live by backend API
+  // Requests to /users, /users/:id/status, /users/:id/role route directly to backend without mock interceptor
 
-  if (url.match(/admin\/users/i)) {
-    if (method === 'get') {
-      const users = mockService.getAdminUsers();
-      config.adapter = async () => mockResponse({
-        success: true,
-        count: users.length,
-        data: users
-      });
-      return config;
-    }
-    if (method === 'post') {
-      const body = typeof config.data === 'string' ? JSON.parse(config.data) : config.data;
-      const newUser = mockService.createAdminUser(body);
-      config.adapter = async () => mockResponse({
-        success: true,
-        data: newUser
-      }, 201);
-      return config;
-    }
-  }
-
-  // Auth mock endpoints (so login & register always work)
-  if (url.match(/auth\/login/i) && method === 'post') {
+  // Auth mock removed: routes directly to backend
+  if (false) {
     let email = '';
     try {
       const parsed = typeof config.data === 'string' ? JSON.parse(config.data) : config.data;

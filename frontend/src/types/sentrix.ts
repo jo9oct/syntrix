@@ -155,7 +155,7 @@ export interface Scan {
 // 5. FINDINGS (APIs 4, 5, 6)
 // ==========================================
 export type FindingSeverity = 'critical' | 'high' | 'medium' | 'low' | 'info';
-export type FindingStatus = 'detected' | 'accepted' | 'in-progress' | 'false-positive' | 'resolved';
+export type FindingStatus = 'detected' | 'verified' | 'accepted' | 'false_positive' | 'resolved' | 'in-progress' | 'false-positive';
 export type VerificationStatus = 'pending' | 'verified' | 'failed';
 
 export interface FindingMetadata {

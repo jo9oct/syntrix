@@ -3,11 +3,11 @@ import { GlassCard } from '../../components/ui/GlassCard';
 import {
   ShieldCheck, Bug, Activity, CheckCircle2, ArrowRight,
   TrendingUp, ShieldAlert, FileText, Plus, ExternalLink, X,
-  Globe, Sliders, Trash2, Eye, Network, AlertTriangle
+  Globe, Sliders, Trash2, Eye, Network, AlertTriangle, Sparkles, Settings
 } from 'lucide-react';
 import { SeverityBadge, StatusBadge } from '../../components/ui/Badge';
 import { Link, useNavigate } from 'react-router-dom';
-import { useAuthStore } from '../../store/authStore';
+import { useAuthStore, useUserTier } from '../../store/authStore';
 import type { Target, Scan, Finding, AvailableScannersResponse, Evidence } from '../../types/sentrix';
 import api from '../../lib/api';
 import { EvidenceViewer } from '../../components/ui/EvidenceViewer';
@@ -15,6 +15,7 @@ import { EvidenceViewer } from '../../components/ui/EvidenceViewer';
 export const DashboardHome: React.FC = () => {
   const navigate = useNavigate();
   const { user } = useAuthStore();
+  const { tier: userTier, isFree, isPro, isEnterprise } = useUserTier();
 
   const [targets, setTargets] = useState<Target[]>([]);
   const [scans, setScans] = useState<Scan[]>([]);
@@ -78,6 +79,109 @@ export const DashboardHome: React.FC = () => {
     <div className="p-8 space-y-8 max-w-7xl mx-auto">
       {/* Evidence Viewer Modal */}
       <EvidenceViewer evidence={selectedEvidence} onClose={() => setSelectedEvidence(null)} />
+
+      {/* Admin Enterprise Sovereign Mode Indicator */}
+      {user?.role === 'admin' && (
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 p-4 rounded-2xl bg-gradient-to-r from-brand-cyan/15 via-[#1e1b4b]/30 to-brand-magenta/15 border border-brand-cyan/35 shadow-lg shadow-brand-cyan/10">
+          <div className="flex items-center gap-3">
+            <div className="w-10 h-10 rounded-xl bg-brand-cyan/20 border border-brand-cyan/30 flex items-center justify-center text-brand-cyan shrink-0">
+              <Sparkles size={20} className="animate-pulse" />
+            </div>
+            <div>
+              <div className="text-sm font-bold text-white flex items-center gap-2">
+                Enterprise Sovereign Analysis Workspace
+                <span className="text-[9px] font-mono bg-brand-cyan text-black px-1.5 py-0.2 rounded font-black uppercase tracking-wider">
+                  Admin Privileges Active
+                </span>
+              </div>
+              <div className="text-xs text-text-muted mt-0.5">
+                All 25 scanner engines, zero-day analysis, policy enforcement, and finding triage unlocked in sovereign mode.
+              </div>
+            </div>
+          </div>
+          <button
+            onClick={() => navigate('/dashboard/admin')}
+            className="flex items-center gap-2 px-3.5 py-2 rounded-xl bg-white/10 hover:bg-white/15 border border-white/15 text-xs font-semibold text-white transition-all shadow-sm shrink-0 self-start sm:self-auto"
+          >
+            <Settings size={14} />
+            <span>Admin Operations Center</span>
+          </button>
+        </div>
+      )}
+
+      {/* Client Owner & Client Member Workspace Tier Banner */}
+      {(user?.role === 'client_owner' || user?.role === 'client_member') && (
+        isFree ? (
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 p-5 rounded-2xl bg-amber-500/10 border border-amber-500/30 shadow-lg shadow-amber-500/5">
+            <div className="flex items-center gap-3.5">
+              <div className="w-10 h-10 rounded-xl bg-amber-500/20 border border-amber-500/30 flex items-center justify-center text-amber-400 shrink-0">
+                <AlertTriangle size={20} />
+              </div>
+              <div>
+                <div className="text-sm font-bold text-white flex items-center gap-2">
+                  Free Community Workspace
+                  <span className="text-[10px] font-mono bg-amber-500/20 text-amber-300 border border-amber-500/40 px-2 py-0.5 rounded-full font-bold uppercase tracking-wider">
+                    1 Target Asset Limit
+                  </span>
+                </div>
+                <div className="text-xs text-text-muted mt-0.5">
+                  Your workspace is currently operating on the community tier. Upgrade to Pro for automated API security fuzzing, unlimited target projects, and verification retesting.
+                </div>
+              </div>
+            </div>
+            <button
+              onClick={() => navigate('/dashboard/billing')}
+              className="btn-primary text-xs px-4 py-2.5 rounded-xl font-bold flex items-center gap-2 shadow-lg shadow-brand-cyan/25 shrink-0 self-start sm:self-auto"
+            >
+              <Sparkles size={14} /> Upgrade to Pro via Chapa
+            </button>
+          </div>
+        ) : isPro ? (
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 p-5 rounded-2xl bg-brand-cyan/10 border border-brand-cyan/30 shadow-lg shadow-brand-cyan/5">
+            <div className="flex items-center gap-3.5">
+              <div className="w-10 h-10 rounded-xl bg-brand-cyan/20 border border-brand-cyan/30 flex items-center justify-center text-brand-cyan shrink-0">
+                <ShieldCheck size={20} />
+              </div>
+              <div>
+                <div className="text-sm font-bold text-white flex items-center gap-2">
+                  Pro Security Operations
+                  <span className="text-[10px] font-mono bg-brand-cyan/20 text-brand-cyan border border-brand-cyan/40 px-2 py-0.5 rounded-full font-bold uppercase tracking-wider">
+                    Active Subscription
+                  </span>
+                </div>
+                <div className="text-xs text-text-muted mt-0.5">
+                  Your team has access to unlimited target assets, automated verification retests, remediation tickets, and full compliance report generation.
+                </div>
+              </div>
+            </div>
+            <button
+              onClick={() => navigate('/dashboard/billing')}
+              className="px-4 py-2 rounded-xl bg-white/5 hover:bg-white/10 text-xs text-brand-purple border border-brand-purple/30 font-semibold transition-colors shrink-0 self-start sm:self-auto"
+            >
+              Upgrade to Enterprise &rarr;
+            </button>
+          </div>
+        ) : (
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 p-5 rounded-2xl bg-brand-purple/15 border border-brand-purple/35 shadow-lg shadow-brand-purple/10">
+            <div className="flex items-center gap-3.5">
+              <div className="w-10 h-10 rounded-xl bg-brand-purple/20 border border-brand-purple/30 flex items-center justify-center text-brand-purple shrink-0">
+                <Sparkles size={20} className="animate-pulse" />
+              </div>
+              <div>
+                <div className="text-sm font-bold text-white flex items-center gap-2">
+                  Enterprise Sovereign SecOps Console
+                  <span className="text-[10px] font-mono bg-brand-purple/30 text-brand-purple border border-brand-purple/40 px-2 py-0.5 rounded-full font-bold uppercase tracking-wider">
+                    Highest Tier Active
+                  </span>
+                </div>
+                <div className="text-xs text-text-muted mt-0.5">
+                  Full enterprise operations unlocked: dedicated isolated malware sandbox, unlimited seats, custom RBAC, CI/CD pipeline gate, and 24/7 SLA.
+                </div>
+              </div>
+            </div>
+          </div>
+        )
+      )}
 
       {/* Welcome Banner */}
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
@@ -146,11 +250,20 @@ export const DashboardHome: React.FC = () => {
           <div>
             <div className="text-[11px] text-text-muted uppercase font-bold tracking-wider">Monitored Targets</div>
             <div className="text-3xl font-extrabold text-white mt-2">
-              {targets.length || 3}
+              {targets.length || 1}
+              {(user?.role === 'client_owner' || user?.role === 'client_member') && isFree && (
+                <span className="text-xs text-amber-400 font-bold ml-1.5 font-mono">/ 1 Max</span>
+              )}
             </div>
           </div>
           <div className="text-[11px] text-text-muted mt-3">
-            {activeTargetsCount} Active Environments
+            {(user?.role === 'client_owner' || user?.role === 'client_member') && isFree ? (
+              <span className="text-amber-400 flex items-center gap-1 font-medium">
+                <AlertTriangle size={12} /> Free tier limit: 1 asset
+              </span>
+            ) : (
+              <span>{activeTargetsCount} Active Environments</span>
+            )}
           </div>
         </GlassCard>
 
@@ -249,19 +362,21 @@ export const DashboardHome: React.FC = () => {
                 >
                   <div className="space-y-1">
                     <div className="flex items-center gap-2">
-                      <span className="font-mono text-xs font-bold text-white">{scan._id}</span>
+                      <span className="font-mono text-xs font-bold text-white">Assessment Run</span>
                       <span className={`px-2 py-0.5 rounded text-[10px] font-bold uppercase border ${
                         scan.status === 'completed'
                           ? 'bg-green-500/10 text-green-400 border-green-500/25'
                           : scan.status === 'deleted'
                           ? 'bg-amber-500/10 text-amber-400 border-amber-500/25'
+                          : scan.status === 'cancelled'
+                          ? 'bg-red-500/10 text-red-400 border-red-500/25'
                           : scan.status === 'failed'
                           ? 'bg-red-500/10 text-red-400 border-red-500/25'
-                          : 'bg-white/5 text-text-muted border-white/10'
+                          : 'bg-brand-cyan/15 text-brand-cyan border-brand-cyan/30'
                       }`}>
                         {scan.status}
                       </span>
-                      <span className="text-brand-cyan text-[10px] font-mono">v{scan.version}</span>
+                      <span className="text-brand-cyan text-[10px] font-mono">v{scan.version || 1}</span>
                     </div>
                     <div className="text-[11px] text-text-muted font-mono truncate max-w-md">
                       {scan.targetUrl}

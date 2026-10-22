@@ -52,6 +52,11 @@ export const StatusBadge: React.FC<{ status: string }> = ({ status }) => {
     running: 'warning',
     pending: 'info',
     failed: 'critical',
+    cancelled: 'critical',
+    verified: 'success',
+    false_positive: 'info',
+    accepted: 'info',
+    detected: 'warning',
   };
   const label = status.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase());
   return <Badge variant={(map[status] || 'default') as BadgeProps['variant']}>{label}</Badge>;

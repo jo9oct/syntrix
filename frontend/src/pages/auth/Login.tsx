@@ -46,9 +46,7 @@ export const Login: React.FC = () => {
       <div className="w-full max-w-lg relative z-10 pt-20">
         <GlassCard className="p-8 border-brand-cyan/20 shadow-2xl backdrop-blur-3xl">
           <div className="flex flex-col items-center mb-6 text-center">
-            <div className="w-12 h-12 rounded-xl bg-gradient-brand flex items-center justify-center mb-3 shadow-lg shadow-brand-cyan/20">
-              <ShieldCheck size={24} className="text-white" />
-            </div>
+            <img src="/logo.png" alt="Sentrix" className="w-14 h-14 rounded-2xl object-contain mb-3 shadow-lg shadow-brand-cyan/20" />
             <h2 className="text-2xl font-bold text-white tracking-tight">Sign In to Sentrix</h2>
             <p className="text-text-muted mt-1 text-sm">
               Authenticate with your assigned role credentials

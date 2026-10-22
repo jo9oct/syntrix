@@ -8,9 +8,13 @@ import {
   Search, Check
 } from 'lucide-react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
+import { useAuthStore, useUserTier } from '../../../store/authStore';
+import { Sparkles } from 'lucide-react';
 
 export const AssessmentWizard: React.FC = () => {
   const navigate = useNavigate();
+  const { user } = useAuthStore();
+  const { tier: userTier, isFree, isPro, isEnterprise } = useUserTier();
   const [searchParams] = useSearchParams();
 
   const [step, setStep] = useState(1);
@@ -38,13 +42,18 @@ export const AssessmentWizard: React.FC = () => {
     const initData = async () => {
       try {
         setLoading(true);
-        // API 1: Get Available Scanners
+        // API 1: Get Available Scanners from Real Backend
         const scanRes = await api.get('/scanners');
         if (scanRes.data?.data) {
           setScannersData(scanRes.data.data);
-          // Default selections: select some security scanners
-          setSelectedSecurityIds(['securityHeaders', 'xss', 'sqli', 'cors']);
-          setSelectedReconIds(['ssl', 'technology', 'webServer']);
+          // Set initial default selections respecting the user's tier
+          if (isFree) {
+            setSelectedSecurityIds(['securityHeaders']);
+            setSelectedReconIds([]);
+          } else {
+            setSelectedSecurityIds(['securityHeaders', 'xss', 'sqli', 'cors']);
+            setSelectedReconIds(['ssl', 'technology', 'webServer']);
+          }
         }
 
         // API 29: Get All Security Scopes
@@ -62,6 +71,27 @@ export const AssessmentWizard: React.FC = () => {
           setCompanyRules(rulesRes.data.data.rules);
           setSelectedRuleIds(rulesRes.data.data.rules.filter((r: CompanySecurityRule) => r.enabled).map((r: CompanySecurityRule) => r._id));
         }
+
+        // Pre-fill input fields from existing scan when Retest is requested
+        const retestScanId = searchParams.get('retestScanId') || searchParams.get('retest');
+        if (retestScanId) {
+          try {
+            const retestRes = await api.get(`/scans/${retestScanId}`);
+            const prevScan = retestRes.data?.data;
+            if (prevScan) {
+              if (prevScan.targetUrl) setTargetUrl(prevScan.targetUrl);
+              if (prevScan.scanSelection?.recon) setSelectedReconIds(prevScan.scanSelection.recon);
+              if (prevScan.scanSelection?.security) setSelectedSecurityIds(prevScan.scanSelection.security);
+              if (prevScan.scopeId) setSelectedScopeId(prevScan.scopeId);
+              if (Array.isArray(prevScan.companyRuleIds) && prevScan.companyRuleIds.length > 0) {
+                setSelectedRuleIds(prevScan.companyRuleIds.map(String));
+              }
+              setConfirmedAuth(true);
+            }
+          } catch (e) {
+            console.error('Failed to pre-fill existing scan for retest', e);
+          }
+        }
       } catch (err) {
         console.error('Failed to load wizard prerequisites', err);
       } finally {
@@ -70,9 +100,29 @@ export const AssessmentWizard: React.FC = () => {
     };
 
     initData();
-  }, []);
+  }, [isFree]);
 
   const toggleScanner = (id: string, category: 'recon' | 'security') => {
+    if (isFree) {
+      // Free tier backend enforces maxScannersPerScan: 1
+      if (category === 'recon') {
+        if (selectedReconIds.includes(id)) {
+          setSelectedReconIds([]);
+        } else {
+          setSelectedReconIds([id]);
+          setSelectedSecurityIds([]);
+        }
+      } else {
+        if (selectedSecurityIds.includes(id)) {
+          setSelectedSecurityIds([]);
+        } else {
+          setSelectedSecurityIds([id]);
+          setSelectedReconIds([]);
+        }
+      }
+      return;
+    }
+
     if (category === 'recon') {
       setSelectedReconIds(prev =>
         prev.includes(id) ? prev.filter(x => x !== id) : [...prev, id]
@@ -86,6 +136,10 @@ export const AssessmentWizard: React.FC = () => {
 
   const selectAllCategory = (category: 'recon' | 'security') => {
     if (!scannersData) return;
+    if (isFree) {
+      setError('Free Community Tier is limited to 1 scanner per assessment. Upgrade to Pro for all 25 parallel scanners.');
+      return;
+    }
     if (category === 'recon') {
       setSelectedReconIds(scannersData.recon.map(s => s.id));
     } else {
@@ -113,8 +167,20 @@ export const AssessmentWizard: React.FC = () => {
       return;
     }
 
+    const trimmedUrl = targetUrl.trim();
+    if (!trimmedUrl || (!trimmedUrl.startsWith('http://') && !trimmedUrl.startsWith('https://'))) {
+      setError('Please provide a valid Target URL beginning with http:// or https://');
+      return;
+    }
+
     if (selectedReconIds.length === 0 && selectedSecurityIds.length === 0) {
       setError('Please select at least one security or reconnaissance scanner.');
+      return;
+    }
+
+    const totalSelected = selectedReconIds.length + selectedSecurityIds.length;
+    if (isFree && totalSelected > 1) {
+      setError('The Free plan allows a maximum of 1 scanner per assessment. Please select 1 scanner or upgrade to Pro.');
       return;
     }
 
@@ -122,16 +188,31 @@ export const AssessmentWizard: React.FC = () => {
     setError(null);
 
     try {
-      // API 2: Create a Security Scan
-      const payload = {
-        targetUrl,
-        scopes: selectedScopeId ? [selectedScopeId] : [],
-        companyRuleIds: selectedRuleIds,
+      // Validate MongoDB 24-character hex IDs for scopes and rules
+      const isValidHex24 = (val?: string) => typeof val === 'string' && /^[0-9a-fA-F]{24}$/.test(val);
+
+      // API 2: Create a Security Scan (POST /api/v1/scans)
+      const payload: {
+        targetUrl: string;
+        scanSelection: { recon: string[]; security: string[] };
+        scopes?: string[];
+        companyRuleIds?: string[];
+      } = {
+        targetUrl: trimmedUrl,
         scanSelection: {
           recon: selectedReconIds,
           security: selectedSecurityIds
         }
       };
+
+      if (selectedScopeId && isValidHex24(selectedScopeId)) {
+        payload.scopes = [selectedScopeId];
+      }
+
+      const validRuleIds = selectedRuleIds.filter(isValidHex24);
+      if (validRuleIds.length > 0) {
+        payload.companyRuleIds = validRuleIds;
+      }
 
       const res = await api.post('/scans', payload);
       const createdScan = res.data?.data?.scan;
@@ -140,7 +221,7 @@ export const AssessmentWizard: React.FC = () => {
         navigate(`/dashboard/assessment/${createdScan._id}/progress`, {
           state: {
             scan: createdScan,
-            targetUrl,
+            targetUrl: trimmedUrl,
             reconCount: selectedReconIds.length,
             securityCount: selectedSecurityIds.length
           }
@@ -149,7 +230,8 @@ export const AssessmentWizard: React.FC = () => {
         navigate('/dashboard/projects');
       }
     } catch (err: any) {
-      setError(err.response?.data?.message || 'Failed to create assessment.');
+      const serverMsg = err.response?.data?.error?.message || err.response?.data?.message || err.message;
+      setError(serverMsg || 'Failed to create assessment.');
       setLaunching(false);
     }
   };
@@ -168,15 +250,57 @@ export const AssessmentWizard: React.FC = () => {
   return (
     <div className="p-8 space-y-6 max-w-5xl mx-auto">
       {/* Header */}
-      <div>
-        <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-brand-cyan/10 border border-brand-cyan/20 text-xs text-brand-cyan font-medium mb-2">
-          <ShieldCheck size={14} /> Sentrix Security Assessment Engine (API 1 & 2)
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+        <div>
+          <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-brand-cyan/10 border border-brand-cyan/20 text-xs text-brand-cyan font-medium mb-2">
+            <ShieldCheck size={14} /> Sentrix Security Assessment Engine (API 1 & 2)
+          </div>
+          <h1 className="text-2xl font-bold text-white tracking-tight">Configure New Security Assessment</h1>
+          <p className="text-xs text-text-muted">
+            Define target endpoints, authorized boundary scope snapshots, corporate rules, and select from 25 automated security scanners.
+          </p>
         </div>
-        <h1 className="text-2xl font-bold text-white tracking-tight">Configure New Security Assessment</h1>
-        <p className="text-xs text-text-muted">
-          Define target endpoints, authorized boundary scope snapshots, corporate rules, and select from 25 automated security scanners.
-        </p>
+
+        {(user?.role === 'client_owner' || user?.role === 'client_member') && (
+          <div className="flex items-center gap-2 self-start sm:self-auto">
+            <span className={`px-3 py-1 rounded-full text-xs font-bold uppercase tracking-wider ${
+              userTier === 'enterprise'
+                ? 'bg-brand-purple/20 text-brand-purple border border-brand-purple/40'
+                : userTier === 'pro'
+                ? 'bg-brand-cyan/20 text-brand-cyan border border-brand-cyan/40'
+                : 'bg-white/10 text-slate-300 border border-white/20'
+            }`}>
+              {userTier} Scan Mode
+            </span>
+            {isFree && (
+              <button
+                onClick={() => navigate('/dashboard/billing')}
+                className="btn-primary text-xs px-3 py-1 rounded-full font-bold flex items-center gap-1 shadow-sm"
+              >
+                <Sparkles size={11} /> Upgrade
+              </button>
+            )}
+          </div>
+        )}
       </div>
+
+      {/* Free Tier Wizard Banner */}
+      {(user?.role === 'client_owner' || user?.role === 'client_member') && isFree && (
+        <div className="p-3.5 rounded-xl bg-amber-500/10 border border-amber-500/30 text-xs text-amber-300 flex items-center justify-between gap-3">
+          <div className="flex items-center gap-2">
+            <AlertTriangle size={16} className="shrink-0" />
+            <span>
+              <strong>Free Tier Scan Limitations:</strong> Single target authorization and basic OWASP scan rules active. Upgrade to Pro for deep API fuzzing, credentialed crawling, and 1-click verification retests.
+            </span>
+          </div>
+          <button
+            onClick={() => navigate('/dashboard/billing')}
+            className="text-xs font-bold underline hover:text-white shrink-0"
+          >
+            Upgrade to Pro
+          </button>
+        </div>
+      )}
 
       {/* Stepper Tabs */}
       <div className="flex items-center justify-between p-2 rounded-2xl bg-white/5 border border-white/10 text-xs font-semibold">
@@ -334,6 +458,30 @@ export const AssessmentWizard: React.FC = () => {
                 </p>
               </div>
 
+              {/* Tier Scanner Badge */}
+              <div className="flex items-center gap-2">
+                <span className={`px-2.5 py-1 rounded-lg text-xs font-mono font-bold uppercase ${
+                  isFree ? 'bg-amber-500/10 text-amber-400 border border-amber-500/30' : 'bg-brand-cyan/15 text-brand-cyan border border-brand-cyan/30'
+                }`}>
+                  {isFree ? 'Free Tier: 1 Scanner Limit' : `${userTier.toUpperCase()}: All 25 Unlocked`}
+                </span>
+              </div>
+            </div>
+
+            {isFree && (
+              <div className="p-3 rounded-xl bg-amber-500/10 border border-amber-500/25 flex items-center justify-between text-xs text-amber-300">
+                <span>Free tier allows 1 scanner per assessment. Click any scanner to select it.</span>
+                <button
+                  type="button"
+                  onClick={() => navigate('/dashboard/billing')}
+                  className="font-bold underline hover:text-white shrink-0 ml-2"
+                >
+                  Upgrade to Pro &rarr;
+                </button>
+              </div>
+            )}
+
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
               {/* Category Switcher Tabs */}
               <div className="flex items-center p-1 rounded-xl bg-white/5 border border-white/10 text-xs">
                 <button

@@ -3,12 +3,41 @@
 /* FILE: src/validators/scan.validator.js */
 
 import Joi from "joi";
+import { hasScanner } from "../engine/scannerRegistry.js";
+
+const SCANNER_ID_ALIASES = Object.freeze({
+  "security-headers": "securityHeaders",
+});
+
+const normalizeScannerId = (scannerId) =>
+  SCANNER_ID_ALIASES[scannerId] ?? scannerId;
 
 const scannerNamePattern = /^[a-zA-Z0-9_-]+$/;
-const scannerName = Joi.string().trim().pattern(scannerNamePattern).max(128);
-const scannerSelection = Joi.array().items(scannerName).max(100).unique();
+
+const scannerName = Joi.string()
+  .trim()
+  .pattern(scannerNamePattern)
+  .max(128)
+  .custom((value, helpers) => {
+    const normalizedId = normalizeScannerId(value);
+
+    if (!hasScanner(normalizedId)) {
+      return helpers.error("any.invalid");
+    }
+
+    return normalizedId;
+  })
+  .messages({
+    "any.invalid": "One or more selected scanner IDs are not supported.",
+  });
+
+const scannerSelection = Joi.array()
+  .items(scannerName)
+  .max(100)
+  .unique();
 
 const companyRuleId = Joi.string().trim().hex().length(24);
+
 const companyRuleIds = Joi.array()
   .items(companyRuleId)
   .max(100)
@@ -17,11 +46,16 @@ const companyRuleIds = Joi.array()
 
 const scopeId = Joi.string().trim().hex().length(24);
 
-const scopes = Joi.array().items(scopeId).max(1).unique().default([]).messages({
-  "array.max": "Only one saved scope can be selected per scan.",
-  "string.hex": "Each scope ID must be a valid hexadecimal ID.",
-  "string.length": "Each scope ID must contain exactly 24 characters.",
-});
+const scopes = Joi.array()
+  .items(scopeId)
+  .max(1)
+  .unique()
+  .default([])
+  .messages({
+    "array.max": "Only one saved scope can be selected per scan.",
+    "string.hex": "Each scope ID must be a valid hexadecimal ID.",
+    "string.length": "Each scope ID must contain exactly 24 characters.",
+  });
 
 const targetUrl = Joi.string()
   .trim()
@@ -52,8 +86,7 @@ const targetUrl = Joi.string()
 const usernamePasswordCredentials = Joi.object({
   username: Joi.string().trim().min(1).max(512).required(),
   password: Joi.string().min(1).max(4096).required(),
-})
-  .unknown(false);
+}).unknown(false);
 
 const sessionCookieCredentials = Joi.object({
   sessionCookie: Joi.string()
@@ -72,8 +105,7 @@ const sessionCookieCredentials = Joi.object({
       return value;
     })
     .required(),
-})
-  .unknown(false);
+}).unknown(false);
 
 const credentialsSchema = Joi.alternatives()
   .try(usernamePasswordCredentials, sessionCookieCredentials)
@@ -127,8 +159,12 @@ const listScanQuerySchema = Joi.object({
 });
 
 const normalizeSelection = (selection) => ({
-  recon: [...new Set(selection?.recon ?? [])],
-  security: [...new Set(selection?.security ?? [])],
+  recon: [
+    ...new Set((selection?.recon ?? []).map(normalizeScannerId)),
+  ],
+  security: [
+    ...new Set((selection?.security ?? []).map(normalizeScannerId)),
+  ],
 });
 
 const normalizeCompanyRuleIds = (ruleIds) => [
@@ -137,6 +173,7 @@ const normalizeCompanyRuleIds = (ruleIds) => [
 
 const getSelectedScannerIds = (selection) => {
   const normalized = normalizeSelection(selection);
+
   return [...normalized.recon, ...normalized.security];
 };
 

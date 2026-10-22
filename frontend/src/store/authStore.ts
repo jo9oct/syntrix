@@ -19,6 +19,8 @@ export interface User {
   email: string;
   role: UserRole;
   organizationId?: string;
+  subscriptionTier?: 'free' | 'pro' | 'enterprise';
+  subscriptionStatus?: 'active' | 'trial' | 'canceled';
 }
 
 export interface DemoActor {
@@ -117,7 +119,8 @@ interface AuthState {
   error: string | null;
   login: (email: string, password: string) => Promise<User>;
   switchRole: (role: UserRole) => User;
-  register: (data: { name: string; email: string; password: string; organization: string }) => Promise<void>;
+  register: (data: { name: string; email: string; password: string; organization?: string; [key: string]: any }) => Promise<void>;
+  fetchMe: () => Promise<User | null>;
   logout: () => void;
   clearError: () => void;
 }
@@ -129,7 +132,9 @@ export const useAuthStore = create<AuthState>()(
         id: 'usr_sec',
         name: 'Jane Smith',
         email: 'jane@sentrix.local',
-        role: 'security_engineer'
+        role: 'security_engineer',
+        subscriptionTier: 'free',
+        subscriptionStatus: 'active'
       },
       token: 'sentrix_demo_auth_token',
       isAuthenticated: true,
@@ -142,12 +147,101 @@ export const useAuthStore = create<AuthState>()(
           const { data } = await api.post('/auth/login', { email, password });
           const { token, user } = data.data;
           api.defaults.headers.common['Authorization'] = `Bearer ${token}`;
-          set({ user, token, isAuthenticated: true, isLoading: false });
-          return user;
+
+          let profile = user;
+          let tier = user?.subscriptionTier || 'free';
+          let status = user?.subscriptionStatus || 'active';
+
+          try {
+            const meRes = await api.get('/auth/me', {
+              headers: { Authorization: `Bearer ${token}` }
+            });
+            if (meRes.data?.data) {
+              const raw = meRes.data.data;
+              if (raw.subscriptionTier) tier = raw.subscriptionTier;
+              if (raw.subscriptionStatus) status = raw.subscriptionStatus;
+
+              profile = {
+                id: raw._id || raw.id || user.id,
+                name: raw.name || user.name,
+                email: raw.email || user.email,
+                role: raw.role || user.role,
+                organizationId: raw.organizationId ?? user.organizationId ?? null,
+                subscriptionTier: tier,
+                subscriptionStatus: status,
+              };
+            }
+          } catch {
+            // Keep user from login response
+          }
+
+          try {
+            const subRes = await api.get('/payment/subscription', {
+              headers: { Authorization: `Bearer ${token}` }
+            });
+            if (subRes.data?.data?.tier) {
+              tier = subRes.data.data.tier;
+              status = subRes.data.data.status || status;
+              profile = {
+                ...profile,
+                subscriptionTier: tier,
+                subscriptionStatus: status,
+              };
+            }
+          } catch {
+            // Subscription fallback
+          }
+
+          set({ user: profile, token, isAuthenticated: true, isLoading: false, error: null });
+          return profile;
         } catch (err: any) {
-          const msg = err.response?.data?.error || 'Login failed. Please check your credentials.';
+          const msg = err.response?.data?.error || err.response?.data?.message || err.message || 'Login failed. Please check your credentials.';
           set({ error: msg, isLoading: false });
           throw new Error(msg);
+        }
+      },
+
+      fetchMe: async () => {
+        const currentToken = useAuthStore.getState().token;
+        if (!currentToken) return null;
+        set({ isLoading: true });
+        try {
+          const { data } = await api.get('/auth/me', {
+            headers: { Authorization: `Bearer ${currentToken}` }
+          });
+          if (data?.data) {
+            const raw = data.data;
+            let tier: 'free' | 'pro' | 'enterprise' = raw.subscriptionTier || 'free';
+            let status: 'active' | 'trial' | 'canceled' = raw.subscriptionStatus || 'active';
+
+            try {
+              const subRes = await api.get('/payment/subscription', {
+                headers: { Authorization: `Bearer ${currentToken}` }
+              });
+              if (subRes.data?.data?.tier) {
+                tier = subRes.data.data.tier;
+                status = subRes.data.data.status || status;
+              }
+            } catch {
+              // Ignore fallback
+            }
+
+            const updatedUser: User = {
+              id: raw._id || raw.id,
+              name: raw.name,
+              email: raw.email,
+              role: raw.role,
+              organizationId: raw.organizationId ?? null,
+              subscriptionTier: tier,
+              subscriptionStatus: status,
+            };
+            set({ user: updatedUser, isAuthenticated: true, isLoading: false, error: null });
+            return updatedUser;
+          }
+          return null;
+        } catch (err: any) {
+          set({ isLoading: false });
+          return null;
         }
       },
 
@@ -192,3 +286,15 @@ export const useAuthStore = create<AuthState>()(
     }
   )
 );
+
+export const useUserTier = () => {
+  const user = useAuthStore(s => s.user);
+  const tier = (user?.subscriptionTier || 'free') as 'free' | 'pro' | 'enterprise';
+  return {
+    tier,
+    isFree: tier === 'free',
+    isPro: tier === 'pro',
+    isEnterprise: tier === 'enterprise',
+    status: user?.subscriptionStatus || 'active',
+  };
+};

@@ -16,6 +16,7 @@ import { errorMiddleware } from "./src/middleware/error.middleware.js";
 
 //auth
 import authRoutes from "./src/routes/auth.routes.js";
+import adminRoutes from "./src/routes/admin.routes.js";
 
 // Existing Web Security Assessment routes.
 import healthRoutes from "./src/routes/health.routes.js";
@@ -50,6 +51,9 @@ app.use((request, response, next) => {
 
   next();
 });
+
+// Enable CORS for all API routes
+app.use(cors());
 
 // Security headers from the existing Web Security Assessment server.
 app.use((request, response, next) => {
@@ -143,6 +147,7 @@ app.use("/api/v1/reports", reportRoutes);
 
 // Authentication routes
 app.use("/api/v1/auth", authRoutes);
+app.use("/api/v1", adminRoutes);
 
 // Sentrix health endpoint.
 // The existing server's / root and /api/v1/health remain unchanged.

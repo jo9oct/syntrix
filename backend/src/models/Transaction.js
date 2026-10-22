@@ -46,6 +46,19 @@ const transactionSchema = new Schema(
       enum: ["pro", "enterprise"],
     },
 
+    requestedRole: {
+      type: String,
+      enum: [
+        "admin",
+        "client_owner",
+        "client_member",
+        "security_engineer",
+        "developer",
+        "malware_analyst",
+      ],
+      default: "security_engineer",
+    },
+
     billingCycle: {
       type: String,
       required: true,

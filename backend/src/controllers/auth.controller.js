@@ -1,3 +1,9 @@
+
+/*
+ * STATUS: UPDATED
+ * File: src/controllers/auth.controller.js
+ */
+
 import jwt from "jsonwebtoken";
 import bcrypt from "bcryptjs";
 import { User } from "../models/User.js";
@@ -15,103 +21,199 @@ const signToken = (id) => {
   });
 };
 
-export const register = async (req, res) => {
-  try {
-    const { name, email, password, organization } = req.body;
+const normalizeOrganizationName = (value) => {
+  if (typeof value !== "string") {
+    return null;
+  }
 
-    if (!name || !email || !password || !organization) {
+  const normalized = value.trim();
+
+  if (!normalized || normalized.toLowerCase() === "null") {
+    return null;
+  }
+
+  return normalized;
+};
+
+const escapeRegex = (value) =>
+  value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+
+const createAuthResponse = (user, statusCode, res) => {
+  const token = signToken(String(user._id));
+
+  return res.status(statusCode).json({
+    success: true,
+    data: {
+      token,
+      user: {
+        id: user._id,
+        name: user.name,
+        email: user.email,
+        role: user.role,
+        organizationId: user.organizationId ?? null,
+      },
+    },
+  });
+};
+
+export const register = async (req, res) => {
+  let createdUserId = null;
+
+  try {
+    const { name, email, password, organization, role } = req.body;
+
+    if (
+      typeof name !== "string" ||
+      !name.trim() ||
+      typeof email !== "string" ||
+      !email.trim() ||
+      typeof password !== "string" ||
+      !password
+    ) {
       return res.status(400).json({
         success: false,
-        error: "Please provide name, email, password, and organization",
+        error: "Please provide name, email, and password",
       });
     }
 
+    const normalizedName = name.trim();
     const normalizedEmail = email.trim().toLowerCase();
+    const organizationName = normalizeOrganizationName(organization);
 
-    const existing = await User.findOne({ email: normalizedEmail });
+    const validRoles = [
+      "admin",
+      "security_engineer",
+      "developer",
+      "malware_analyst",
+      "client_owner",
+      "client_member",
+    ];
+    const normalizedRole = typeof role === "string" ? role.trim().toLowerCase().replace(/\s+/g, "_") : null;
+    const requestedRole = validRoles.includes(normalizedRole) ? normalizedRole : null;
 
-    if (existing) {
+    const existingUser = await User.findOne({
+      email: normalizedEmail,
+    });
+
+    if (existingUser) {
       return res.status(400).json({
         success: false,
         error: "Email already registered",
       });
     }
 
-    const hashed = await bcrypt.hash(password, 12);
+    const hashedPassword = await bcrypt.hash(password, 12);
 
-    let org = await Organization.findOne({ name: organization });
-
-    if (!org) {
-      const tempUser = new User({
-        name,
+    // No company: register as a member without an organization.
+    if (!organizationName) {
+      const user = await User.create({
+        name: normalizedName,
         email: normalizedEmail,
-        password: hashed,
-        role: "client_owner",
+        password: hashedPassword,
+        role: requestedRole || "client_member",
         isActive: true,
       });
 
-      await tempUser.save();
+      createdUserId = user._id;
+
+      return createAuthResponse(user, 201, res);
+    }
+
+    // Match existing organization names without case sensitivity.
+    const organizationRegex = new RegExp(
+      `^${escapeRegex(organizationName)}$`,
+      "i",
+    );
+
+    let org = await Organization.findOne({
+      name: organizationRegex,
+    });
+
+    // Existing company: register as a member.
+    if (org) {
+      const user = await User.create({
+        name: normalizedName,
+        email: normalizedEmail,
+        password: hashedPassword,
+        role: requestedRole || "client_member",
+        organizationId: org._id,
+        isActive: true,
+      });
+
+      createdUserId = user._id;
 
       try {
-        org = await Organization.create({
-          name: organization,
-          ownerId: tempUser._id,
-          members: [
-            {
-              userId: tempUser._id,
-              role: "owner",
-            },
-          ],
+        if (!Array.isArray(org.members)) {
+          org.members = [];
+        }
+
+        org.members.push({
+          userId: user._id,
+          role: "member",
         });
 
-        tempUser.organizationId = org._id;
-        await tempUser.save();
+        await org.save();
       } catch (error) {
-        await User.deleteOne({ _id: tempUser._id });
+        await User.deleteOne({ _id: user._id });
+        createdUserId = null;
         throw error;
       }
 
-      const token = signToken(String(tempUser._id));
-
-      return res.status(201).json({
-        success: true,
-        data: {
-          token,
-          user: {
-            id: tempUser._id,
-            name: tempUser.name,
-            email: tempUser.email,
-            role: tempUser.role,
-          },
-        },
-      });
+      return createAuthResponse(user, 201, res);
     }
 
-    const user = await User.create({
-      name,
+    // New company: create the user as its owner.
+    const owner = await User.create({
+      name: normalizedName,
       email: normalizedEmail,
-      password: hashed,
-      role: "client_member",
-      organizationId: org._id,
+      password: hashedPassword,
+      role: requestedRole || "client_owner",
       isActive: true,
     });
 
-    const token = signToken(String(user._id));
+    createdUserId = owner._id;
 
-    return res.status(201).json({
-      success: true,
-      data: {
-        token,
-        user: {
-          id: user._id,
-          name: user.name,
-          email: user.email,
-          role: user.role,
-        },
-      },
-    });
+    try {
+      org = await Organization.create({
+        name: organizationName,
+        ownerId: owner._id,
+        members: [
+          {
+            userId: owner._id,
+            role: "owner",
+          },
+        ],
+      });
+
+      owner.organizationId = org._id;
+      await owner.save();
+    } catch (error) {
+      await Organization.deleteOne({
+        ownerId: owner._id,
+        _id: org?._id,
+      }).catch(() => {});
+
+      await User.deleteOne({ _id: owner._id });
+      createdUserId = null;
+
+      throw error;
+    }
+
+    return createAuthResponse(owner, 201, res);
   } catch (error) {
     console.error("[Auth] Registration failed:", error);
+
+    // Clean up a user left behind by an unexpected registration failure.
+    if (createdUserId) {
+      await User.deleteOne({ _id: createdUserId }).catch(() => {});
+    }
+
+    if (error?.code === 11000) {
+      return res.status(409).json({
+        success: false,
+        error: "Email or organization already exists",
+      });
+    }
 
     return res.status(500).json({
       success: false,
@@ -124,7 +226,12 @@ export const login = async (req, res) => {
   try {
     const { email, password } = req.body;
 
-    if (!email || !password) {
+    if (
+      typeof email !== "string" ||
+      !email.trim() ||
+      typeof password !== "string" ||
+      !password
+    ) {
       return res.status(400).json({
         success: false,
         error: "Please provide email and password",
@@ -174,7 +281,7 @@ export const login = async (req, res) => {
           name: user.name,
           email: user.email,
           role: user.role,
-          organizationId: user.organizationId,
+          organizationId: user.organizationId ?? null,
         },
       },
     });

@@ -10,7 +10,6 @@ import {
   initializeEnterprisePayment,
   verifyChapaPayment,
   handleChapaWebhook,
-  cancelSubscription,
 } from "../controllers/payment.controller.js";
 
 import { protect } from "../middleware/auth.js";
@@ -22,9 +21,15 @@ router.get("/plans", getPlans);
 
 // Authenticated subscription endpoints.
 router.get("/subscription", protect, getCurrentSubscription);
-router.post("/subscription/cancel", protect, cancelSubscription);
 
 // The server determines the price and subscription plan.
+router.post("/chapa/initialize", protect, (req, res) => {
+  const tier = req.body?.tier === "enterprise" ? "enterprise" : "pro";
+  if (tier === "enterprise") {
+    return initializeEnterprisePayment(req, res);
+  }
+  return initializeProPayment(req, res);
+});
 router.post("/chapa/pro/initialize", protect, initializeProPayment);
 router.post(
   "/chapa/enterprise/initialize",

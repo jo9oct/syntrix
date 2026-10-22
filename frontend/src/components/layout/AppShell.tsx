@@ -1,13 +1,14 @@
 import React, { useState } from 'react';
 import { Outlet, NavLink, useNavigate, Link, useLocation } from 'react-router-dom';
 import {
-  LayoutDashboard, FolderKanban, ShieldAlert, Bug,
+  LayoutDashboard, FolderKanban, Bug,
   FileText, Settings, LogOut, Bell, ChevronDown,
   ShieldCheck, ArrowRightLeft, RotateCcw, Search, Globe,
   CheckCircle2, AlertTriangle, Shield, UserCheck, Code,
-  CreditCard, Menu, X, Sparkles, Network, Sliders, Trash2
+  CreditCard, Menu, X, Sparkles, Network, Sliders, Trash2,
+  Users, Activity, ClipboardList, ArrowRight, Zap
 } from 'lucide-react';
-import { useAuthStore, type UserRole, getRoleLandingPath, DEMO_ACTORS } from '../../store/authStore';
+import { useAuthStore, type UserRole, getRoleLandingPath, useUserTier } from '../../store/authStore';
 
 interface NavItemDef {
   to: string;
@@ -17,20 +18,34 @@ interface NavItemDef {
   roles?: UserRole[];
 }
 
-const navItems: NavItemDef[] = [
-  { to: '/dashboard', label: 'Dashboard', icon: LayoutDashboard, end: true, roles: ['admin', 'security_engineer', 'client_owner'] },
+// Enterprise analysis console navigation items for Admin when in Analysis mode
+const enterpriseNavItems: NavItemDef[] = [
+  { to: '/dashboard', label: 'Dashboard', icon: LayoutDashboard, end: true },
   { to: '/dashboard/projects', label: 'Targets & Inventory', icon: Globe },
-  { to: '/dashboard/assessment/new', label: 'New Assessment', icon: ShieldCheck, roles: ['admin', 'security_engineer'] },
-  { to: '/dashboard/findings', label: 'Findings', icon: ShieldAlert, roles: ['admin', 'security_engineer', 'client_owner', 'developer'] },
-  { to: '/dashboard/scopes', label: 'Security Scopes', icon: Network, roles: ['admin', 'security_engineer'] },
-  { to: '/dashboard/rules', label: 'Company Policies', icon: Sliders, roles: ['admin', 'security_engineer'] },
-  { to: '/dashboard/reports', label: 'Reports', icon: FileText, roles: ['admin', 'security_engineer', 'client_owner', 'malware_analyst'] },
-  { to: '/dashboard/scans/deleted', label: 'Deleted Scans', icon: Trash2, roles: ['admin', 'security_engineer'] },
-  { to: '/dashboard/remediation', label: 'Remediation', icon: ArrowRightLeft, roles: ['admin', 'developer', 'security_engineer'] },
-  { to: '/dashboard/retest', label: 'Retesting', icon: RotateCcw, roles: ['admin', 'security_engineer', 'developer'] },
-  { to: '/dashboard/malware', label: 'Malware Analysis', icon: Bug, roles: ['admin', 'malware_analyst', 'security_engineer'] },
-  { to: '/dashboard/billing', label: 'Billing & Plans', icon: CreditCard, roles: ['admin', 'client_owner'] },
-  { to: '/dashboard/admin', label: 'Administration', icon: Settings, roles: ['admin'] },
+  { to: '/dashboard/assessment/new', label: 'New Assessment', icon: ShieldCheck },
+  { to: '/dashboard/scopes', label: 'Security Scopes', icon: Network },
+  { to: '/dashboard/rules', label: 'Company Policies', icon: Sliders },
+  { to: '/dashboard/reports', label: 'Reports', icon: FileText },
+  { to: '/dashboard/scans/deleted', label: 'Deleted Scans', icon: Trash2 },
+  { to: '/dashboard/remediation', label: 'Remediation', icon: ArrowRightLeft },
+  { to: '/dashboard/retest', label: 'Retesting', icon: RotateCcw },
+  { to: '/dashboard/malware', label: 'Malware Analysis', icon: Bug },
+  { to: '/dashboard/billing', label: 'Billing & Plans', icon: CreditCard },
+];
+
+// Standard role-filtered navigation items for non-admin actors
+const standardNavItems: NavItemDef[] = [
+  { to: '/dashboard', label: 'Dashboard', icon: LayoutDashboard, end: true, roles: ['security_engineer', 'client_owner', 'client_member'] },
+  { to: '/dashboard/projects', label: 'Targets & Inventory', icon: Globe, roles: ['security_engineer', 'client_owner', 'client_member'] },
+  { to: '/dashboard/assessment/new', label: 'New Assessment', icon: ShieldCheck, roles: ['security_engineer', 'client_owner', 'client_member'] },
+  { to: '/dashboard/scopes', label: 'Security Scopes', icon: Network, roles: ['security_engineer', 'client_owner', 'client_member'] },
+  { to: '/dashboard/rules', label: 'Company Policies', icon: Sliders, roles: ['security_engineer', 'client_owner'] },
+  { to: '/dashboard/reports', label: 'Reports', icon: FileText, roles: ['security_engineer', 'client_owner', 'malware_analyst', 'client_member'] },
+  { to: '/dashboard/scans/deleted', label: 'Deleted Scans', icon: Trash2, roles: ['security_engineer', 'client_owner', 'client_member'] },
+  { to: '/dashboard/remediation', label: 'Remediation', icon: ArrowRightLeft, roles: ['developer', 'security_engineer', 'client_owner', 'client_member'] },
+  { to: '/dashboard/retest', label: 'Retesting', icon: RotateCcw, roles: ['security_engineer', 'developer', 'client_owner', 'client_member'] },
+  { to: '/dashboard/malware', label: 'Malware Analysis', icon: Bug, roles: ['malware_analyst', 'security_engineer', 'client_owner', 'client_member'] },
+  { to: '/dashboard/billing', label: 'Billing & Plans', icon: CreditCard, roles: ['client_owner', 'client_member'] },
 ];
 
 const DEMO_NOTIFICATIONS = [
@@ -43,11 +58,15 @@ const DEMO_NOTIFICATIONS = [
 export const AppShell: React.FC = () => {
   const navigate = useNavigate();
   const location = useLocation();
-  const { user, logout, switchRole } = useAuthStore();
+  const { user, logout } = useAuthStore();
+  const { tier: userTier, isFree, isPro, isEnterprise } = useUserTier();
   const [showNotifications, setShowNotifications] = useState(false);
   const [notifications, setNotifications] = useState(DEMO_NOTIFICATIONS);
   const [mobileSidebarOpen, setMobileSidebarOpen] = useState(false);
-  const [showActorMenu, setShowActorMenu] = useState(false);
+
+  React.useEffect(() => {
+    useAuthStore.getState().fetchMe();
+  }, []);
 
   const currentUser = {
     name: (user && user.name) || 'User',
@@ -55,7 +74,11 @@ export const AppShell: React.FC = () => {
     role: ((user && user.role) || 'security_engineer') as UserRole
   };
 
-  const filteredNavItems = navItems.filter(item => !item.roles || item.roles.includes(currentUser.role));
+  const isAdmin = currentUser.role === 'admin';
+  const isAdminSection = isAdmin && location.pathname.startsWith('/dashboard/admin');
+  const isAnalysisMode = isAdmin && !isAdminSection;
+
+  const filteredNavItems = standardNavItems.filter(item => !item.roles || item.roles.includes(currentUser.role));
 
   const markAllRead = () => {
     setNotifications(prev => prev.map(n => ({ ...n, unread: false })));
@@ -82,9 +105,7 @@ export const AppShell: React.FC = () => {
         {/* Logo Header */}
         <div className="flex items-center justify-between px-5 py-4 border-b border-white/10">
           <Link to="/" className="flex items-center gap-2.5">
-            <div className="w-8 h-8 rounded-lg bg-gradient-brand flex items-center justify-center shadow-md shadow-brand-cyan/20">
-              <ShieldCheck size={18} className="text-white" />
-            </div>
+            <img src="/logo.png" alt="Sentrix" className="w-8 h-8 rounded-lg object-contain shadow-md shadow-brand-cyan/20" />
             <span className="text-lg font-bold text-white tracking-tight">Sentrix.</span>
           </Link>
 
@@ -107,32 +128,290 @@ export const AppShell: React.FC = () => {
           </div>
         </div>
 
-        {/* Navigation Items - Filtered dynamically by role */}
-        <nav className="flex-1 overflow-y-auto px-3 py-4 space-y-1">
-          {filteredNavItems.map(({ to, label, icon: Icon, end }) => (
-            <NavLink
-              key={to}
-              to={to}
-              end={end}
-              onClick={() => setMobileSidebarOpen(false)}
-              className={({ isActive }: { isActive: boolean }) =>
-                `flex items-center gap-3 px-3.5 py-2.5 rounded-xl text-xs sm:text-sm font-medium transition-all duration-150 ${
-                  isActive
-                    ? 'bg-brand-cyan/15 text-brand-cyan border border-brand-cyan/25 shadow-sm shadow-brand-cyan/10 font-semibold'
-                    : 'text-text-muted hover:text-white hover:bg-white/5'
-                }`
-              }
-            >
-              <Icon size={18} className="shrink-0" />
-              <span className="truncate">{label}</span>
-              {label === 'Billing & Plans' && (
-                <span className="ml-auto text-[10px] font-bold px-1.5 py-0.5 rounded bg-brand-cyan/20 text-brand-cyan border border-brand-cyan/30">
-                  Chapa
-                </span>
-              )}
-            </NavLink>
-          ))}
+        {/* Navigation Items - Dynamically rendered based on active mode & actor */}
+        <nav className="flex-1 overflow-y-auto px-3 py-4 space-y-4">
+          {isAdmin && isAdminSection ? (
+            /* ADMIN OPERATIONS & DISPATCH CENTER NAVIGATION */
+            <div className="space-y-4">
+              {/* Dispatch & Orders Section */}
+              <div>
+                <div className="px-3 pb-1.5 text-[10px] font-bold uppercase tracking-wider text-text-muted flex items-center justify-between">
+                  <span>Operations & Orders</span>
+                  <span className="text-[9px] bg-brand-cyan/20 text-brand-cyan px-1.5 py-0.2 rounded font-mono font-bold">Admin</span>
+                </div>
+                <div className="space-y-1">
+                  <Link
+                    to="/dashboard/admin"
+                    onClick={() => setMobileSidebarOpen(false)}
+                    className={`flex items-center gap-3 px-3.5 py-2.5 rounded-xl text-xs sm:text-sm font-medium transition-all duration-150 ${
+                      location.pathname === '/dashboard/admin' && (!location.search || location.search === '' || location.search === '?tab=overview')
+                        ? 'bg-brand-cyan/15 text-brand-cyan border border-brand-cyan/25 shadow-sm shadow-brand-cyan/10 font-semibold'
+                        : 'text-text-muted hover:text-white hover:bg-white/5'
+                    }`}
+                  >
+                    <LayoutDashboard size={18} className="shrink-0" />
+                    <span className="truncate">Admin Control</span>
+                  </Link>
+
+                  <Link
+                    to="/dashboard/admin?tab=orders"
+                    onClick={() => setMobileSidebarOpen(false)}
+                    className={`flex items-center gap-3 px-3.5 py-2.5 rounded-xl text-xs sm:text-sm font-medium transition-all duration-150 ${
+                      location.search.includes('tab=orders') && !location.search.includes('group=')
+                        ? 'bg-brand-cyan/15 text-brand-cyan border border-brand-cyan/25 shadow-sm shadow-brand-cyan/10 font-semibold'
+                        : 'text-text-muted hover:text-white hover:bg-white/5'
+                    }`}
+                  >
+                    <ClipboardList size={18} className="shrink-0" />
+                    <span className="truncate">Client Orders</span>
+                  </Link>
+                </div>
+              </div>
+
+              {/* Specialist Teams Section (Security Testers, Developers, Malware Analysts) */}
+              <div>
+                <div className="px-3 pb-1.5 text-[10px] font-bold uppercase tracking-wider text-text-muted">
+                  Specialist Teams
+                </div>
+                <div className="space-y-1">
+                  <Link
+                    to="/dashboard/admin?tab=orders&group=security_engineer"
+                    onClick={() => setMobileSidebarOpen(false)}
+                    className={`flex items-center justify-between px-3.5 py-2.5 rounded-xl text-xs sm:text-sm font-medium transition-all duration-150 ${
+                      location.search.includes('group=security_engineer')
+                        ? 'bg-brand-cyan/15 text-brand-cyan border border-brand-cyan/25 shadow-sm shadow-brand-cyan/10 font-semibold'
+                        : 'text-text-muted hover:text-white hover:bg-white/5'
+                    }`}
+                  >
+                    <div className="flex items-center gap-3 min-w-0">
+                      <ShieldCheck size={18} className="shrink-0 text-brand-cyan" />
+                      <span className="truncate">Security Testers</span>
+                    </div>
+                    <span className="text-[10px] font-mono px-1.5 py-0.5 rounded bg-brand-cyan/15 text-brand-cyan border border-brand-cyan/20">
+                      Pen-Test
+                    </span>
+                  </Link>
+
+                  <Link
+                    to="/dashboard/admin?tab=orders&group=developer"
+                    onClick={() => setMobileSidebarOpen(false)}
+                    className={`flex items-center justify-between px-3.5 py-2.5 rounded-xl text-xs sm:text-sm font-medium transition-all duration-150 ${
+                      location.search.includes('group=developer')
+                        ? 'bg-emerald-500/15 text-emerald-400 border border-emerald-500/25 shadow-sm shadow-emerald-500/10 font-semibold'
+                        : 'text-text-muted hover:text-white hover:bg-white/5'
+                    }`}
+                  >
+                    <div className="flex items-center gap-3 min-w-0">
+                      <Code size={18} className="shrink-0 text-emerald-400" />
+                      <span className="truncate">Developers</span>
+                    </div>
+                    <span className="text-[10px] font-mono px-1.5 py-0.5 rounded bg-emerald-500/15 text-emerald-400 border border-emerald-500/20">
+                      Patches
+                    </span>
+                  </Link>
+
+                  <Link
+                    to="/dashboard/admin?tab=orders&group=malware_analyst"
+                    onClick={() => setMobileSidebarOpen(false)}
+                    className={`flex items-center justify-between px-3.5 py-2.5 rounded-xl text-xs sm:text-sm font-medium transition-all duration-150 ${
+                      location.search.includes('group=malware_analyst')
+                        ? 'bg-amber-500/15 text-amber-400 border border-amber-500/25 shadow-sm shadow-amber-500/10 font-semibold'
+                        : 'text-text-muted hover:text-white hover:bg-white/5'
+                    }`}
+                  >
+                    <div className="flex items-center gap-3 min-w-0">
+                      <Bug size={18} className="shrink-0 text-amber-400" />
+                      <span className="truncate">Malware Analysts</span>
+                    </div>
+                    <span className="text-[10px] font-mono px-1.5 py-0.5 rounded bg-amber-500/15 text-amber-400 border border-amber-500/20">
+                      Lab
+                    </span>
+                  </Link>
+                </div>
+              </div>
+
+              {/* Platform Governance Section */}
+              <div>
+                <div className="px-3 pb-1.5 text-[10px] font-bold uppercase tracking-wider text-text-muted">
+                  Platform Governance
+                </div>
+                <div className="space-y-1">
+                  <Link
+                    to="/dashboard/admin?tab=users"
+                    onClick={() => setMobileSidebarOpen(false)}
+                    className={`flex items-center gap-3 px-3.5 py-2.5 rounded-xl text-xs sm:text-sm font-medium transition-all duration-150 ${
+                      location.search.includes('tab=users')
+                        ? 'bg-brand-cyan/15 text-brand-cyan border border-brand-cyan/25 shadow-sm shadow-brand-cyan/10 font-semibold'
+                        : 'text-text-muted hover:text-white hover:bg-white/5'
+                    }`}
+                  >
+                    <Users size={18} className="shrink-0" />
+                    <span className="truncate">Users & Roles</span>
+                  </Link>
+
+                  <Link
+                    to="/dashboard/admin?tab=system"
+                    onClick={() => setMobileSidebarOpen(false)}
+                    className={`flex items-center gap-3 px-3.5 py-2.5 rounded-xl text-xs sm:text-sm font-medium transition-all duration-150 ${
+                      location.search.includes('tab=system') || location.search.includes('tab=audit')
+                        ? 'bg-brand-cyan/15 text-brand-cyan border border-brand-cyan/25 shadow-sm shadow-brand-cyan/10 font-semibold'
+                        : 'text-text-muted hover:text-white hover:bg-white/5'
+                    }`}
+                  >
+                    <Activity size={18} className="shrink-0" />
+                    <span className="truncate">System Health & Logs</span>
+                  </Link>
+                </div>
+              </div>
+
+              {/* Dedicated Analysis Button for Admin */}
+              <div className="pt-3 border-t border-white/10">
+                <div className="px-3 pb-2 text-[10px] font-bold uppercase tracking-wider text-text-muted flex items-center justify-between">
+                  <span>Security Assessment</span>
+                  <span className="text-[9px] bg-brand-cyan/20 text-brand-cyan px-1.5 py-0.2 rounded font-mono font-bold">SOVEREIGN</span>
+                </div>
+                <button
+                  onClick={() => {
+                    setMobileSidebarOpen(false);
+                    navigate('/dashboard');
+                  }}
+                  className="w-full flex items-center justify-between p-3 rounded-2xl bg-gradient-to-r from-brand-cyan/20 via-brand-purple/15 to-brand-magenta/20 border border-brand-cyan/40 hover:border-brand-cyan text-white font-semibold transition-all shadow-lg shadow-brand-cyan/10 group"
+                >
+                  <div className="flex items-center gap-2.5">
+                    <div className="w-8 h-8 rounded-xl bg-brand-cyan/20 flex items-center justify-center text-brand-cyan shrink-0 group-hover:scale-110 transition-transform">
+                      <Sparkles size={16} />
+                    </div>
+                    <div className="text-left">
+                      <div className="text-xs font-bold text-white flex items-center gap-1.5">
+                        Analysis
+                        <span className="text-[9px] font-mono uppercase bg-brand-cyan text-black px-1.5 py-0.2 rounded font-black tracking-wider">Enterprise</span>
+                      </div>
+                      <div className="text-[10px] text-text-muted">Launch full scanner suite</div>
+                    </div>
+                  </div>
+                  <ArrowRight size={14} className="text-brand-cyan group-hover:translate-x-1 transition-transform" />
+                </button>
+              </div>
+            </div>
+          ) : isAnalysisMode ? (
+            /* ADMIN ENTERPRISE SOVEREIGN ANALYSIS SUITE */
+            <div className="space-y-3">
+              {/* Enterprise Mode Banner with Return Button */}
+              <div className="p-3 rounded-2xl bg-gradient-to-br from-brand-cyan/20 via-[#1e1b4b]/40 to-brand-magenta/20 border border-brand-cyan/40 text-white shadow-lg shadow-brand-cyan/10">
+                <div className="flex items-center justify-between mb-1.5">
+                  <span className="text-[10px] font-mono uppercase tracking-wider text-brand-cyan font-bold flex items-center gap-1">
+                    <Sparkles size={12} className="animate-pulse" /> Enterprise Sovereign
+                  </span>
+                  <span className="text-[9px] bg-brand-cyan/30 text-brand-cyan px-1.5 py-0.2 rounded font-mono font-bold border border-brand-cyan/40">Admin Active</span>
+                </div>
+                <div className="text-[11px] text-slate-300 leading-tight mb-2.5">
+                  All 25 scanners, scopes, policies, and findings unlocked with enterprise privileges.
+                </div>
+                <button
+                  onClick={() => {
+                    setMobileSidebarOpen(false);
+                    navigate('/dashboard/admin');
+                  }}
+                  className="w-full flex items-center justify-center gap-2 py-1.5 px-3 rounded-xl bg-white/10 hover:bg-white/20 text-xs font-semibold text-white border border-white/15 transition-all shadow-sm"
+                >
+                  <Settings size={13} />
+                  <span>Return to Admin Operations</span>
+                </button>
+              </div>
+
+              {/* Complete Enterprise Scanner & Assessment Navigation */}
+              <div className="space-y-1">
+                {enterpriseNavItems.map(({ to, label, icon: Icon, end }) => (
+                  <NavLink
+                    key={to}
+                    to={to}
+                    end={end}
+                    onClick={() => setMobileSidebarOpen(false)}
+                    className={({ isActive }: { isActive: boolean }) =>
+                      `flex items-center gap-3 px-3.5 py-2.5 rounded-xl text-xs sm:text-sm font-medium transition-all duration-150 ${
+                        isActive
+                          ? 'bg-brand-cyan/15 text-brand-cyan border border-brand-cyan/25 shadow-sm shadow-brand-cyan/10 font-semibold'
+                          : 'text-text-muted hover:text-white hover:bg-white/5'
+                      }`
+                    }
+                  >
+                    <Icon size={18} className="shrink-0" />
+                    <span className="truncate">{label}</span>
+                    {label === 'Billing & Plans' && (
+                      <span className="ml-auto text-[10px] font-bold px-1.5 py-0.5 rounded bg-brand-cyan/20 text-brand-cyan border border-brand-cyan/30">
+                        Chapa
+                      </span>
+                    )}
+                  </NavLink>
+                ))}
+              </div>
+            </div>
+          ) : (
+            /* STANDARD ROLE-FILTERED NAVIGATION */
+            <div className="space-y-1">
+              {filteredNavItems.map(({ to, label, icon: Icon, end }) => (
+                <NavLink
+                  key={to}
+                  to={to}
+                  end={end}
+                  onClick={() => setMobileSidebarOpen(false)}
+                  className={({ isActive }: { isActive: boolean }) =>
+                    `flex items-center gap-3 px-3.5 py-2.5 rounded-xl text-xs sm:text-sm font-medium transition-all duration-150 ${
+                      isActive
+                        ? 'bg-brand-cyan/15 text-brand-cyan border border-brand-cyan/25 shadow-sm shadow-brand-cyan/10 font-semibold'
+                        : 'text-text-muted hover:text-white hover:bg-white/5'
+                    }`
+                  }
+                >
+                  <Icon size={18} className="shrink-0" />
+                  <span className="truncate">{label}</span>
+                  {label === 'Billing & Plans' && (
+                    <span className="ml-auto text-[10px] font-bold px-1.5 py-0.5 rounded bg-brand-cyan/20 text-brand-cyan border border-brand-cyan/30">
+                      Chapa
+                    </span>
+                  )}
+                </NavLink>
+              ))}
+            </div>
+          )}
         </nav>
+
+        {/* Workspace Plan & Capacity Status for Client Owner & Member */}
+        {(currentUser.role === 'client_owner' || currentUser.role === 'client_member') && (
+          <div className="p-3 mx-3 mb-2 rounded-2xl bg-white/[0.03] border border-white/10 space-y-2">
+            <div className="flex items-center justify-between">
+              <span className="text-[10px] font-bold uppercase tracking-wider text-text-muted">Workspace Plan</span>
+              <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold uppercase ${
+                userTier === 'enterprise'
+                  ? 'bg-brand-purple/20 text-brand-purple border border-brand-purple/40 shadow-sm shadow-brand-purple/20'
+                  : userTier === 'pro'
+                  ? 'bg-brand-cyan/20 text-brand-cyan border border-brand-cyan/40 shadow-sm shadow-brand-cyan/20'
+                  : 'bg-white/10 text-slate-300 border border-white/20'
+              }`}>
+                {userTier}
+              </span>
+            </div>
+
+            <div className="text-[11px] text-text-muted leading-tight">
+              {userTier === 'free' && '1 Target Monitored • 5 Scans/mo'}
+              {userTier === 'pro' && 'Unlimited Targets • 5 Seats • Retests'}
+              {userTier === 'enterprise' && 'Sovereign Lab • Dedicated Detonation'}
+            </div>
+
+            {userTier !== 'enterprise' && (
+              <button
+                onClick={() => {
+                  setMobileSidebarOpen(false);
+                  navigate('/dashboard/billing');
+                }}
+                className="w-full py-1.5 px-2.5 rounded-xl text-xs font-semibold flex items-center justify-center gap-1.5 transition-all btn-primary shadow-sm shadow-brand-cyan/20"
+              >
+                <Sparkles size={12} />
+                <span>{userTier === 'free' ? 'Upgrade to Pro' : 'Upgrade to Enterprise'}</span>
+              </button>
+            )}
+          </div>
+        )}
 
         {/* User profile & Sign Out */}
         <div className="p-3 border-t border-white/10">
@@ -187,63 +466,76 @@ export const AppShell: React.FC = () => {
           </div>
 
           <div className="flex items-center gap-2 sm:gap-3">
-            {/* Interactive Actor Switcher Dropdown */}
-            <div className="relative">
-              <button
-                onClick={() => setShowActorMenu(!showActorMenu)}
-                className="flex items-center gap-2 px-3 py-1.5 rounded-full bg-white/5 hover:bg-white/10 border border-white/10 hover:border-brand-cyan/40 text-xs transition-colors"
-                title="Switch Active Operational Actor"
+            {/* Admin Mode Quick Switcher Pill */}
+            {isAdmin && (
+              isAdminSection ? (
+                <button
+                  onClick={() => navigate('/dashboard')}
+                  className="hidden md:flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-brand-cyan/15 hover:bg-brand-cyan/25 border border-brand-cyan/35 text-brand-cyan text-xs font-semibold transition-all shadow-sm shadow-brand-cyan/10"
+                  title="Switch to Enterprise Sovereign Analysis Console"
+                >
+                  <Sparkles size={13} className="animate-pulse" />
+                  <span>Analysis Console</span>
+                  <span className="text-[9px] bg-brand-cyan text-black px-1.5 py-0.2 rounded font-black">ENT</span>
+                </button>
+              ) : (
+                <button
+                  onClick={() => navigate('/dashboard/admin')}
+                  className="hidden md:flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-purple-500/15 hover:bg-purple-500/25 border border-purple-500/35 text-purple-300 text-xs font-semibold transition-all shadow-sm"
+                  title="Return to Admin Operations & Client Orders Dispatch"
+                >
+                  <Settings size={13} />
+                  <span>Admin Operations</span>
+                </button>
+              )
+            )}
+
+            {/* User Role Badge (Read-Only) */}
+            <div className="flex items-center gap-1.5 sm:gap-2">
+              <div
+                className="flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-white/5 border border-white/10 text-xs"
+                title={`Logged in as ${currentUser.role?.replace('_', ' ')}`}
               >
                 <Shield size={13} className="text-brand-cyan" />
-                <span className="text-text-muted hidden sm:inline">Actor:</span>
-                <span className="text-white font-semibold capitalize truncate max-w-[140px]">
+                <span className="text-text-muted hidden sm:inline">Role:</span>
+                <span className="text-white font-semibold capitalize truncate max-w-[130px]">
                   {currentUser.role?.replace('_', ' ')}
                 </span>
-                <ChevronDown size={12} className={`text-text-muted transition-transform ${showActorMenu ? 'rotate-180' : ''}`} />
-              </button>
+              </div>
 
-              {showActorMenu && (
-                <>
-                  <div
-                    className="fixed inset-0 z-40 bg-transparent"
-                    onClick={() => setShowActorMenu(false)}
-                  />
-                  <div className="absolute right-0 top-full mt-2 w-72 bg-[#0f172a] border border-white/20 rounded-2xl p-3 shadow-2xl shadow-black z-50 text-white">
-                    <div className="text-[11px] font-semibold text-text-muted uppercase tracking-wider px-2 pb-2 border-b border-white/10 mb-2 flex items-center justify-between">
-                      <span>Operational Actor</span>
-                      <Sparkles size={12} className="text-brand-cyan" />
-                    </div>
-                    <div className="space-y-1">
-                      {(Object.keys(DEMO_ACTORS) as UserRole[]).map((roleKey) => {
-                        const actor = DEMO_ACTORS[roleKey];
-                        const isCurrent = currentUser.role === roleKey;
-                        return (
-                          <button
-                            key={roleKey}
-                            onClick={() => {
-                              switchRole(roleKey);
-                              setShowActorMenu(false);
-                              navigate(getRoleLandingPath(roleKey));
-                            }}
-                            className={`w-full flex items-center justify-between p-2 rounded-xl text-left text-xs transition-all ${
-                              isCurrent
-                                ? 'bg-brand-cyan/15 text-brand-cyan border border-brand-cyan/30 font-semibold'
-                                : 'hover:bg-white/5 text-slate-300 hover:text-white'
-                            }`}
-                          >
-                            <div className="min-w-0">
-                              <div className="font-medium truncate">{actor.name}</div>
-                              <div className="text-[10px] text-text-muted capitalize">
-                                {actor.role.replace('_', ' ')} • {actor.defaultPath.replace('/dashboard', '~')}
-                              </div>
-                            </div>
-                            {isCurrent && <CheckCircle2 size={14} className="text-brand-cyan shrink-0 ml-2" />}
-                          </button>
-                        );
-                      })}
-                    </div>
-                  </div>
-                </>
+              {/* Tier Badge for client_owner & client_member */}
+              {(currentUser.role === 'client_owner' || currentUser.role === 'client_member') && (
+                <div className="flex items-center gap-1.5">
+                  <span className={`px-2.5 py-1 rounded-full text-xs font-bold uppercase tracking-wider ${
+                    userTier === 'enterprise'
+                      ? 'bg-brand-purple/20 text-brand-purple border border-brand-purple/40 shadow-sm shadow-brand-purple/20'
+                      : userTier === 'pro'
+                      ? 'bg-brand-cyan/20 text-brand-cyan border border-brand-cyan/40 shadow-sm shadow-brand-cyan/20'
+                      : 'bg-white/10 text-slate-300 border border-white/20'
+                  }`}>
+                    {userTier}
+                  </span>
+
+                  {userTier === 'free' && (
+                    <button
+                      onClick={() => navigate('/dashboard/billing')}
+                      className="btn-primary text-xs px-2.5 py-1 rounded-full font-bold flex items-center gap-1 shadow-sm shadow-brand-cyan/20"
+                      title="Upgrade to Pro via Chapa"
+                    >
+                      <Sparkles size={11} />
+                      <span className="hidden sm:inline">Upgrade</span>
+                    </button>
+                  )}
+                  {userTier === 'pro' && (
+                    <button
+                      onClick={() => navigate('/dashboard/billing')}
+                      className="text-xs px-2.5 py-1 rounded-full font-semibold bg-white/5 hover:bg-white/10 text-brand-purple border border-brand-purple/30 transition-colors"
+                      title="Upgrade to Enterprise"
+                    >
+                      <span className="hidden sm:inline">Enterprise</span> &rarr;
+                    </button>
+                  )}
+                </div>
               )}
             </div>
 

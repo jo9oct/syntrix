@@ -10,9 +10,12 @@ import {
   Eye, Check, ExternalLink, ShieldCheck, Tag
 } from 'lucide-react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
+import { useAuthStore, useUserTier } from '../../../store/authStore';
 
 export const Findings: React.FC = () => {
   const navigate = useNavigate();
+  const { user } = useAuthStore();
+  const { tier: userTier, isFree, isPro, isEnterprise } = useUserTier();
   const [searchParams] = useSearchParams();
   const filterScanId = searchParams.get('scanId');
 
@@ -105,6 +108,17 @@ export const Findings: React.FC = () => {
         </div>
 
         <div className="flex items-center gap-3">
+          {(user?.role === 'client_owner' || user?.role === 'client_member') && (
+            <span className={`px-3 py-1 rounded-full text-xs font-bold uppercase tracking-wider ${
+              userTier === 'enterprise'
+                ? 'bg-brand-purple/20 text-brand-purple border border-brand-purple/40'
+                : userTier === 'pro'
+                ? 'bg-brand-cyan/20 text-brand-cyan border border-brand-cyan/40'
+                : 'bg-white/10 text-slate-300 border border-white/20'
+            }`}>
+              {userTier} Triage
+            </span>
+          )}
           <button
             onClick={() => navigate('/dashboard/reports')}
             className="px-4 py-2.5 rounded-xl bg-white/5 hover:bg-white/10 text-white border border-white/10 text-xs font-semibold transition-colors"
@@ -119,6 +133,24 @@ export const Findings: React.FC = () => {
           </button>
         </div>
       </div>
+
+      {/* Tier Retention & Capability Banner for client_member & client_owner */}
+      {(user?.role === 'client_owner' || user?.role === 'client_member') && isFree && (
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 p-4 rounded-2xl bg-amber-500/10 border border-amber-500/30 text-xs shadow-sm">
+          <div className="flex items-center gap-2.5 text-amber-300">
+            <AlertTriangle size={18} className="shrink-0" />
+            <span>
+              <strong>Free Community Tier:</strong> Vulnerability finding logs are retained for 7 days. Upgrade to Pro for automated verification retests, remediation tickets, and executive PDF compliance reports.
+            </span>
+          </div>
+          <button
+            onClick={() => navigate('/dashboard/billing')}
+            className="btn-primary text-xs px-3.5 py-1.5 rounded-xl font-bold shrink-0 shadow-md shadow-brand-cyan/20 self-start sm:self-auto"
+          >
+            Upgrade to Pro
+          </button>
+        </div>
+      )}
 
       {/* Filters and Search Bar */}
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
@@ -156,10 +188,10 @@ export const Findings: React.FC = () => {
           >
             <option value="all">All Statuses</option>
             <option value="detected">Detected</option>
-            <option value="accepted">Accepted</option>
-            <option value="in-progress">In-Progress</option>
-            <option value="false-positive">False Positive</option>
-            <option value="resolved">Resolved</option>
+            <option value="verified">Verified</option>
+            <option value="accepted">Accepted (Risk Sign-off)</option>
+            <option value="false_positive">False Positive</option>
+            <option value="resolved">Resolved / Fixed</option>
           </select>
 
           <span className="text-xs text-text-muted pl-2">
@@ -209,7 +241,7 @@ export const Findings: React.FC = () => {
                 </div>
 
                 <div className="flex items-center gap-2.5 self-end lg:self-start shrink-0">
-                  {/* Status Dropdown (API 6) */}
+                  {/* Status Dropdown (API 6: PATCH /api/v1/findings/:id) */}
                   <div className="relative">
                     <select
                       value={finding.status}
@@ -218,9 +250,9 @@ export const Findings: React.FC = () => {
                       className="bg-[#1e293b] border border-white/15 rounded-xl px-3 py-1.5 text-xs text-white focus:outline-none focus:border-brand-cyan capitalize font-medium cursor-pointer"
                     >
                       <option value="detected">Detected</option>
+                      <option value="verified">Verified</option>
                       <option value="accepted">Accepted (Risk Sign-off)</option>
-                      <option value="in-progress">In-Progress</option>
-                      <option value="false-positive">False Positive</option>
+                      <option value="false_positive">False Positive</option>
                       <option value="resolved">Resolved / Fixed</option>
                     </select>
                   </div>
@@ -256,10 +288,10 @@ export const Findings: React.FC = () => {
                       HTTP Status: <strong className="text-amber-300">{finding.metadata.responseStatus}</strong>
                     </span>
                   )}
-                  <span>Scan: <strong className="text-white">{finding.scanId}</strong></span>
+                  <span>Status: <strong className="text-white capitalize">{finding.status.replace(/_/g, ' ')}</strong></span>
                 </div>
                 <div className="truncate max-w-sm">
-                  Fingerprint: {finding.fingerprint}
+                  Confidence: <span className="text-brand-cyan">{finding.confidence}</span>
                 </div>
               </div>
             </GlassCard>

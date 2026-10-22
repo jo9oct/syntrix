@@ -112,8 +112,16 @@ ${Object.entries(evidence.headers || {})
                   <span className="font-mono text-white/50">{evidence.method}</span>
                 </div>
                 <div className="p-4 rounded-xl bg-black/60 border border-white/10 font-mono text-xs text-slate-300 leading-relaxed overflow-x-auto">
-                  <div className="text-brand-cyan">{evidence.request?.method || evidence.method} {evidence.request?.url || evidence.url} HTTP/1.1</div>
-                  <div className="text-slate-400">Host: {new URL(evidence.url).host}</div>
+                  <div className="text-brand-cyan">{evidence.request?.method || evidence.method || 'GET'} {evidence.request?.url || evidence.url} HTTP/1.1</div>
+                  <div className="text-slate-400">
+                    Host: {(() => {
+                      try {
+                        return new URL(evidence.url.startsWith('http') ? evidence.url : `http://${evidence.url}`).host;
+                      } catch {
+                        return evidence.url;
+                      }
+                    })()}
+                  </div>
                   <div className="text-slate-400">User-Agent: Sentrix-Security-Scanner/2.0</div>
                   <div className="text-slate-400">Accept: */*</div>
                   {evidence.request?.body && (
@@ -217,7 +225,7 @@ ${Object.entries(evidence.headers || {})
         {/* Footer */}
         <div className="flex items-center justify-between px-6 py-3 border-t border-white/10 bg-white/[0.02] text-xs">
           <span className="text-text-muted">
-            Evidence ID: <span className="font-mono text-white">{evidence._id}</span>
+            Evidence Type: <span className="font-mono text-white capitalize">{evidence.type || 'HTTP Exchange'}</span>
           </span>
           <button
             onClick={onClose}

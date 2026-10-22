@@ -1,8 +1,5 @@
 import { Router } from "express";
 import authRoutes from "./auth.routes.js";
-import projectRoutes from "./projects.routes.js";
-import malwareRoutes from "./malware.routes.js";
-import assessmentRoutes from "./assessment.routes.js";
 import paymentRoutes from "./payment.routes.js";
 import adminRoutes from "./admin.routes.js";
 
@@ -17,9 +14,6 @@ router.get("/", (req, res) => {
       health: "/api/health",
       auth: "/api/auth",
       admin: "/api/admin",
-      projects: "/api/projects",
-      malware: "/api/malware",
-      assessments: "/api/assessments",
       payment: "/api/payment",
     },
   });
@@ -27,9 +21,6 @@ router.get("/", (req, res) => {
 
 router.use("/auth", authRoutes);
 router.use("/admin", adminRoutes);
-router.use("/projects", projectRoutes);
-router.use("/malware", malwareRoutes);
-router.use("/assessments", assessmentRoutes);
 router.use("/payment", paymentRoutes);
 
 export default router;

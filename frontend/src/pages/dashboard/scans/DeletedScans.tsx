@@ -88,7 +88,9 @@ export const DeletedScans: React.FC = () => {
                 <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4">
                   <div className="space-y-2">
                     <div className="flex items-center gap-2.5 flex-wrap">
-                      <span className="font-mono text-sm font-bold text-white">{scan._id}</span>
+                      <span className="font-mono text-sm font-bold text-white">
+                        {scan.targetUrl ? new URL(scan.targetUrl).hostname : 'Target Asset'}
+                      </span>
                       <span className="px-2 py-0.5 rounded-full bg-red-500/10 text-red-400 border border-red-500/25 text-[10px] font-semibold uppercase">
                         Deleted
                       </span>

@@ -4,7 +4,7 @@ import type { Scope } from '../../../types/sentrix';
 import api from '../../../lib/api';
 import {
   Globe, Plus, Shield, Trash2, Edit3, CheckCircle2,
-  AlertTriangle, Server, Network, Search, X
+  AlertTriangle, Server, Network, Search, X, Eye, Check
 } from 'lucide-react';
 
 export const Scopes: React.FC = () => {
@@ -14,21 +14,30 @@ export const Scopes: React.FC = () => {
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [editingScope, setEditingScope] = useState<Scope | null>(null);
 
-  // Form state
-  const [name, setName] = useState('');
-  const [hostnamesInput, setHostnamesInput] = useState('');
-  const [portsInput, setPortsInput] = useState('443, 80');
-  const [includeSubdomains, setIncludeSubdomains] = useState(true);
-  const [submitting, setSubmitting] = useState(false);
+  // Detail Inspector Modal (API 3: GET /api/v1/scopes/:id)
+  const [detailScope, setDetailScope] = useState<Scope | null>(null);
+  const [loadingDetail, setLoadingDetail] = useState(false);
 
+  // Form state
+  // Default create values matching the user's requested specification:
+  // name: "My Website-3", hostnames: ["review-x-u6mr6.vercel.app"], ports: [443], includeSubdomains: false
+  const [name, setName] = useState('My Website-3');
+  const [hostnamesInput, setHostnamesInput] = useState('review-x-u6mr6.vercel.app');
+  const [portsInput, setPortsInput] = useState('443');
+  const [includeSubdomains, setIncludeSubdomains] = useState(false);
+  const [submitting, setSubmitting] = useState(false);
+  const [formError, setFormError] = useState<string | null>(null);
+
+  // API 2: GET /api/v1/scopes - List Scopes
   const fetchScopes = async () => {
     try {
+      setLoading(true);
       const res = await api.get('/scopes');
       if (res.data?.data?.scopes) {
         setScopes(res.data.data.scopes);
       }
-    } catch (err) {
-      console.error('Failed to fetch scopes', err);
+    } catch (err: any) {
+      console.error('Failed to fetch scopes from backend', err);
     } finally {
       setLoading(false);
     }
@@ -40,71 +49,131 @@ export const Scopes: React.FC = () => {
 
   const openCreateModal = () => {
     setEditingScope(null);
-    setName('');
-    setHostnamesInput('');
-    setPortsInput('443, 80');
-    setIncludeSubdomains(true);
+    setName('My Website-3');
+    setHostnamesInput('review-x-u6mr6.vercel.app');
+    setPortsInput('443');
+    setIncludeSubdomains(false);
+    setFormError(null);
     setIsModalOpen(true);
   };
 
-  const openEditModal = (scope: Scope) => {
-    setEditingScope(scope);
-    setName(scope.name);
-    setHostnamesInput(scope.hostnames.join(', '));
-    setPortsInput(scope.ports.join(', '));
-    setIncludeSubdomains(scope.includeSubdomains);
-    setIsModalOpen(true);
+  // API 3: GET /api/v1/scopes/:id - Get Scope Details & Populate Form
+  const openEditModal = async (scope: Scope) => {
+    try {
+      setFormError(null);
+      // Fetch full fresh scope details from backend before editing
+      const res = await api.get(`/scopes/${scope._id}`);
+      const targetScope = res.data?.data?.scope || scope;
+      setEditingScope(targetScope);
+      setName(targetScope.name);
+      setHostnamesInput(targetScope.hostnames.join(', '));
+      setPortsInput(targetScope.ports.join(', '));
+      setIncludeSubdomains(Boolean(targetScope.includeSubdomains));
+      setIsModalOpen(true);
+    } catch (err) {
+      // Fallback to existing scope state
+      setEditingScope(scope);
+      setName(scope.name);
+      setHostnamesInput(scope.hostnames.join(', '));
+      setPortsInput(scope.ports.join(', '));
+      setIncludeSubdomains(Boolean(scope.includeSubdomains));
+      setIsModalOpen(true);
+    }
   };
 
+  // API 3: GET /api/v1/scopes/:id - Inspect Scope
+  const handleViewScope = async (scopeId: string) => {
+    try {
+      setLoadingDetail(true);
+      const res = await api.get(`/scopes/${scopeId}`);
+      if (res.data?.data?.scope) {
+        setDetailScope(res.data.data.scope);
+      }
+    } catch (err) {
+      console.error('Failed to view scope', err);
+    } finally {
+      setLoadingDetail(false);
+    }
+  };
+
+  // API 1 & 4: POST /api/v1/scopes & PATCH /api/v1/scopes/:id
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!name.trim() || !hostnamesInput.trim()) return;
+    if (!name.trim()) {
+      setFormError('Scope name is required.');
+      return;
+    }
 
-    setSubmitting(true);
+    // Clean hostnames (strip protocol, trailing paths, slashes, ports)
+    const sanitizeHost = (raw: string) => {
+      let h = raw.trim().toLowerCase();
+      h = h.replace(/^https?:\/\//i, '');
+      h = h.split('/')[0];
+      h = h.split(':')[0];
+      return h;
+    };
+
     const hostnames = hostnamesInput
       .split(',')
-      .map(h => h.trim())
+      .map(sanitizeHost)
       .filter(Boolean);
+
+    if (hostnames.length === 0) {
+      setFormError('At least one valid hostname is required (e.g. review-x-u6mr6.vercel.app).');
+      return;
+    }
+
     const ports = portsInput
       .split(',')
       .map(p => parseInt(p.trim(), 10))
-      .filter(p => !isNaN(p));
+      .filter(p => !isNaN(p) && p >= 1 && p <= 65535);
+
+    if (ports.length === 0) {
+      setFormError('At least one valid port number between 1 and 65535 is required (e.g. 443).');
+      return;
+    }
+
+    setSubmitting(true);
+    setFormError(null);
+
+    // Full request payload
+    const payload = {
+      name: name.trim(),
+      hostnames: [...new Set(hostnames)],
+      ports: [...new Set(ports)],
+      includeSubdomains: Boolean(includeSubdomains)
+    };
 
     try {
       if (editingScope) {
-        // API 31: Update Security Scope
-        await api.patch(`/scopes/${editingScope._id}`, {
-          name,
-          hostnames,
-          ports,
-          includeSubdomains
-        });
+        // API 4: PATCH /api/v1/scopes/:id - Update scope with full payload
+        await api.patch(`/scopes/${editingScope._id}`, payload);
       } else {
-        // API 28: Create Security Scope
-        await api.post('/scopes', {
-          name,
-          hostnames,
-          ports,
-          includeSubdomains
-        });
+        // API 1: POST /api/v1/scopes - Create scope with full payload
+        await api.post('/scopes', payload);
       }
       setIsModalOpen(false);
       await fetchScopes();
-    } catch (err) {
-      console.error('Failed to save scope', err);
+    } catch (err: any) {
+      const serverMsg = err.response?.data?.error?.message || err.response?.data?.message || err.message;
+      setFormError(serverMsg || 'Failed to save scope.');
     } finally {
       setSubmitting(false);
     }
   };
 
+  // API 5: DELETE /api/v1/scopes/:id - Delete Scope
   const handleDelete = async (id: string, scopeName: string) => {
     if (!window.confirm(`Are you sure you want to delete scope "${scopeName}"?`)) return;
     try {
-      // API 32: Delete Security Scope
       await api.delete(`/scopes/${id}`);
       await fetchScopes();
-    } catch (err) {
-      console.error('Failed to delete scope', err);
+      if (detailScope?._id === id) {
+        setDetailScope(null);
+      }
+    } catch (err: any) {
+      const serverMsg = err.response?.data?.error?.message || err.response?.data?.message || err.message;
+      alert(`Delete failed: ${serverMsg}`);
     }
   };
 
@@ -183,22 +252,31 @@ export const Scopes: React.FC = () => {
                     </div>
                     <div>
                       <h3 className="text-sm font-bold text-white tracking-tight">{scope.name}</h3>
-                      <span className="text-[10px] font-mono text-text-muted">{scope._id}</span>
+                      <span className="text-[10px] font-mono text-brand-cyan bg-brand-cyan/10 px-1.5 py-0.5 rounded">
+                        Authorized Boundary
+                      </span>
                     </div>
                   </div>
 
                   <div className="flex items-center gap-1">
                     <button
+                      onClick={() => handleViewScope(scope._id)}
+                      className="p-1.5 rounded-lg text-text-muted hover:text-brand-cyan hover:bg-brand-cyan/10 transition-colors"
+                      title="Inspect Scope Details (API 3)"
+                    >
+                      <Eye size={15} />
+                    </button>
+                    <button
                       onClick={() => openEditModal(scope)}
                       className="p-1.5 rounded-lg text-text-muted hover:text-white hover:bg-white/10 transition-colors"
-                      title="Edit Scope"
+                      title="Edit Scope (API 4)"
                     >
                       <Edit3 size={15} />
                     </button>
                     <button
                       onClick={() => handleDelete(scope._id, scope.name)}
                       className="p-1.5 rounded-lg text-text-muted hover:text-red-400 hover:bg-red-500/10 transition-colors"
-                      title="Delete Scope"
+                      title="Delete Scope (API 5)"
                     >
                       <Trash2 size={15} />
                     </button>
@@ -225,9 +303,9 @@ export const Scopes: React.FC = () => {
                 {/* Ports & Subdomains */}
                 <div className="grid grid-cols-2 gap-3 pt-2 border-t border-white/5 text-xs">
                   <div>
-                    <span className="text-text-muted block text-[10px] uppercase font-semibold">Ports</span>
+                    <span className="text-text-muted block text-[10px] uppercase font-semibold">Allowed Ports</span>
                     <span className="font-mono text-white font-medium">
-                      {scope.ports.join(', ') || '443, 80'}
+                      {scope.ports.join(', ') || '443'}
                     </span>
                   </div>
                   <div>
@@ -243,7 +321,7 @@ export const Scopes: React.FC = () => {
               </div>
 
               <div className="mt-5 pt-3 border-t border-white/5 flex items-center justify-between text-[11px] text-text-muted">
-                <span>Updated: {new Date(scope.updatedAt).toLocaleDateString()}</span>
+                <span>Updated: {new Date(scope.updatedAt || Date.now()).toLocaleDateString()}</span>
                 <span className="text-brand-cyan font-mono text-[10px]">Verified Scope</span>
               </div>
             </GlassCard>
@@ -251,13 +329,98 @@ export const Scopes: React.FC = () => {
         </div>
       )}
 
-      {/* Create / Edit Modal */}
+      {/* Scope Details Inspector Modal (API 3: GET /api/v1/scopes/:id) */}
+      {detailScope && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-md animate-fadeIn">
+          <div className="w-full max-w-xl bg-[#0f172a] border border-white/20 rounded-2xl shadow-2xl overflow-hidden text-white">
+            <div className="flex items-center justify-between px-6 py-4 border-b border-white/10 bg-white/[0.02]">
+              <div className="flex items-center gap-2.5">
+                <div className="w-8 h-8 rounded-lg bg-brand-cyan/20 text-brand-cyan flex items-center justify-center">
+                  <Shield size={16} />
+                </div>
+                <div>
+                  <h3 className="text-base font-bold text-white">Security Scope Intelligence</h3>
+                  <span className="text-[11px] text-text-muted">Direct telemetry from API 3</span>
+                </div>
+              </div>
+              <button
+                onClick={() => setDetailScope(null)}
+                className="p-1 rounded-lg text-text-muted hover:text-white hover:bg-white/10 transition-colors"
+              >
+                <X size={18} />
+              </button>
+            </div>
+
+            <div className="p-6 space-y-4">
+              <div className="p-4 rounded-xl bg-white/[0.02] border border-white/10 space-y-3">
+                <div>
+                  <span className="text-[10px] uppercase font-bold text-text-muted tracking-wider block">Scope Name</span>
+                  <div className="text-base font-bold text-white mt-0.5">{detailScope.name}</div>
+                </div>
+
+                <div>
+                  <span className="text-[10px] uppercase font-bold text-text-muted tracking-wider block mb-1">
+                    Permitted Target Hostnames ({detailScope.hostnames.length})
+                  </span>
+                  <div className="flex flex-wrap gap-2">
+                    {detailScope.hostnames.map(h => (
+                      <span key={h} className="px-2.5 py-1 rounded-lg bg-black/50 border border-brand-cyan/30 text-brand-cyan font-mono text-xs">
+                        {h}
+                      </span>
+                    ))}
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-2 gap-4 pt-2 border-t border-white/10 text-xs">
+                  <div>
+                    <span className="text-[10px] uppercase font-bold text-text-muted tracking-wider block">Allowed Ports</span>
+                    <span className="font-mono text-white text-sm font-semibold">{detailScope.ports.join(', ')}</span>
+                  </div>
+                  <div>
+                    <span className="text-[10px] uppercase font-bold text-text-muted tracking-wider block">Subdomain Policy</span>
+                    <span className={`inline-flex items-center gap-1 text-xs font-bold mt-1 ${detailScope.includeSubdomains ? 'text-green-400' : 'text-slate-300'}`}>
+                      <CheckCircle2 size={13} />
+                      {detailScope.includeSubdomains ? 'Wildcard (*.domain) Allowed' : 'Strict Host Only'}
+                    </span>
+                  </div>
+                </div>
+              </div>
+
+              <div className="p-3.5 rounded-xl bg-amber-500/10 border border-amber-500/25 text-xs text-amber-300">
+                <strong>Enforcement Status:</strong> Autonomous recon and vulnerability scanners are cryptographically restricted to these targets.
+              </div>
+            </div>
+
+            <div className="flex items-center justify-between px-6 py-3.5 border-t border-white/10 bg-white/[0.02] text-xs">
+              <button
+                onClick={() => {
+                  const s = detailScope;
+                  setDetailScope(null);
+                  openEditModal(s);
+                }}
+                className="px-4 py-2 rounded-xl bg-brand-cyan/15 hover:bg-brand-cyan/25 text-brand-cyan border border-brand-cyan/30 font-semibold flex items-center gap-1.5 transition-colors"
+              >
+                <Edit3 size={14} /> Edit Scope
+              </button>
+
+              <button
+                onClick={() => setDetailScope(null)}
+                className="px-4 py-2 rounded-xl bg-white/10 hover:bg-white/15 text-white font-semibold transition-colors"
+              >
+                Close
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Create / Edit Modal (APIs 1 & 4) */}
       {isModalOpen && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-md animate-fadeIn">
           <div className="w-full max-w-lg bg-[#0f172a] border border-white/20 rounded-2xl shadow-2xl overflow-hidden text-white">
             <div className="flex items-center justify-between px-6 py-4 border-b border-white/10">
               <h3 className="text-base font-bold text-white">
-                {editingScope ? 'Edit Security Scope' : 'Create Security Scope'}
+                {editingScope ? 'Edit Security Scope (API 4)' : 'Create Security Scope (API 1)'}
               </h3>
               <button
                 onClick={() => setIsModalOpen(false)}
@@ -268,6 +431,13 @@ export const Scopes: React.FC = () => {
             </div>
 
             <form onSubmit={handleSubmit} className="p-6 space-y-4">
+              {formError && (
+                <div className="p-3 rounded-xl bg-red-500/10 border border-red-500/30 text-red-400 text-xs flex items-center gap-2">
+                  <AlertTriangle size={15} className="shrink-0" />
+                  <span>{formError}</span>
+                </div>
+              )}
+
               <div>
                 <label className="block text-xs font-semibold text-text-muted uppercase tracking-wider mb-1.5">
                   Scope Name
@@ -275,7 +445,7 @@ export const Scopes: React.FC = () => {
                 <input
                   type="text"
                   required
-                  placeholder="e.g. My Website-3, Production API Cluster"
+                  placeholder="My Website-3"
                   value={name}
                   onChange={e => setName(e.target.value)}
                   className="w-full bg-white/5 border border-white/10 rounded-xl px-3.5 py-2 text-xs text-white focus:outline-none focus:border-brand-cyan"
@@ -289,7 +459,7 @@ export const Scopes: React.FC = () => {
                 <input
                   type="text"
                   required
-                  placeholder="review-x-u6mr6.vercel.app, api.sentrix.io"
+                  placeholder="review-x-u6mr6.vercel.app"
                   value={hostnamesInput}
                   onChange={e => setHostnamesInput(e.target.value)}
                   className="w-full bg-white/5 border border-white/10 rounded-xl px-3.5 py-2 text-xs text-white focus:outline-none focus:border-brand-cyan font-mono"
@@ -305,7 +475,8 @@ export const Scopes: React.FC = () => {
                 </label>
                 <input
                   type="text"
-                  placeholder="443, 80"
+                  required
+                  placeholder="443"
                   value={portsInput}
                   onChange={e => setPortsInput(e.target.value)}
                   className="w-full bg-white/5 border border-white/10 rounded-xl px-3.5 py-2 text-xs text-white focus:outline-none focus:border-brand-cyan font-mono"
@@ -318,7 +489,7 @@ export const Scopes: React.FC = () => {
                   id="includeSubdomainsCheck"
                   checked={includeSubdomains}
                   onChange={e => setIncludeSubdomains(e.target.checked)}
-                  className="w-4 h-4 rounded bg-white/5 border-white/20 text-brand-cyan focus:ring-0"
+                  className="w-4 h-4 rounded bg-white/5 border-white/20 text-brand-cyan focus:ring-0 cursor-pointer"
                 />
                 <label htmlFor="includeSubdomainsCheck" className="text-xs text-slate-300 cursor-pointer">
                   Include Subdomains (Permit recon and discovery across *.domain)
@@ -338,7 +509,7 @@ export const Scopes: React.FC = () => {
                   disabled={submitting}
                   className="btn-primary text-xs px-5 py-2 rounded-xl font-semibold shadow-md shadow-brand-cyan/20"
                 >
-                  {submitting ? 'Saving...' : editingScope ? 'Update Scope' : 'Create Scope'}
+                  {submitting ? 'Saving...' : editingScope ? 'Update Scope (API 4)' : 'Create Scope (API 1)'}
                 </button>
               </div>
             </form>

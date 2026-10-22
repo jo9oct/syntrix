@@ -1,10 +1,21 @@
+// STATUS: UPDATED
+// FILE: src/routes/admin.routes.js
+
 import { Router } from "express";
 import {
   getUsers,
   createUser,
   toggleUserStatus,
+  updateUserRole,
+  getAdminDashboardStats,
 } from "../controllers/admin.controller.js";
 import { protect, authorize } from "../middleware/auth.js";
+import { validate } from "../middleware/validation.middleware.js";
+import {
+  createUserSchema,
+  updateUserRoleSchema,
+  userIdParamSchema,
+} from "../validators/admin.validator.js";
 
 const router = Router();
 
@@ -12,8 +23,33 @@ const router = Router();
 router.use(protect);
 router.use(authorize("admin"));
 
-router.route("/users").get(getUsers).post(createUser);
+// Dashboard Statistics API
+router.get("/dashboard", getAdminDashboardStats);
+router.get("/admin/dashboard", getAdminDashboardStats);
 
-router.route("/users/:id/status").put(toggleUserStatus);
+// User Management APIs
+router
+  .route("/users")
+  .get(getUsers)
+  .post(validate(createUserSchema, "body"), createUser);
+
+// User Status Toggle API
+router
+  .route("/users/:id/status")
+  .put(validate(userIdParamSchema, "params"), toggleUserStatus);
+
+// User Role Update APIs (PUT & PATCH)
+router
+  .route("/users/:id/role")
+  .put(
+    validate(userIdParamSchema, "params"),
+    validate(updateUserRoleSchema, "body"),
+    updateUserRole,
+  )
+  .patch(
+    validate(userIdParamSchema, "params"),
+    validate(updateUserRoleSchema, "body"),
+    updateUserRole,
+  );
 
 export default router;
