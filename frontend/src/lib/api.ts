@@ -68,8 +68,17 @@ api.interceptors.request.use(async (config) => {
   const url = config.url || '';
   const method = (config.method || 'get').toLowerCase();
 
-  // REAL BACKEND: Authentication endpoints & Users bypass mock adapter
-  if (url.includes('auth/') || url.match(/\/auth\//i) || url.includes('payment/') || url.match(/\/payment\//i) || url.includes('users')) {
+  // REAL BACKEND: Authentication endpoints, Users, Service Orders & Projects bypass mock adapter
+  if (
+    url.includes('auth/') ||
+    url.match(/\/auth\//i) ||
+    url.includes('payment/') ||
+    url.match(/\/payment\//i) ||
+    url.includes('users') ||
+    url.includes('service-orders') ||
+    url.includes('service-projects') ||
+    url.includes('project-tasks')
+  ) {
     return config;
   }
 

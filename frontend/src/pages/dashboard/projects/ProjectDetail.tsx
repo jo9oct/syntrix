@@ -331,13 +331,22 @@ export const ProjectDetail: React.FC = () => {
                     >
                       <FileText size={14} /> PDF & Reports
                     </Link>
-                  ) : (
+                  ) : (latestScan.status === 'running' || latestScan.status === 'pending') ? (
                     <span
                       className="px-3 py-1.5 rounded-xl bg-amber-500/10 border border-amber-500/30 text-amber-300 text-xs font-semibold flex items-center gap-1.5 cursor-not-allowed opacity-90"
                       title="PDF reports are locked while the assessment is running"
                     >
                       <Clock size={13} className="animate-spin text-amber-400" /> Scan In Progress — PDF Unavailable
                     </span>
+                  ) : scanHistory.some(s => s.status === 'completed') ? (
+                    <Link
+                      to={`/dashboard/reports?scanId=${scanHistory.find(s => s.status === 'completed')?._id}`}
+                      className="btn-primary text-xs px-3.5 py-1.5 rounded-xl font-semibold flex items-center gap-1.5 shadow-md shadow-brand-cyan/20"
+                    >
+                      <FileText size={14} /> PDF & Reports
+                    </Link>
+                  ) : (
+                    <span className="text-xs text-text-muted">No Completed Audits</span>
                   )}
                   <Link
                     to={`/dashboard/assessment/${latestScan._id}/results`}
@@ -469,37 +478,51 @@ export const ProjectDetail: React.FC = () => {
 
                     <div className="flex items-center gap-2 self-end lg:self-center">
                       {scan.status === 'completed' ? (
-                        <Link
-                          to={`/dashboard/reports?scanId=${scan._id}`}
-                          className="px-3 py-1.5 rounded-xl bg-brand-cyan/20 hover:bg-brand-cyan/30 text-brand-cyan border border-brand-cyan/30 text-xs font-semibold flex items-center gap-1.5 transition-colors"
-                          title="Generate or view compliance PDF report"
-                        >
-                          <FileText size={13} /> PDF Report
-                        </Link>
+                        <>
+                          <Link
+                            to={`/dashboard/reports?scanId=${scan._id}`}
+                            className="px-3 py-1.5 rounded-xl bg-brand-cyan/20 hover:bg-brand-cyan/30 text-brand-cyan border border-brand-cyan/30 text-xs font-semibold flex items-center gap-1.5 transition-colors"
+                            title="Generate or view compliance PDF report"
+                          >
+                            <FileText size={13} /> PDF Report
+                          </Link>
+
+                          <button
+                            disabled={retesting}
+                            onClick={() => handleRetest(scan)}
+                            className="px-3 py-1.5 rounded-xl bg-white/5 hover:bg-white/10 text-white border border-white/10 text-xs font-semibold flex items-center gap-1 transition-colors disabled:opacity-50"
+                            title="Retest using this run configuration"
+                          >
+                            <RotateCcw size={12} className={retesting ? 'animate-spin text-brand-cyan' : 'text-brand-cyan'} /> Retest
+                          </button>
+
+                          <Link
+                            to={`/dashboard/assessment/${scan._id}/results`}
+                            className="px-3.5 py-1.5 rounded-xl bg-white/5 hover:bg-white/10 border border-white/10 text-xs font-semibold text-white transition-colors"
+                          >
+                            View Findings & Evidence
+                          </Link>
+                        </>
                       ) : (
-                        <span
-                          className="px-2.5 py-1.5 rounded-xl bg-amber-500/10 border border-amber-500/25 text-amber-300 text-[11px] font-mono flex items-center gap-1.5"
-                          title="PDF generation is locked during active scans"
-                        >
-                          <Clock size={12} className="animate-spin text-amber-400" /> Scanning (No PDF)
-                        </span>
+                        <>
+                          <Link
+                            to={`/dashboard/assessment/${scan._id}/progress`}
+                            className="px-3 py-1.5 rounded-xl bg-amber-500/15 hover:bg-amber-500/25 border border-amber-500/35 text-amber-300 text-xs font-semibold flex items-center gap-1.5 transition-all shadow-sm shadow-amber-500/10"
+                            title="Assessment is not finished. Click to view live scanning worker logs and telemetry stream."
+                          >
+                            <Activity size={13} className="animate-spin text-amber-400" /> View Scanning Worker Logs
+                          </Link>
+
+                          <button
+                            disabled={retesting}
+                            onClick={() => handleRetest(scan)}
+                            className="px-3 py-1.5 rounded-xl bg-white/5 hover:bg-white/10 text-white border border-white/10 text-xs font-semibold flex items-center gap-1 transition-colors disabled:opacity-50"
+                            title="Cancel current and relaunch fresh retest"
+                          >
+                            <RotateCcw size={12} className={retesting ? 'animate-spin text-brand-cyan' : 'text-brand-cyan'} /> Retest
+                          </button>
+                        </>
                       )}
-
-                      <button
-                        disabled={retesting}
-                        onClick={() => handleRetest(scan)}
-                        className="px-3 py-1.5 rounded-xl bg-white/5 hover:bg-white/10 text-white border border-white/10 text-xs font-semibold flex items-center gap-1 transition-colors disabled:opacity-50"
-                        title="Retest using this run configuration"
-                      >
-                        <RotateCcw size={12} className={retesting ? 'animate-spin text-brand-cyan' : 'text-brand-cyan'} /> Retest
-                      </button>
-
-                      <Link
-                        to={`/dashboard/assessment/${scan._id}/results`}
-                        className="px-3.5 py-1.5 rounded-xl bg-white/5 hover:bg-white/10 border border-white/10 text-xs font-semibold text-white transition-colors"
-                      >
-                        View Findings & Evidence
-                      </Link>
 
                       {/* Soft Delete Scan (API 9) */}
                       <button

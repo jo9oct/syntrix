@@ -5,10 +5,12 @@ import api from '../../../lib/api';
 import {
   RotateCcw, CheckCircle2, AlertTriangle,
   Play, Terminal, ArrowRight, ShieldCheck, Globe,
-  Clock, RefreshCw, ExternalLink, Layers, Shield
+  Clock, RefreshCw, ExternalLink, Layers, Shield,
+  X, Check, Send
 } from 'lucide-react';
 import { useNavigate, Link } from 'react-router-dom';
 import { useUserTier } from '../../../store/authStore';
+import type { ServiceProject } from '../../../types/serviceManagement';
 
 export const RetestPage: React.FC = () => {
   const navigate = useNavigate();
@@ -19,6 +21,58 @@ export const RetestPage: React.FC = () => {
   const [completedScans, setCompletedScans] = useState<Scan[]>([]);
   const [loading, setLoading] = useState(true);
   const [activeTestingId, setActiveTestingId] = useState<string | null>(null);
+
+  // Security Operations Workspace Tab & Project Audits State
+  const [secTab, setSecTab] = useState<'scanner_retest' | 'project_audits'>('scanner_retest');
+  const [secProjects, setSecProjects] = useState<ServiceProject[]>([]);
+  const [loadingProjects, setLoadingProjects] = useState(false);
+  const [signoffProject, setSignoffProject] = useState<ServiceProject | null>(null);
+  const [signoffForm, setSignoffForm] = useState({ approved: true, notes: '' });
+  const [signoffSubmitting, setSignoffSubmitting] = useState(false);
+  const [statusNotification, setStatusNotification] = useState<string | null>(null);
+
+  const fetchSecProjects = async () => {
+    setLoadingProjects(true);
+    try {
+      const res = await api.get('/service-projects');
+      const list = res.data?.data?.projects || (Array.isArray(res.data?.data) ? res.data.data : []);
+      setSecProjects(list);
+    } catch (err) {
+      console.error('Failed to load sec projects', err);
+    } finally {
+      setLoadingProjects(false);
+    }
+  };
+
+  useEffect(() => {
+    fetchSecProjects();
+  }, []);
+
+  const handleSecuritySignoff = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!signoffProject) return;
+    try {
+      setSignoffSubmitting(true);
+      await api.post(`/service-projects/${signoffProject._id}/security-signoff`, {
+        approved: signoffForm.approved,
+        notes: signoffForm.notes.trim()
+      });
+      setStatusNotification(
+        signoffForm.approved
+          ? `✓ Technical Security Sign-Off recorded for ${signoffProject.title}! Advanced to Admin Review.`
+          : `✓ Project ${signoffProject.title} returned to Developer team with audit defect notes.`
+      );
+      setSignoffProject(null);
+      setSignoffForm({ approved: true, notes: '' });
+      fetchSecProjects();
+      setTimeout(() => setStatusNotification(null), 5000);
+    } catch (err: any) {
+      setStatusNotification(err.response?.data?.message || 'Failed to submit security signoff.');
+      setTimeout(() => setStatusNotification(null), 5000);
+    } finally {
+      setSignoffSubmitting(false);
+    }
+  };
 
   // Fetch real target assets & scan profiles from backend
   const fetchRetestData = async () => {
@@ -209,8 +263,243 @@ export const RetestPage: React.FC = () => {
         </button>
       </div>
 
-      {/* Target Assets Queue for Retesting */}
-      <div className="space-y-4">
+      {/* Status notification toast */}
+      {statusNotification && (
+        <div className="p-3.5 rounded-xl bg-brand-cyan/10 border border-brand-cyan/30 text-xs text-brand-cyan flex items-center justify-between animate-fadeIn">
+          <div className="flex items-center gap-2">
+            <CheckCircle2 size={16} />
+            <span>{statusNotification}</span>
+          </div>
+          <button onClick={() => setStatusNotification(null)} className="text-text-muted hover:text-white text-xs">
+            Dismiss
+          </button>
+        </div>
+      )}
+
+      {/* Security Operations Mode Switcher */}
+      <div className="flex items-center gap-2 border-b border-white/10 pb-2">
+        <button
+          onClick={() => setSecTab('scanner_retest')}
+          className={`flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-semibold transition-all ${
+            secTab === 'scanner_retest'
+              ? 'bg-brand-cyan/20 text-brand-cyan border border-brand-cyan/30 shadow-sm'
+              : 'text-text-muted hover:text-white hover:bg-white/5'
+          }`}
+        >
+          <RotateCcw size={15} />
+          <span>Automated Retesting Engine ({targets.length})</span>
+        </button>
+
+        <button
+          onClick={() => setSecTab('project_audits')}
+          className={`flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-semibold transition-all ${
+            secTab === 'project_audits'
+              ? 'bg-amber-500/20 text-amber-300 border border-amber-500/30 shadow-sm'
+              : 'text-text-muted hover:text-white hover:bg-white/5'
+          }`}
+        >
+          <Shield size={15} />
+          <span>Security Audit & Project Sign-Off ({secProjects.length})</span>
+        </button>
+      </div>
+
+      {secTab === 'project_audits' ? (
+        /* ================================================================ */
+        /* VIEW 2: SECURITY AUDIT & TECHNICAL LEAD SIGNOFF                  */
+        /* ================================================================ */
+        <div className="space-y-6 animate-fadeIn">
+          <div className="flex items-center justify-between">
+            <div>
+              <h2 className="text-lg font-bold text-white flex items-center gap-2">
+                <ShieldCheck className="text-brand-cyan" size={20} />
+                <span>Security Engineering Technical Audit Queue</span>
+              </h2>
+              <p className="text-xs text-text-muted mt-0.5">
+                Review code submissions from developers, verify vulnerability mitigations, and issue technical security sign-offs.
+              </p>
+            </div>
+            <button
+              onClick={fetchSecProjects}
+              className="p-2 rounded-xl bg-white/5 hover:bg-white/10 border border-white/10 text-text-muted hover:text-white transition-colors"
+            >
+              <RefreshCw size={15} className={loadingProjects ? 'animate-spin' : ''} />
+            </button>
+          </div>
+
+          {loadingProjects ? (
+            <div className="p-12 text-center text-text-muted text-sm flex items-center justify-center gap-2">
+              <RefreshCw size={16} className="animate-spin text-brand-cyan" /> Loading security projects...
+            </div>
+          ) : secProjects.length === 0 ? (
+            <GlassCard className="py-14 text-center border-dashed border-white/15">
+              <Shield size={30} className="mx-auto text-amber-400 mb-3 opacity-60" />
+              <h4 className="text-base font-semibold text-white">No projects awaiting security review</h4>
+              <p className="text-xs text-text-muted max-w-md mx-auto mt-1">
+                When developers submit completed builds for security testing, they will appear in this audit queue.
+              </p>
+            </GlassCard>
+          ) : (
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
+              {secProjects.map(project => {
+                const isUnderReview = project.phase === 'security_review';
+
+                return (
+                  <GlassCard
+                    key={project._id}
+                    className="p-5 border-white/10 hover:border-amber-500/40 transition-all flex flex-col justify-between"
+                  >
+                    <div className="space-y-3">
+                      <div className="flex items-center justify-between">
+                        <span className="font-mono text-xs font-bold px-2 py-0.5 rounded bg-white/5 border border-white/10 text-white/80">
+                          {project.projectCode}
+                        </span>
+                        <span className={`px-2 py-0.5 rounded text-[10px] font-bold uppercase ${
+                          isUnderReview
+                            ? 'bg-amber-500/20 text-amber-300 border border-amber-500/30 animate-pulse'
+                            : 'bg-white/10 text-white/70'
+                        }`}>
+                          {project.phase || project.status}
+                        </span>
+                      </div>
+
+                      <div>
+                        <h3 className="text-base font-bold text-white line-clamp-1">{project.title}</h3>
+                        {project.targetUrl && (
+                          <div className="text-xs text-text-muted font-mono truncate mt-0.5">
+                            {project.targetUrl}
+                          </div>
+                        )}
+                      </div>
+
+                      <div className="text-xs text-text-muted">
+                        Progress: <span className="font-bold text-brand-cyan">{project.progress || 0}%</span>
+                      </div>
+                    </div>
+
+                    <div className="pt-4 mt-4 border-t border-white/10 flex flex-col gap-2">
+                      <button
+                        onClick={() => {
+                          setSignoffProject(project);
+                          setSignoffForm({ approved: true, notes: '' });
+                        }}
+                        className="w-full flex items-center justify-center gap-1.5 py-2 rounded-xl bg-amber-500 hover:bg-amber-400 text-black text-xs font-bold shadow-md shadow-amber-500/20 transition-all"
+                      >
+                        <ShieldCheck size={14} />
+                        <span>Security Lead Sign-Off</span>
+                      </button>
+
+                      <Link
+                        to={`/dashboard/service-projects/${project._id}`}
+                        className="w-full flex items-center justify-center gap-1.5 py-1.5 rounded-xl bg-white/5 hover:bg-white/10 text-white text-xs font-medium transition-all"
+                      >
+                        <Layers size={13} className="text-brand-cyan" />
+                        <span>Open Project Workspace</span>
+                      </Link>
+                    </div>
+                  </GlassCard>
+                );
+              })}
+            </div>
+          )}
+
+          {/* SECURITY SIGNOFF MODAL */}
+          {signoffProject && (
+            <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-md animate-fadeIn">
+              <GlassCard className="w-full max-w-lg p-6 border-amber-500/40 shadow-2xl relative space-y-4">
+                <button
+                  onClick={() => setSignoffProject(null)}
+                  className="absolute top-5 right-5 text-text-muted hover:text-white"
+                >
+                  <X size={18} />
+                </button>
+
+                <div className="flex items-center gap-2 mb-2">
+                  <ShieldCheck size={22} className="text-amber-400" />
+                  <div>
+                    <h3 className="text-lg font-bold text-white">Security Technical Audit Sign-Off</h3>
+                    <p className="text-xs text-text-muted">
+                      {signoffProject.projectCode} • {signoffProject.title}
+                    </p>
+                  </div>
+                </div>
+
+                <form onSubmit={handleSecuritySignoff} className="space-y-4">
+                  <div className="space-y-2">
+                    <label className="text-xs font-semibold text-text-muted uppercase block">
+                      Audit Verification Decision:
+                    </label>
+                    <div className="grid grid-cols-2 gap-3">
+                      <button
+                        type="button"
+                        onClick={() => setSignoffForm({ ...signoffForm, approved: true })}
+                        className={`p-3 rounded-xl border text-xs font-bold transition-all ${
+                          signoffForm.approved
+                            ? 'bg-emerald-500/20 border-emerald-500 text-emerald-400 shadow-sm'
+                            : 'bg-white/5 border-white/10 text-text-muted'
+                        }`}
+                      >
+                        Pass & Approve (Advance to Admin)
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setSignoffForm({ ...signoffForm, approved: false })}
+                        className={`p-3 rounded-xl border text-xs font-bold transition-all ${
+                          !signoffForm.approved
+                            ? 'bg-red-500/20 border-red-500 text-red-400 shadow-sm'
+                            : 'bg-white/5 border-white/10 text-text-muted'
+                        }`}
+                      >
+                        Reject (Return with Flaws)
+                      </button>
+                    </div>
+                  </div>
+
+                  <div>
+                    <label className="block text-xs font-semibold text-text-muted uppercase mb-1">
+                      Audit Retest Summary & Findings Verification Notes *
+                    </label>
+                    <textarea
+                      required
+                      rows={4}
+                      value={signoffForm.notes}
+                      onChange={(e) => setSignoffForm({ ...signoffForm, notes: e.target.value })}
+                      placeholder={
+                        signoffForm.approved
+                          ? 'Confirm all critical/high vulnerabilities verified resolved with proof...'
+                          : 'Detail remaining vulnerabilities that developers must fix before approval...'
+                      }
+                      className="w-full bg-white/5 border border-white/10 rounded-xl py-2 px-3 text-xs text-white placeholder-text-muted outline-none focus:border-amber-400"
+                    />
+                  </div>
+
+                  <div className="flex justify-end gap-3 pt-3 border-t border-white/10">
+                    <button
+                      type="button"
+                      onClick={() => setSignoffProject(null)}
+                      className="px-4 py-2 text-xs text-text-muted hover:text-white"
+                    >
+                      Cancel
+                    </button>
+                    <button
+                      type="submit"
+                      disabled={signoffSubmitting}
+                      className="px-5 py-2.5 rounded-xl bg-amber-500 hover:bg-amber-400 text-black font-bold text-xs shadow-lg shadow-amber-500/20 transition-all flex items-center gap-1.5"
+                    >
+                      <Send size={14} />
+                      <span>{signoffSubmitting ? 'Recording...' : 'Record Security Sign-Off'}</span>
+                    </button>
+                  </div>
+                </form>
+              </GlassCard>
+            </div>
+          )}
+        </div>
+      ) : (
+        /* ================================================================ */
+        /* VIEW 1: MONITORED TARGET ASSETS QUEUE                            */
+        /* ================================================================ */
+        <div className="space-y-6">
+        <div className="space-y-4">
         <div className="flex items-center justify-between">
           <h3 className="text-xs font-bold text-white uppercase tracking-wider flex items-center gap-2">
             <Globe size={14} className="text-brand-cyan" />
@@ -400,6 +689,8 @@ export const RetestPage: React.FC = () => {
           </table>
         </div>
       </GlassCard>
+      </div>
+      )}
     </div>
   );
 };

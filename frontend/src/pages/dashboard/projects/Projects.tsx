@@ -27,32 +27,62 @@ export const Projects: React.FC = () => {
         api.get('/scans')
       ]);
 
+      let targetItems: Target[] = [];
       if (targetsRes.status === 'fulfilled') {
-        const targetItems = targetsRes.value.data?.data?.items || targetsRes.value.data?.data?.targets || (Array.isArray(targetsRes.value.data?.data) ? targetsRes.value.data.data : []);
-        setTargets(targetItems);
+        targetItems = targetsRes.value.data?.data?.items || targetsRes.value.data?.data?.targets || (Array.isArray(targetsRes.value.data?.data) ? targetsRes.value.data.data : []);
       }
 
+      let scans: any[] = [];
       if (scansRes.status === 'fulfilled') {
-        const scans: any[] = scansRes.value.data?.data?.scans || scansRes.value.data?.data?.items || (Array.isArray(scansRes.value.data?.data) ? scansRes.value.data.data : []);
-        const map: Record<string, { status: string; scanId: string; version: number }> = {};
-        scans.forEach(s => {
-          if (s.targetId && !map[s.targetId]) {
-            map[s.targetId] = { status: s.status, scanId: s._id, version: s.version || 1 };
-          }
-          if (s.targetUrl) {
-            if (!map[s.targetUrl]) {
-              map[s.targetUrl] = { status: s.status, scanId: s._id, version: s.version || 1 };
+        scans = scansRes.value.data?.data?.scans || scansRes.value.data?.data?.items || (Array.isArray(scansRes.value.data?.data) ? scansRes.value.data.data : []);
+      }
+
+      // Sort newest scans first
+      const sortedScans = [...scans].sort((a, b) => new Date(b.createdAt || 0).getTime() - new Date(a.createdAt || 0).getTime());
+
+      const map: Record<string, { status: string; scanId: string; version: number }> = {};
+      sortedScans.forEach(s => {
+        if (s.targetId && !map[s.targetId]) {
+          map[s.targetId] = { status: s.status, scanId: s._id, version: s.version || 1 };
+        }
+        if (s.targetUrl) {
+          const rawUrl = s.targetUrl.trim();
+          const cleanUrl = rawUrl.replace(/\/+$/, '');
+          if (!map[rawUrl]) map[rawUrl] = { status: s.status, scanId: s._id, version: s.version || 1 };
+          if (!map[cleanUrl]) map[cleanUrl] = { status: s.status, scanId: s._id, version: s.version || 1 };
+          try {
+            const host = new URL(rawUrl).hostname;
+            if (host && !map[host]) {
+              map[host] = { status: s.status, scanId: s._id, version: s.version || 1 };
             }
+          } catch (e) {}
+        }
+      });
+
+      // Also query per-target scans to guarantee 100% accurate status for every target
+      await Promise.allSettled(
+        targetItems.map(async t => {
+          if (/^[0-9a-fA-F]{24}$/.test(t._id)) {
             try {
-              const host = new URL(s.targetUrl).hostname;
-              if (host && !map[host]) {
-                map[host] = { status: s.status, scanId: s._id, version: s.version || 1 };
+              const histRes = await api.get(`/targets/${t._id}/scans`);
+              const tScans = histRes.data?.data?.scans;
+              if (Array.isArray(tScans) && tScans.length > 0) {
+                const newest = tScans[0];
+                map[t._id] = { status: newest.status, scanId: newest._id, version: newest.version || 1 };
+                if (t.url) {
+                  const rawU = t.url.trim();
+                  map[rawU] = { status: newest.status, scanId: newest._id, version: newest.version || 1 };
+                  map[rawU.replace(/\/+$/, '')] = { status: newest.status, scanId: newest._id, version: newest.version || 1 };
+                }
+                if (t.hostname) map[t.hostname] = { status: newest.status, scanId: newest._id, version: newest.version || 1 };
               }
             } catch (e) {}
           }
-        });
-        setLatestScanMap(map);
-      }
+        })
+      );
+
+      setTargets(targetItems);
+      setLatestScanMap(map);
     } catch (err) {
       console.error('Failed to fetch targets', err);
     } finally {
@@ -63,6 +93,18 @@ export const Projects: React.FC = () => {
   useEffect(() => {
     fetchTargets();
   }, []);
+
+  // Automatically poll while any assessment is pending or running so the card switches to Completed as soon as it finishes
+  useEffect(() => {
+    const isAnyActive = Object.values(latestScanMap).some(s => s.status === 'running' || s.status === 'pending');
+    if (!isAnyActive) return;
+
+    const timer = setInterval(() => {
+      fetchTargets();
+    }, 3500);
+
+    return () => clearInterval(timer);
+  }, [latestScanMap]);
 
   const filtered = targets.filter(t =>
     t.hostname.toLowerCase().includes(searchTerm.toLowerCase()) ||
@@ -205,9 +247,11 @@ export const Projects: React.FC = () => {
       ) : (
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
           {filtered.map(target => {
-            const scanInfo = latestScanMap[target._id] || latestScanMap[target.url] || latestScanMap[target.hostname];
+            const cleanUrl = target.url?.trim().replace(/\/+$/, '');
+            const scanInfo = latestScanMap[target._id] || latestScanMap[target.url] || (cleanUrl ? latestScanMap[cleanUrl] : undefined) || latestScanMap[target.hostname];
             const isScanning = scanInfo?.status === 'running' || scanInfo?.status === 'pending';
-            const isCompleted = scanInfo?.status === 'completed';
+            const isCompleted = (scanInfo && scanInfo.status === 'completed') || (!isScanning && (target.scanCount > 0 || Boolean(target.lastScannedAt)));
+            const reportScanId = scanInfo?.scanId;
 
             return (
               <GlassCard
@@ -270,24 +314,25 @@ export const Projects: React.FC = () => {
                 <div className="mt-5 pt-3 border-t border-white/5 flex items-center justify-between text-xs gap-2">
                   <div className="flex items-center gap-2">
                     {/* PDF Report button: ONLY visible when completed; REMOVED during scan */}
-                    {isCompleted && scanInfo ? (
+                    {isCompleted ? (
                       <Link
-                        to={`/dashboard/reports?scanId=${scanInfo.scanId}`}
+                        to={reportScanId ? `/dashboard/reports?scanId=${reportScanId}` : `/dashboard/reports?targetId=${target._id}`}
                         className="px-2.5 py-1 rounded-lg bg-brand-cyan/15 hover:bg-brand-cyan/25 text-brand-cyan border border-brand-cyan/30 text-[11px] font-semibold flex items-center gap-1 transition-colors"
                         title="View PDF & Compliance Reports"
                       >
                         <FileText size={12} /> PDF Report
                       </Link>
                     ) : isScanning ? (
-                      <span
-                        className="text-[11px] text-amber-400/80 font-mono flex items-center gap-1"
-                        title="PDF report generation is disabled while scan is in progress"
+                      <Link
+                        to={reportScanId ? `/dashboard/assessment/${reportScanId}/progress` : `/dashboard/projects/${target._id}`}
+                        className="px-2.5 py-1 rounded-lg bg-amber-500/15 hover:bg-amber-500/25 border border-amber-500/35 text-amber-300 text-[11px] font-semibold flex items-center gap-1.5 transition-colors shadow-sm"
+                        title="Assessment is currently in progress. Click to view live scanning worker logs and telemetry."
                       >
-                        <Clock size={11} className="animate-spin text-amber-400" /> In Progress
-                      </span>
+                        <Activity size={12} className="animate-spin text-amber-400" /> View Scanning Worker Logs
+                      </Link>
                     ) : (
                       <span className="text-[11px] text-text-muted">
-                        {new Date(target.lastScannedAt).toLocaleDateString()}
+                        {target.lastScannedAt ? new Date(target.lastScannedAt).toLocaleDateString() : 'Ready to Scan'}
                       </span>
                     )}
                   </div>

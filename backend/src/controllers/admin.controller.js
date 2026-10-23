@@ -9,6 +9,7 @@ import { Assessment } from "../models/Assessment.js";
 import { MalwareCase } from "../models/MalwareCase.js";
 import { AuditLog } from "../models/AuditLog.js";
 import { Transaction } from "../models/Transaction.js";
+import { ServiceOrder } from "../models/ServiceOrder.js";
 import Scan from "../database/models/scan.model.js";
 import Finding from "../database/models/finding.model.js";
 import Target from "../database/models/target.model.js";
@@ -325,6 +326,8 @@ export const getAdminDashboardStats = async (req, res) => {
       lowFindings,
       infoFindings,
       totalMalwareCases,
+      totalOrders,
+      pendingOrders,
     ] = await Promise.all([
       Target.countDocuments().catch(() => 0),
       Project.countDocuments().catch(() => 0),
@@ -336,6 +339,8 @@ export const getAdminDashboardStats = async (req, res) => {
       Finding.countDocuments({ severity: "low" }).catch(() => 0),
       Finding.countDocuments({ severity: "info" }).catch(() => 0),
       MalwareCase.countDocuments().catch(() => 0),
+      ServiceOrder.countDocuments().catch(() => 0),
+      ServiceOrder.countDocuments({ status: { $in: ["submitted", "under_review", "info_requested"] } }).catch(() => 0),
     ]);
 
     // 4. Billing & Transaction revenue metrics
@@ -388,6 +393,8 @@ export const getAdminDashboardStats = async (req, res) => {
         totalOrganizations,
         totalFindings,
         totalMalwareCases,
+        totalOrders,
+        pendingOrders,
         totalRevenue: totalRevenueAmount,
       },
       users: {

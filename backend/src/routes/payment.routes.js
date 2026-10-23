@@ -6,6 +6,7 @@ import { Router } from "express";
 import {
   getPlans,
   getCurrentSubscription,
+  getTransactionHistory,
   initializeProPayment,
   initializeEnterprisePayment,
   verifyChapaPayment,
@@ -21,6 +22,8 @@ router.get("/plans", getPlans);
 
 // Authenticated subscription endpoints.
 router.get("/subscription", protect, getCurrentSubscription);
+router.get("/transactions", protect, getTransactionHistory);
+router.get("/history", protect, getTransactionHistory);
 
 // The server determines the price and subscription plan.
 router.post("/chapa/initialize", protect, (req, res) => {

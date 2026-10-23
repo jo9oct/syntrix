@@ -1,9 +1,10 @@
-﻿// STATUS: UPDATED
+// STATUS: UPDATED
 // FILE: src/routes/scan.routes.js
 
 import { Router } from "express";
 
 import {
+  listScansController,
   createScanController,
   getScanController,
   cancelScanController,
@@ -62,6 +63,7 @@ const verifyBearerIfPresent = (req, res, next) => {
 router.use(verifyBearerIfPresent, requireAuthorization, requireOwner);
 
 router.post("/", validate(createScanSchema, "body"), createScanController);
+router.get("/", listScansController);
 
 // Static routes must appear before "/:scanId".
 

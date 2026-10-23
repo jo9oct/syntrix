@@ -9,7 +9,9 @@ import {
   ShieldCheck,
   ArrowRightLeft,
   RotateCcw,
-  LogOut
+  LogOut,
+  ClipboardList,
+  Layers
 } from 'lucide-react';
 import { useAuthStore } from '../../store/authStore';
 

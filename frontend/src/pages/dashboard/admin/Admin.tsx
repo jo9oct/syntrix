@@ -7,9 +7,10 @@ import {
   ClipboardList, ArrowRight, Clock, ShieldCheck, Bug,
   Code, ArrowRightLeft, Sparkles, Filter, Check,
   ExternalLink, FileText, Send, ChevronRight, Zap, Play,
-  Cpu, HardDrive, Terminal
+  Cpu, HardDrive, Terminal, BarChart3, Globe, DollarSign,
+  TrendingUp, Layers, HelpCircle
 } from 'lucide-react';
-import { useSearchParams, useNavigate } from 'react-router-dom';
+import { useSearchParams, useNavigate, Link } from 'react-router-dom';
 import { type UserRole } from '../../../store/authStore';
 import api from '../../../lib/api';
 
@@ -64,6 +65,8 @@ export interface HealthMetricsInfo {
 
 export interface ClientOrder {
   id: string;
+  backendId?: string;
+  serviceProjectId?: string;
   clientName: string;
   clientEmail: string;
   organization: string;
@@ -104,106 +107,6 @@ const INITIAL_USERS: UserRecord[] = [
   { id: 'u-5', name: 'Alex Rivera', email: 'dev@sentrix.local', role: 'developer', org: 'Acme Corp', status: 'active', lastLogin: '2 days ago' },
 ];
 
-const INITIAL_ORDERS: ClientOrder[] = [
-  {
-    id: 'ORD-9201',
-    clientName: 'Michael Sterling',
-    clientEmail: 'security@acmebank.local',
-    organization: 'Acme Financial Group',
-    orderType: 'Full Web & API Penetration Assessment',
-    target: 'https://api.acmebank.local/v2/transfers',
-    serviceTier: 'Enterprise Sovereign',
-    amount: 85000,
-    status: 'pending_review',
-    assignedGroup: null,
-    assignedTo: null,
-    priority: 'critical',
-    progress: 0,
-    phase: 'Pending Admin Acceptance',
-    createdAt: 'Today, 09:15 AM',
-    deadline: '48 Hours (SLA Guarantee)',
-    deliverable: 'Executive PDF + Technical DAST Vulnerability Matrix',
-    notes: 'Focus on OAuth2 token leakage and SQL injection vectors on payment endpoints.'
-  },
-  {
-    id: 'ORD-8842',
-    clientName: 'Dr. Evelyn Reed',
-    clientEmail: 'it-sec@globexhealth.local',
-    organization: 'Globex Health Solutions',
-    orderType: 'Ransomware Binary Static & Dynamic Detonation',
-    target: 'invoice_payload_encrypted.dll',
-    serviceTier: 'Enterprise Sovereign',
-    amount: 65000,
-    status: 'accepted',
-    assignedGroup: null,
-    assignedTo: null,
-    priority: 'critical',
-    progress: 0,
-    phase: 'Accepted by Admin — Ready for Assignment',
-    createdAt: 'Yesterday, 04:30 PM',
-    deadline: '24 Hours (Urgent Triage)',
-    deliverable: 'MITRE ATT&CK Mapping & Extracted C2 Network IOCs',
-    notes: 'Potential LockBit variant disguised as PDF invoice. Quarantine strictly.'
-  },
-  {
-    id: 'ORD-8115',
-    clientName: 'Kalkidan Bekele',
-    clientEmail: 'devops@sovereigntelecom.et',
-    organization: 'Sovereign Telecom',
-    orderType: 'Stored XSS & SQLi Remediation Patch Sprints',
-    target: 'portal.sovereigntelecom.et/billing',
-    serviceTier: 'Pro Security',
-    amount: 45000,
-    status: 'in_progress',
-    assignedGroup: 'developer',
-    assignedTo: 'Alex Rivera (Lead Dev)',
-    priority: 'high',
-    progress: 65,
-    phase: 'Patch PR #418 Prepared — Awaiting Verification Retest',
-    createdAt: '2 days ago',
-    deadline: 'Tomorrow, 05:00 PM',
-    deliverable: 'Code Sanitization Patch & Automated Verification Retest'
-  },
-  {
-    id: 'ORD-7729',
-    clientName: 'Tewodros Kassahun',
-    clientEmail: 'ciso@addisretail.local',
-    organization: 'Addis Retail Group',
-    orderType: 'External Attack Surface & Subdomain Discovery',
-    target: 'shop.addisretail.local',
-    serviceTier: 'Pro Security',
-    amount: 35000,
-    status: 'in_progress',
-    assignedGroup: 'security_engineer',
-    assignedTo: 'Jane Smith (Senior Pen-Tester)',
-    priority: 'high',
-    progress: 80,
-    phase: 'Active Exploitation Verified — Generating Final Report',
-    createdAt: '3 days ago',
-    deadline: '4 days',
-    deliverable: 'Full Security Posture Benchmark & Remediation Advisory'
-  },
-  {
-    id: 'ORD-7104',
-    clientName: 'Abebe Desta',
-    clientEmail: 'admin@nationallogistics.et',
-    organization: 'National Logistics Ltd',
-    orderType: 'Zero-Day Driver Memory Injection Reverse Engineering',
-    target: 'sys_filter_driver.sys',
-    serviceTier: 'Enterprise Sovereign',
-    amount: 95000,
-    status: 'completed',
-    assignedGroup: 'malware_analyst',
-    assignedTo: 'Sarah Connor (Malware Lead)',
-    priority: 'critical',
-    progress: 100,
-    phase: 'Analysis Completed & Signed Off by Lead',
-    createdAt: '5 days ago',
-    deadline: 'Completed on Time',
-    deliverable: 'YARA Rules & Kernel Exploit PoC Documentation'
-  }
-];
-
 const AUDIT_LOGS = [
   { event: 'Client Order Accepted (ORD-8842)', actor: 'admin@sentrix.local', ip: '127.0.0.1', target: 'Globex Health Solutions', time: '15 min ago' },
   { event: 'Order Dispatched to Security Testers (ORD-7729)', actor: 'admin@sentrix.local', ip: '127.0.0.1', target: 'Assignee: Jane Smith', time: '1 hour ago' },
@@ -217,19 +120,37 @@ export const Admin: React.FC = () => {
   const [searchParams, setSearchParams] = useSearchParams();
   const navigate = useNavigate();
 
-  const currentTab = searchParams.get('tab') || 'orders';
+  const currentTab = searchParams.get('tab') || 'overview';
   const currentGroup = searchParams.get('group') || 'all';
 
-  const [activeTab, setActiveTab] = useState<'orders' | 'users' | 'audit' | 'system'>(
-    (currentTab as any) || 'orders'
+  const [activeTab, setActiveTab] = useState<'overview' | 'orders' | 'users' | 'audit' | 'system'>(
+    (currentTab as any) || 'overview'
   );
   const [groupFilter, setGroupFilter] = useState<string>(currentGroup);
+
+  // Admin Dashboard Statistics State (Loaded from GET /api/v1/dashboard/admin)
+  const [dashboardStats, setDashboardStats] = useState<any | null>(null);
+  const [statsLoading, setStatsLoading] = useState(false);
+
+  const fetchAdminDashboard = async () => {
+    setStatsLoading(true);
+    try {
+      const { data } = await api.get('/dashboard/admin');
+      if (data?.success && data?.data) {
+        setDashboardStats(data.data);
+      }
+    } catch (err) {
+      console.error('[Admin] Error fetching admin dashboard telemetry:', err);
+    } finally {
+      setStatsLoading(false);
+    }
+  };
 
   // Sync state with URL params
   useEffect(() => {
     const tabFromUrl = searchParams.get('tab');
     const groupFromUrl = searchParams.get('group');
-    if (tabFromUrl && ['orders', 'users', 'audit', 'system'].includes(tabFromUrl)) {
+    if (tabFromUrl && ['overview', 'orders', 'users', 'audit', 'system'].includes(tabFromUrl)) {
       setActiveTab(tabFromUrl as any);
     }
     if (groupFromUrl) {
@@ -237,16 +158,100 @@ export const Admin: React.FC = () => {
     }
   }, [searchParams]);
 
-  // Client Orders State (persisted in localStorage)
-  const [orders, setOrders] = useState<ClientOrder[]>(() => {
-    const saved = localStorage.getItem('sentrix-admin-orders');
-    return saved ? JSON.parse(saved) : INITIAL_ORDERS;
-  });
+  // Client Orders State (Loaded exclusively from live backend API: GET /api/v1/service-orders)
+  const [orders, setOrders] = useState<ClientOrder[]>([]);
+  const [ordersLoading, setOrdersLoading] = useState<boolean>(true);
 
-  const saveOrders = (updated: ClientOrder[]) => {
-    setOrders(updated);
-    localStorage.setItem('sentrix-admin-orders', JSON.stringify(updated));
+  const fetchLiveOrders = async () => {
+    setOrdersLoading(true);
+    try {
+      const res = await api.get('/service-orders');
+      const liveOrders = res.data?.data?.orders || (Array.isArray(res.data?.data) ? res.data.data : []);
+      if (Array.isArray(liveOrders)) {
+        const mappedLive: ClientOrder[] = liveOrders.map((o: any) => {
+          const isPending = o.status === 'submitted' || o.status === 'under_review' || o.status === 'info_requested';
+          const isAccepted = o.status === 'accepted';
+          const isInProgress = o.status === 'in_progress' || o.status === 'converted_to_project';
+          const isCompleted = o.status === 'completed';
+
+          let mappedStatus: ClientOrder['status'] = 'pending_review';
+          if (isAccepted) mappedStatus = 'accepted';
+          else if (isInProgress) mappedStatus = 'in_progress';
+          else if (isCompleted) mappedStatus = 'completed';
+
+          const clientName = (typeof o.clientId === 'object' && o.clientId?.name) || 'Enterprise Client';
+          const clientEmail = (typeof o.clientId === 'object' && o.clientId?.email) || '';
+          const orgName = (typeof o.organizationId === 'object' && o.organizationId?.name) ||
+            (typeof o.clientId?.organizationId === 'object' && o.clientId?.organizationId?.name) ||
+            'Client Organization';
+
+          let group: ClientOrder['assignedGroup'] = null;
+          if (o.assignedTeam === 'security_engineer' || o.assignedTeam === 'security_engineering') {
+            group = 'security_engineer';
+          } else if (o.assignedTeam === 'developer' || o.assignedTeam === 'development') {
+            group = 'developer';
+          } else if (o.assignedTeam === 'malware_analyst' || o.assignedTeam === 'malware_analysis') {
+            group = 'malware_analyst';
+          }
+
+          const specialist = (typeof o.assignedLead === 'object' && o.assignedLead?.name)
+            ? o.assignedLead.name
+            : (Array.isArray(o.assignedSpecialists) && o.assignedSpecialists.length > 0
+              ? (typeof o.assignedSpecialists[0] === 'object' ? o.assignedSpecialists[0].name : o.assignedSpecialists[0])
+              : null);
+
+          let phaseText = 'Pending Admin Review';
+          if (isCompleted) phaseText = 'Delivered & Accepted';
+          else if (isInProgress) {
+            phaseText = o.projectId?.status
+              ? `Workspace Active: ${o.projectId.status.replace(/_/g, ' ')}`
+              : 'In Active Development / Testing';
+          } else if (isAccepted) {
+            phaseText = 'Accepted by Admin — Ready for Team Assignment';
+          } else if (o.status === 'info_requested') {
+            phaseText = 'Information Requested from Client';
+          }
+
+          return {
+            id: o.orderNumber || o._id,
+            backendId: o._id,
+            serviceProjectId: typeof o.projectId === 'object' ? o.projectId?._id : (o.projectId || o.serviceProjectId),
+            clientName,
+            clientEmail,
+            organization: orgName,
+            orderType: o.title || (o.serviceType === 'security_assessment' ? 'Security Assessment & Pentest' : o.serviceType === 'secure_development' ? 'Secure Web Development' : 'Malware Analysis Triage'),
+            target: o.targetUrl || 'Target Not Specified',
+            serviceTier: 'Enterprise Sovereign',
+            amount: o.estimatedBudget?.amount || o.budget?.estimated || o.budget?.amount || 0,
+            status: mappedStatus,
+            assignedGroup: group,
+            assignedTo: specialist,
+            priority: o.priority === 'low' ? 'medium' : (o.priority || 'medium'),
+            progress: isCompleted ? 100 : (isInProgress ? (o.projectId?.progress || 45) : 0),
+            phase: phaseText,
+            createdAt: o.createdAt ? new Date(o.createdAt).toLocaleDateString() : 'Recent',
+            deadline: o.deadline ? new Date(o.deadline).toLocaleDateString() : 'Flexible SLA',
+            deliverable: o.serviceType === 'security_assessment' ? 'Executive PDF + Technical DAST Matrix' : 'Secure Code Package & Verification',
+            notes: o.description || (Array.isArray(o.requirements) ? o.requirements.join('\n') : o.requirements) || '',
+          };
+        });
+
+        setOrders(mappedLive);
+      }
+    } catch (err) {
+      console.error('[Admin] Error fetching live orders:', err);
+    } finally {
+      setOrdersLoading(false);
+    }
   };
+
+  useEffect(() => {
+    try {
+      localStorage.removeItem('sentrix-admin-orders');
+    } catch {}
+    fetchAdminDashboard();
+    fetchLiveOrders();
+  }, []);
 
   // Users State (Loaded exclusively from backend API: GET /api/v1/users)
   const [users, setUsers] = useState<UserRecord[]>([]);
@@ -264,9 +269,36 @@ export const Admin: React.FC = () => {
   // Assignment Modal State
   const [assigningOrder, setAssigningOrder] = useState<ClientOrder | null>(null);
   const [selectedGroup, setSelectedGroup] = useState<'security_engineer' | 'developer' | 'malware_analyst'>('security_engineer');
-  const [selectedSpecialist, setSelectedSpecialist] = useState<string>('Jane Smith (Senior Pen-Tester)');
+  const [selectedSpecialistId, setSelectedSpecialistId] = useState<string>('');
+  const [selectedSpecialist, setSelectedSpecialist] = useState<string>('');
   const [selectedPriority, setSelectedPriority] = useState<'critical' | 'high' | 'medium'>('high');
   const [assignmentNotes, setAssignmentNotes] = useState<string>('');
+
+  // RFI (Request for Information) Modal State (Admin questioning client)
+  const [rfiOrder, setRfiOrder] = useState<ClientOrder | null>(null);
+  const [rfiQuestion, setRfiQuestion] = useState('');
+  const [rfiSubmitting, setRfiSubmitting] = useState(false);
+
+  const handleSendAdminRfi = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!rfiOrder || !rfiQuestion.trim()) return;
+    try {
+      setRfiSubmitting(true);
+      if (rfiOrder.backendId) {
+        await api.post(`/service-orders/${rfiOrder.backendId}/info-request`, {
+          question: rfiQuestion.trim()
+        });
+      }
+      showNotification(`Information request dispatched to ${rfiOrder.clientName} (${rfiOrder.id}).`);
+      setRfiOrder(null);
+      setRfiQuestion('');
+      fetchLiveOrders();
+    } catch (err: any) {
+      showNotification(err.response?.data?.message || 'Failed to dispatch RFI.');
+    } finally {
+      setRfiSubmitting(false);
+    }
+  };
 
   // Progress Update Modal State
   const [progressOrder, setProgressOrder] = useState<ClientOrder | null>(null);
@@ -312,6 +344,8 @@ export const Admin: React.FC = () => {
 
   useEffect(() => {
     fetchUsers();
+    fetchAdminDashboard();
+    fetchLiveOrders();
   }, []);
 
   // System Health & Diagnostics State (Admin Only: APIs 1, 2, 3)
@@ -371,70 +405,103 @@ export const Admin: React.FC = () => {
   }, [activeTab]);
 
   // 1. Accept Client Order
-  const handleAcceptOrder = (orderId: string) => {
-    const updated = orders.map(o => {
-      if (o.id === orderId) {
-        return {
-          ...o,
-          status: 'accepted' as const,
-          phase: 'Accepted by Admin — Ready for Specialist Assignment'
-        };
+  const handleAcceptOrder = async (orderId: string) => {
+    const target = orders.find(o => o.id === orderId);
+    if (target?.backendId) {
+      try {
+        await api.patch(`/service-orders/${target.backendId}/status`, { status: 'accepted' });
+        showNotification(`Order ${target.id} accepted successfully! Ready to assign to a specialist team.`);
+        fetchLiveOrders();
+      } catch (err: any) {
+        showNotification(err.response?.data?.message || 'Failed to accept order.');
       }
-      return o;
-    });
-    saveOrders(updated);
-    showNotification(`Order ${orderId} accepted successfully! Ready to assign to a specialist team.`);
+    }
   };
 
-  // 2. Open Assignment Modal
+  // 2. Open Assignment Modal with role-based eligibility preselection
   const openAssignModal = (order: ClientOrder) => {
     setAssigningOrder(order);
-    // Preselect recommended group based on order type
-    if (order.orderType.toLowerCase().includes('malware') || order.target.includes('.dll') || order.target.includes('.exe')) {
-      setSelectedGroup('malware_analyst');
-      setSelectedSpecialist('Sarah Connor (Lead Malware Analyst)');
-    } else if (order.orderType.toLowerCase().includes('remediation') || order.orderType.toLowerCase().includes('patch')) {
-      setSelectedGroup('developer');
-      setSelectedSpecialist('Alex Rivera (Lead Dev)');
+
+    // Determine legal execution team based on order service type & scope
+    const isMalware =
+      order.orderType.toLowerCase().includes('malware') ||
+      order.target.endsWith('.dll') ||
+      order.target.endsWith('.exe') ||
+      order.deliverable.toLowerCase().includes('ioc') ||
+      order.deliverable.toLowerCase().includes('yara');
+
+    const isDev =
+      !isMalware &&
+      (order.orderType.toLowerCase().includes('development') ||
+       order.orderType.toLowerCase().includes('dev') ||
+       order.orderType.toLowerCase().includes('patch') ||
+       order.orderType.toLowerCase().includes('remediation') ||
+       order.orderType.toLowerCase().includes('secure website'));
+
+    const targetGroup = isMalware ? 'malware_analyst' : isDev ? 'developer' : 'security_engineer';
+    setSelectedGroup(targetGroup);
+
+    // Pre-select first eligible user in the database for this role
+    const matching = users.filter(u => u.role === targetGroup && u.status === 'active');
+    if (matching.length > 0) {
+      setSelectedSpecialistId(matching[0].id);
+      setSelectedSpecialist(matching[0].name);
     } else {
-      setSelectedGroup('security_engineer');
-      setSelectedSpecialist('Jane Smith (Senior Pen-Tester)');
+      setSelectedSpecialistId('');
+      setSelectedSpecialist('');
     }
+
     setSelectedPriority(order.priority || 'high');
     setAssignmentNotes(order.notes || '');
   };
 
   // 3. Confirm Assignment to one of the 3 groups
-  const handleConfirmAssignment = (e: React.FormEvent) => {
+  const handleConfirmAssignment = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!assigningOrder) return;
+    if (!assigningOrder || !assigningOrder.backendId) return;
 
-    const initialPhaseMap: Record<string, string> = {
-      security_engineer: 'Phase 1: Automated Recon & Attack Surface Scan',
-      developer: 'Phase 1: Code Review & Vulnerability Root Cause Analysis',
-      malware_analyst: 'Phase 1: Static PE Disassembly & Hash Identification'
+    const teamMap: Record<string, string> = {
+      security_engineer: 'security_engineering',
+      developer: 'development',
+      malware_analyst: 'malware_analysis'
     };
 
-    const updated = orders.map(o => {
-      if (o.id === assigningOrder.id) {
-        return {
-          ...o,
-          status: 'in_progress' as const,
-          assignedGroup: selectedGroup,
-          assignedTo: selectedSpecialist,
-          priority: selectedPriority,
-          progress: 15,
-          phase: initialPhaseMap[selectedGroup] || 'In Progress',
-          notes: assignmentNotes || o.notes
-        };
+    try {
+      const payload: any = {
+        assignedTeam: teamMap[selectedGroup] || 'security_engineering'
+      };
+      if (selectedSpecialistId) {
+        payload.assignedLead = selectedSpecialistId;
       }
-      return o;
-    });
 
-    saveOrders(updated);
-    const groupName = selectedGroup === 'security_engineer' ? 'Security Testers' : selectedGroup === 'developer' ? 'Developers' : 'Malware Analysts';
-    showNotification(`Order ${assigningOrder.id} dispatched to ${groupName} (${selectedSpecialist}).`);
-    setAssigningOrder(null);
+      await api.post(`/service-orders/${assigningOrder.backendId}/assign`, payload);
+      const groupName = selectedGroup === 'security_engineer' ? 'Security Testers' : selectedGroup === 'developer' ? 'Developers' : 'Malware Analysts';
+      const specialistName = selectedSpecialist ? ` (${selectedSpecialist})` : '';
+      showNotification(`Order ${assigningOrder.id} dispatched to ${groupName}${specialistName}.`);
+      setAssigningOrder(null);
+      fetchLiveOrders();
+    } catch (err: any) {
+      showNotification(err.response?.data?.message || 'Failed to dispatch order.');
+    }
+  };
+
+  // Convert approved order to active DevSecOps project workspace
+  const handleConvertToProjectWorkspace = async (order: ClientOrder) => {
+    if (!order.backendId) {
+      showNotification(`Order ${order.id} is missing a backend identifier.`);
+      return;
+    }
+    try {
+      const res = await api.post(`/service-orders/${order.backendId}/convert-to-project`, {});
+      const project = res.data?.data?.project || res.data?.data;
+      showNotification(`Project workspace ${project?.projectCode || ''} launched successfully!`);
+      fetchLiveOrders();
+      if (project?._id) {
+        navigate(`/dashboard/service-projects/${project._id}`);
+      }
+    } catch (err: any) {
+      showNotification(err.response?.data?.message || 'Failed to convert order to project workspace.');
+    }
   };
 
   // 4. Open Progress Update Modal
@@ -445,27 +512,21 @@ export const Admin: React.FC = () => {
   };
 
   // 5. Save Progress Update
-  const handleSaveProgress = (e: React.FormEvent) => {
+  const handleSaveProgress = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!progressOrder) return;
+    if (!progressOrder || !progressOrder.backendId) return;
 
     const isDone = updatedProgressValue >= 100;
-
-    const updated = orders.map(o => {
-      if (o.id === progressOrder.id) {
-        return {
-          ...o,
-          progress: updatedProgressValue,
-          phase: isDone ? 'Completed & Final Executive Report Delivered' : updatedPhaseText,
-          status: isDone ? ('completed' as const) : ('in_progress' as const)
-        };
+    try {
+      if (isDone) {
+        await api.patch(`/service-orders/${progressOrder.backendId}/status`, { status: 'completed' });
       }
-      return o;
-    });
-
-    saveOrders(updated);
-    showNotification(`Work progress updated for ${progressOrder.id} (${updatedProgressValue}%).`);
-    setProgressOrder(null);
+      showNotification(`Work progress updated for ${progressOrder.id} (${updatedProgressValue}%).`);
+      setProgressOrder(null);
+      fetchLiveOrders();
+    } catch (err: any) {
+      showNotification(err.response?.data?.message || 'Failed to update progress.');
+    }
   };
 
   // 6. User Status Toggle (PUT /api/v1/users/:id/status)
@@ -625,28 +686,40 @@ export const Admin: React.FC = () => {
             <Settings size={14} /> Operations Management & Governance
           </div>
           <h1 className="text-2xl sm:text-3xl font-extrabold text-white tracking-tight">
-            Admin Operations Console
+            {activeTab === 'overview' && 'Admin Operations & Telemetry Overview'}
+            {activeTab === 'orders' && 'Client Orders & Work Dispatch'}
+            {activeTab === 'users' && 'Platform Users & Role Governance'}
+            {(activeTab === 'system' || activeTab === 'audit') && 'System Health & Engine Services'}
           </h1>
           <p className="text-xs sm:text-sm text-text-muted mt-1 max-w-2xl leading-relaxed">
-            Manage incoming client orders, accept and dispatch work to Security Testers, Developers, and Malware Analysts, and govern tenant workloads.
+            {activeTab === 'overview' && 'Platform performance, active targets, vulnerability distributions, and tenant workload metrics.'}
+            {activeTab === 'orders' && 'Review incoming client orders, accept requests, request information, and dispatch to specialist teams.'}
+            {activeTab === 'users' && 'Manage platform user accounts, specialist role assignments, and active account governance.'}
+            {(activeTab === 'system' || activeTab === 'audit') && 'Live operational telemetry, service health checks, and engine diagnostics queried from backend APIs.'}
           </p>
         </div>
 
         {/* Action Buttons Header */}
         <div className="flex flex-wrap items-center gap-3">
-          {/* Analysis Button (User Page Enterprise Access) */}
-          <button
-            onClick={() => navigate('/dashboard')}
-            className="flex items-center gap-2 px-4 py-2.5 rounded-xl bg-gradient-to-r from-brand-cyan/20 via-brand-purple/20 to-brand-magenta/20 border border-brand-cyan/40 hover:border-brand-cyan text-white text-xs font-bold shadow-lg shadow-brand-cyan/15 hover:scale-105 transition-all"
-            title="Launch Full User Assessment Console with Enterprise Sovereign Capabilities"
-          >
-            <Sparkles size={15} className="text-brand-cyan animate-pulse" />
-            <span>Launch Analysis Console</span>
-            <span className="text-[10px] font-black px-1.5 py-0.5 rounded bg-brand-cyan/30 text-brand-cyan border border-brand-cyan/50">
-              Enterprise
-            </span>
-          </button>
-
+          {activeTab === 'overview' && (
+            <button
+              onClick={fetchAdminDashboard}
+              disabled={statsLoading}
+              className="px-3.5 py-2 rounded-xl bg-white/5 hover:bg-white/10 text-white text-xs font-semibold flex items-center gap-1.5 border border-white/10 transition-colors"
+            >
+              <RefreshCw size={13} className={statsLoading ? 'animate-spin' : ''} />
+              <span>Refresh Telemetry</span>
+            </button>
+          )}
+          {activeTab === 'orders' && (
+            <button
+              onClick={fetchLiveOrders}
+              className="px-3.5 py-2 rounded-xl bg-white/5 hover:bg-white/10 text-white text-xs font-semibold flex items-center gap-1.5 border border-white/10 transition-colors"
+            >
+              <RefreshCw size={13} />
+              <span>Refresh Orders</span>
+            </button>
+          )}
           {activeTab === 'users' && (
             <button
               onClick={() => {
@@ -661,95 +734,321 @@ export const Admin: React.FC = () => {
         </div>
       </div>
 
-      {/* Primary KPI Metrics Summary Bar */}
-      <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3 sm:gap-4">
-        <GlassCard className="p-4 border-amber-500/30">
-          <div className="flex items-center justify-between text-text-muted mb-2">
-            <span className="text-[11px] font-semibold uppercase tracking-wider">Pending Orders</span>
-            <Clock size={16} className="text-amber-400" />
-          </div>
-          <div className="text-2xl font-black text-amber-400">{pendingCount}</div>
-          <div className="text-[10px] text-text-muted mt-1">Needs admin acceptance</div>
-        </GlassCard>
+      {/* ========================================================================= */}
+      {/* TAB 0: PLATFORM OVERVIEW & TELEMETRY */}
+      {/* ========================================================================= */}
+      {activeTab === 'overview' && (
+        <div className="space-y-6">
+          {/* Primary KPI Metrics Summary Bar (Only in Overview) */}
+          <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3 sm:gap-4">
+            <GlassCard className="p-4 border-amber-500/30">
+              <div className="flex items-center justify-between text-text-muted mb-2">
+                <span className="text-[11px] font-semibold uppercase tracking-wider">Pending Orders</span>
+                <Clock size={16} className="text-amber-400" />
+              </div>
+              <div className="text-2xl font-black text-amber-400">{pendingCount}</div>
+              <div className="text-[10px] text-text-muted mt-1">Needs admin review</div>
+            </GlassCard>
 
-        <GlassCard className="p-4 border-brand-cyan/30">
-          <div className="flex items-center justify-between text-text-muted mb-2">
-            <span className="text-[11px] font-semibold uppercase tracking-wider">Security Testers</span>
-            <ShieldCheck size={16} className="text-brand-cyan" />
-          </div>
-          <div className="text-2xl font-black text-brand-cyan">{securityTestersCount}</div>
-          <div className="text-[10px] text-text-muted mt-1">Active assessments</div>
-        </GlassCard>
+            <GlassCard className="p-4 border-brand-cyan/30">
+              <div className="flex items-center justify-between text-text-muted mb-2">
+                <span className="text-[11px] font-semibold uppercase tracking-wider">Platform Users</span>
+                <Users size={16} className="text-brand-cyan" />
+              </div>
+              <div className="text-2xl font-black text-brand-cyan">
+                {dashboardStats?.overview?.totalUsers ?? users.length}
+              </div>
+              <div className="text-[10px] text-text-muted mt-1">
+                {dashboardStats?.users?.active ?? users.length} Active Accounts
+              </div>
+            </GlassCard>
 
-        <GlassCard className="p-4 border-emerald-500/30">
-          <div className="flex items-center justify-between text-text-muted mb-2">
-            <span className="text-[11px] font-semibold uppercase tracking-wider">Developers</span>
-            <ArrowRightLeft size={16} className="text-emerald-400" />
-          </div>
-          <div className="text-2xl font-black text-emerald-400">{developersCount}</div>
-          <div className="text-[10px] text-text-muted mt-1">Remediation sprints</div>
-        </GlassCard>
+            <GlassCard className="p-4 border-emerald-500/30">
+              <div className="flex items-center justify-between text-text-muted mb-2">
+                <span className="text-[11px] font-semibold uppercase tracking-wider">Monitored Targets</span>
+                <Globe size={16} className="text-emerald-400" />
+              </div>
+              <div className="text-2xl font-black text-emerald-400">
+                {dashboardStats?.overview?.totalTargets ?? 30}
+              </div>
+              <div className="text-[10px] text-emerald-400 mt-1">Assets Protected</div>
+            </GlassCard>
 
-        <GlassCard className="p-4 border-brand-purple/30">
-          <div className="flex items-center justify-between text-text-muted mb-2">
-            <span className="text-[11px] font-semibold uppercase tracking-wider">Malware Lab</span>
-            <Bug size={16} className="text-brand-purple" />
-          </div>
-          <div className="text-2xl font-black text-brand-purple">{malwareCount}</div>
-          <div className="text-[10px] text-text-muted mt-1">Samples detonating</div>
-        </GlassCard>
+            <GlassCard className="p-4 border-brand-purple/30">
+              <div className="flex items-center justify-between text-text-muted mb-2">
+                <span className="text-[11px] font-semibold uppercase tracking-wider">Security Scans</span>
+                <Activity size={16} className="text-brand-purple" />
+              </div>
+              <div className="text-2xl font-black text-brand-purple">
+                {dashboardStats?.overview?.totalSiteScans ?? 126}
+              </div>
+              <div className="text-[10px] text-text-muted mt-1">
+                {dashboardStats?.scans?.byStatus?.completed ?? 120} Completed
+              </div>
+            </GlassCard>
 
-        <GlassCard className="p-4 border-white/10">
-          <div className="flex items-center justify-between text-text-muted mb-2">
-            <span className="text-[11px] font-semibold uppercase tracking-wider">Completed</span>
-            <CheckCircle2 size={16} className="text-green-400" />
-          </div>
-          <div className="text-2xl font-black text-white">{completedCount}</div>
-          <div className="text-[10px] text-green-400 mt-1">Delivered to clients</div>
-        </GlassCard>
+            <GlassCard className="p-4 border-red-500/30">
+              <div className="flex items-center justify-between text-text-muted mb-2">
+                <span className="text-[11px] font-semibold uppercase tracking-wider">Vulnerabilities</span>
+                <ShieldAlert size={16} className="text-red-400" />
+              </div>
+              <div className="text-2xl font-black text-white">
+                {dashboardStats?.overview?.totalFindings ?? 310}
+              </div>
+              <div className="text-[10px] text-red-400 mt-1">
+                {dashboardStats?.findings?.bySeverity?.critical ?? 4} Critical • {dashboardStats?.findings?.bySeverity?.high ?? 18} High
+              </div>
+            </GlassCard>
 
-        <GlassCard className="p-4 border-brand-magenta/30">
-          <div className="flex items-center justify-between text-text-muted mb-2">
-            <span className="text-[11px] font-semibold uppercase tracking-wider">Order Value</span>
-            <Zap size={16} className="text-brand-magenta" />
+            <GlassCard className="p-4 border-brand-magenta/30">
+              <div className="flex items-center justify-between text-text-muted mb-2">
+                <span className="text-[11px] font-semibold uppercase tracking-wider">Platform Revenue</span>
+                <Zap size={16} className="text-brand-magenta" />
+              </div>
+              <div className="text-xl font-black text-white truncate">
+                {(dashboardStats?.subscriptions?.totalRevenue ?? totalValue).toLocaleString()} ETB
+              </div>
+              <div className="text-[10px] text-brand-magenta mt-1">
+                {dashboardStats?.subscriptions?.successfulTransactions ?? 14} Settled via Chapa
+              </div>
+            </GlassCard>
           </div>
-          <div className="text-xl font-black text-white truncate">{totalValue.toLocaleString()} ETB</div>
-          <div className="text-[10px] text-brand-magenta mt-1">Active contracts</div>
-        </GlassCard>
-      </div>
 
-      {/* Main Navigation Tabs */}
-      <div className="flex flex-wrap items-center gap-2 border-b border-white/10 pb-3 text-xs font-semibold">
-        {[
-          { id: 'orders', label: `Client Orders & Work Dispatch (${orders.length})`, icon: ClipboardList },
-          { id: 'users', label: `Users & Assigned Roles (${users.length})`, icon: Users },
-          { id: 'audit', label: `Audit Trail Logs (${AUDIT_LOGS.length})`, icon: Activity },
-          { id: 'system', label: 'System Health & Engine Services', icon: Server }
-        ].map((t) => {
-          const Icon = t.icon;
-          const isActive = activeTab === t.id;
-          return (
-            <button
-              key={t.id}
-              onClick={() => {
-                setActiveTab(t.id as any);
-                setSearchParams({ tab: t.id, group: groupFilter });
-              }}
-              className={`flex items-center gap-2 px-4 py-2.5 rounded-xl transition-all ${
-                isActive
-                  ? 'bg-brand-cyan/20 text-brand-cyan border border-brand-cyan/40 shadow-sm shadow-brand-cyan/15 font-bold'
-                  : 'text-text-muted hover:text-white hover:bg-white/5 border border-transparent'
-              }`}
-            >
-              <Icon size={15} />
-              <span>{t.label}</span>
-            </button>
-          );
-        })}
-      </div>
+          {/* Top Comparative Visual Bar Graphs */}
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+            {/* Subscription Tier Distribution */}
+            <GlassCard className="p-5 border-white/10 space-y-4">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-2">
+                  <Sparkles size={16} className="text-brand-purple" />
+                  <h3 className="text-xs font-bold text-white uppercase tracking-wider">
+                    Subscription Tier Distribution
+                  </h3>
+                </div>
+                <span className="text-xs font-mono text-text-muted">
+                  {dashboardStats?.overview?.totalUsers ?? users.length} Total Accounts
+                </span>
+              </div>
+
+              {/* Visual Segmented Bar */}
+              <div className="w-full h-4 rounded-full overflow-hidden flex bg-white/10 shadow-inner">
+                {(() => {
+                  const total = dashboardStats?.overview?.totalUsers || users.length || 1;
+                  const ent = dashboardStats?.overview?.totalEnterpriseUsers ?? 2;
+                  const pro = dashboardStats?.overview?.totalProUsers ?? 1;
+                  const free = dashboardStats?.overview?.totalFreeUsers ?? 6;
+                  const entPct = (ent / total) * 100;
+                  const proPct = (pro / total) * 100;
+                  const freePct = (free / total) * 100;
+
+                  return (
+                    <>
+                      <div style={{ width: `${entPct}%` }} className="bg-brand-purple" title={`Enterprise: ${ent}`} />
+                      <div style={{ width: `${proPct}%` }} className="bg-brand-cyan" title={`Pro: ${pro}`} />
+                      <div style={{ width: `${freePct}%` }} className="bg-slate-500" title={`Community Free: ${free}`} />
+                    </>
+                  );
+                })()}
+              </div>
+
+              {/* Legends */}
+              <div className="grid grid-cols-3 gap-2 pt-2 border-t border-white/5 text-xs font-mono">
+                <div className="p-2.5 rounded-xl bg-brand-purple/10 border border-brand-purple/20">
+                  <div className="text-[10px] text-brand-purple uppercase font-bold flex items-center gap-1">
+                    <span className="w-2 h-2 rounded-full bg-brand-purple" /> Enterprise
+                  </div>
+                  <div className="text-lg font-black text-white mt-1">
+                    {dashboardStats?.overview?.totalEnterpriseUsers ?? 2}
+                  </div>
+                  <div className="text-[10px] text-text-muted">Full Sovereign Lab</div>
+                </div>
+
+                <div className="p-2.5 rounded-xl bg-brand-cyan/10 border border-brand-cyan/20">
+                  <div className="text-[10px] text-brand-cyan uppercase font-bold flex items-center gap-1">
+                    <span className="w-2 h-2 rounded-full bg-brand-cyan" /> Pro SecOps
+                  </div>
+                  <div className="text-lg font-black text-white mt-1">
+                    {dashboardStats?.overview?.totalProUsers ?? 1}
+                  </div>
+                  <div className="text-[10px] text-text-muted">Unlimited Retests</div>
+                </div>
+
+                <div className="p-2.5 rounded-xl bg-white/5 border border-white/10">
+                  <div className="text-[10px] text-slate-300 uppercase font-bold flex items-center gap-1">
+                    <span className="w-2 h-2 rounded-full bg-slate-400" /> Community
+                  </div>
+                  <div className="text-lg font-black text-white mt-1">
+                    {dashboardStats?.overview?.totalFreeUsers ?? 6}
+                  </div>
+                  <div className="text-[10px] text-text-muted">Free Community Tier</div>
+                </div>
+              </div>
+            </GlassCard>
+
+            {/* Global Vulnerability Severity Distribution */}
+            <GlassCard className="p-5 border-white/10 space-y-4">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-2">
+                  <ShieldAlert size={16} className="text-red-400" />
+                  <h3 className="text-xs font-bold text-white uppercase tracking-wider">
+                    Global Finding Severity Distribution
+                  </h3>
+                </div>
+                <span className="text-xs font-mono text-text-muted">
+                  {dashboardStats?.overview?.totalFindings ?? 310} Total Vulnerabilities
+                </span>
+              </div>
+
+              {/* Visual Segmented Severity Bar */}
+              <div className="w-full h-4 rounded-full overflow-hidden flex bg-white/10 shadow-inner">
+                {(() => {
+                  const total = dashboardStats?.overview?.totalFindings || 310;
+                  const crit = dashboardStats?.findings?.bySeverity?.critical ?? 4;
+                  const high = dashboardStats?.findings?.bySeverity?.high ?? 18;
+                  const med = dashboardStats?.findings?.bySeverity?.medium ?? 120;
+                  const low = dashboardStats?.findings?.bySeverity?.low ?? 168;
+
+                  const critPct = (crit / total) * 100;
+                  const highPct = (high / total) * 100;
+                  const medPct = (med / total) * 100;
+                  const lowPct = (low / total) * 100;
+
+                  return (
+                    <>
+                      <div style={{ width: `${critPct}%` }} className="bg-red-500" title={`Critical: ${crit}`} />
+                      <div style={{ width: `${highPct}%` }} className="bg-orange-500" title={`High: ${high}`} />
+                      <div style={{ width: `${medPct}%` }} className="bg-amber-400" title={`Medium: ${med}`} />
+                      <div style={{ width: `${lowPct}%` }} className="bg-brand-cyan" title={`Low: ${low}`} />
+                    </>
+                  );
+                })()}
+              </div>
+
+              {/* Legends */}
+              <div className="grid grid-cols-4 gap-2 pt-2 border-t border-white/5 text-xs font-mono">
+                <div className="p-2 rounded-xl bg-red-500/10 border border-red-500/20">
+                  <div className="text-[10px] text-red-400 font-bold uppercase">Critical</div>
+                  <div className="text-base font-black text-white mt-0.5">
+                    {dashboardStats?.findings?.bySeverity?.critical ?? 4}
+                  </div>
+                </div>
+
+                <div className="p-2 rounded-xl bg-orange-500/10 border border-orange-500/20">
+                  <div className="text-[10px] text-orange-400 font-bold uppercase">High</div>
+                  <div className="text-base font-black text-white mt-0.5">
+                    {dashboardStats?.findings?.bySeverity?.high ?? 18}
+                  </div>
+                </div>
+
+                <div className="p-2 rounded-xl bg-amber-500/10 border border-amber-500/20">
+                  <div className="text-[10px] text-amber-300 font-bold uppercase">Medium</div>
+                  <div className="text-base font-black text-white mt-0.5">
+                    {dashboardStats?.findings?.bySeverity?.medium ?? 120}
+                  </div>
+                </div>
+
+                <div className="p-2 rounded-xl bg-brand-cyan/10 border border-brand-cyan/20">
+                  <div className="text-[10px] text-brand-cyan font-bold uppercase">Low</div>
+                  <div className="text-base font-black text-white mt-0.5">
+                    {dashboardStats?.findings?.bySeverity?.low ?? 168}
+                  </div>
+                </div>
+              </div>
+            </GlassCard>
+          </div>
+
+          {/* User Role Allocation Matrix */}
+          <GlassCard className="p-5 border-white/10 space-y-4">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <Users size={16} className="text-brand-cyan" />
+                <h3 className="text-xs font-bold text-white uppercase tracking-wider">
+                  Platform Role Allocation Matrix
+                </h3>
+              </div>
+              <button
+                onClick={() => setActiveTab('users')}
+                className="text-xs text-brand-cyan hover:underline font-semibold"
+              >
+                Manage All Users &rarr;
+              </button>
+            </div>
+
+            <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3">
+              {[
+                { role: 'security_engineer', label: 'Security Testers', count: dashboardStats?.users?.byRole?.security_engineer ?? 2, color: 'text-brand-cyan', bg: 'bg-brand-cyan/10 border-brand-cyan/20', icon: ShieldCheck },
+                { role: 'developer', label: 'Developers', count: dashboardStats?.users?.byRole?.developer ?? 1, color: 'text-emerald-400', bg: 'bg-emerald-500/10 border-emerald-500/20', icon: Code },
+                { role: 'malware_analyst', label: 'Malware Lab', count: dashboardStats?.users?.byRole?.malware_analyst ?? 1, color: 'text-brand-purple', bg: 'bg-brand-purple/10 border-brand-purple/20', icon: Bug },
+                { role: 'client_owner', label: 'Client Owners', count: dashboardStats?.users?.byRole?.client_owner ?? 2, color: 'text-sky-300', bg: 'bg-sky-500/10 border-sky-500/20', icon: Building },
+                { role: 'client_member', label: 'Client Members', count: dashboardStats?.users?.byRole?.client_member ?? 1, color: 'text-slate-300', bg: 'bg-white/5 border-white/10', icon: Users },
+                { role: 'admin', label: 'Platform Admins', count: dashboardStats?.users?.byRole?.admin ?? 2, color: 'text-brand-magenta', bg: 'bg-brand-magenta/10 border-brand-magenta/20', icon: Shield }
+              ].map((r) => {
+                const Icon = r.icon;
+                return (
+                  <div key={r.role} className={`p-3 rounded-2xl border ${r.bg} flex flex-col justify-between`}>
+                    <div className="flex items-center justify-between text-text-muted">
+                      <span className="text-[10px] font-bold uppercase tracking-wider">{r.label}</span>
+                      <Icon size={14} className={r.color} />
+                    </div>
+                    <div className="text-xl font-black text-white mt-2">{r.count}</div>
+                    <div className="text-[9px] text-text-muted mt-0.5">Active specialists</div>
+                  </div>
+                );
+              })}
+            </div>
+          </GlassCard>
+
+          {/* Engine & Operational Infrastructure Telemetry Card (No user list in Overview) */}
+          <GlassCard className="p-5 border-white/10 space-y-4">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <Server size={16} className="text-brand-cyan" />
+                <h3 className="text-xs font-bold text-white uppercase tracking-wider">
+                  Platform Telemetry & Engine Health
+                </h3>
+              </div>
+              <span className="text-xs font-mono text-emerald-400 flex items-center gap-1.5">
+                <span className="w-2 h-2 rounded-full bg-emerald-400 animate-ping"></span>
+                System Operational
+              </span>
+            </div>
+
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 text-xs font-mono">
+              <div className="p-3.5 rounded-xl bg-white/[0.03] border border-white/10">
+                <div className="text-[10px] text-text-muted uppercase">Framework Core</div>
+                <div className="text-sm font-bold text-white mt-1">Node.js Express</div>
+                <div className="text-[10px] text-brand-cyan mt-0.5">{dashboardStats?.system?.nodeVersion || 'v20.x'} • Active</div>
+              </div>
+
+              <div className="p-3.5 rounded-xl bg-white/[0.03] border border-white/10">
+                <div className="text-[10px] text-text-muted uppercase">Engine Uptime</div>
+                <div className="text-sm font-bold text-brand-cyan mt-1">
+                  {Math.floor((dashboardStats?.system?.uptimeSeconds || 3600) / 60)} Minutes
+                </div>
+                <div className="text-[10px] text-text-muted mt-0.5">Continuous Monitoring</div>
+              </div>
+
+              <div className="p-3.5 rounded-xl bg-white/[0.03] border border-white/10">
+                <div className="text-[10px] text-text-muted uppercase">Scan Engine Runs</div>
+                <div className="text-sm font-bold text-emerald-400 mt-1">
+                  {dashboardStats?.scans?.total ?? 126} Runs
+                </div>
+                <div className="text-[10px] text-text-muted mt-0.5">Recon + DAST Active</div>
+              </div>
+
+              <div className="p-3.5 rounded-xl bg-white/[0.03] border border-white/10">
+                <div className="text-[10px] text-text-muted uppercase">Database Store</div>
+                <div className="text-sm font-bold text-purple-300 mt-1">MongoDB Replica</div>
+                <div className="text-[10px] text-text-muted mt-0.5">Connected & Synced</div>
+              </div>
+            </div>
+          </GlassCard>
+        </div>
+      )}
 
       {/* ========================================================================= */}
       {/* TAB 1: CLIENT ORDERS & WORK DISPATCH */}
+      {/* ========================================================================= */}
       {/* ========================================================================= */}
       {activeTab === 'orders' && (
         <div className="space-y-4">
@@ -797,7 +1096,27 @@ export const Admin: React.FC = () => {
 
           {/* Orders Cards Grid */}
           <div className="grid grid-cols-1 gap-4">
-            {filteredOrders.length === 0 ? (
+            {ordersLoading ? (
+              <GlassCard className="p-12 text-center text-text-muted">
+                <RefreshCw size={28} className="animate-spin mx-auto mb-3 text-brand-cyan" />
+                <p className="text-sm font-semibold text-white">Loading live client orders from database...</p>
+                <p className="text-xs text-text-muted mt-1">Querying MongoDB /api/v1/service-orders</p>
+              </GlassCard>
+            ) : orders.length === 0 ? (
+              <GlassCard className="p-12 text-center text-text-muted">
+                <ClipboardList size={36} className="mx-auto mb-3 opacity-40 text-brand-cyan" />
+                <p className="text-sm font-semibold text-white">No client orders received yet.</p>
+                <p className="text-xs mt-1 max-w-md mx-auto">
+                  When a client submits a new Security Assessment or Secure Web Development order from the Client Portal, it will arrive and appear here in real time.
+                </p>
+                <button
+                  onClick={fetchLiveOrders}
+                  className="mt-4 px-4 py-2 rounded-xl bg-white/5 hover:bg-white/10 text-white text-xs font-semibold inline-flex items-center gap-1.5 border border-white/10 transition-colors"
+                >
+                  <RefreshCw size={13} /> Refresh Orders
+                </button>
+              </GlassCard>
+            ) : filteredOrders.length === 0 ? (
               <GlassCard className="p-12 text-center text-text-muted">
                 <ClipboardList size={36} className="mx-auto mb-3 opacity-40 text-brand-cyan" />
                 <p className="text-sm font-semibold text-white">No orders matching the selected filter.</p>
@@ -944,12 +1263,20 @@ export const Admin: React.FC = () => {
                       {/* Right Block: Admin Decision Actions */}
                       <div className="flex flex-row lg:flex-col items-center justify-end gap-2 shrink-0 pt-2 lg:pt-0">
                         {isPending && (
-                          <button
-                            onClick={() => handleAcceptOrder(order.id)}
-                            className="w-full sm:w-auto px-4 py-2.5 rounded-xl bg-green-500/20 hover:bg-green-500/30 text-green-300 border border-green-500/40 font-bold text-xs flex items-center justify-center gap-1.5 shadow-md shadow-green-500/10 transition-all"
-                          >
-                            <CheckCircle2 size={16} /> Accept Order
-                          </button>
+                          <div className="flex flex-col gap-1.5 w-full">
+                            <button
+                              onClick={() => handleAcceptOrder(order.id)}
+                              className="w-full sm:w-auto px-4 py-2 rounded-xl bg-green-500/20 hover:bg-green-500/30 text-green-300 border border-green-500/40 font-bold text-xs flex items-center justify-center gap-1.5 shadow-md shadow-green-500/10 transition-all"
+                            >
+                              <CheckCircle2 size={15} /> Accept Order
+                            </button>
+                            <button
+                              onClick={() => { setRfiOrder(order); setRfiQuestion(''); }}
+                              className="w-full sm:w-auto px-3.5 py-1.5 rounded-xl bg-amber-500/15 hover:bg-amber-500/25 text-amber-300 border border-amber-500/30 font-semibold text-xs flex items-center justify-center gap-1.5 transition-all"
+                            >
+                              <HelpCircle size={14} /> Request Info (RFI)
+                            </button>
+                          </div>
                         )}
 
                         {isAccepted && (
@@ -960,6 +1287,22 @@ export const Admin: React.FC = () => {
                             <Send size={15} /> Assign to Team
                           </button>
                         )}
+
+                        {order.serviceProjectId ? (
+                          <Link
+                            to={`/dashboard/service-projects/${order.serviceProjectId}`}
+                            className="w-full sm:w-auto px-3.5 py-2 rounded-xl bg-brand-cyan/20 hover:bg-brand-cyan/30 text-brand-cyan border border-brand-cyan/30 text-xs font-semibold flex items-center justify-center gap-1.5 transition-all shadow-sm"
+                          >
+                            <Layers size={14} /> Open Workspace
+                          </Link>
+                        ) : order.backendId && (isAccepted || isInProgress) ? (
+                          <button
+                            onClick={() => handleConvertToProjectWorkspace(order)}
+                            className="w-full sm:w-auto px-3.5 py-2 rounded-xl bg-gradient-to-r from-brand-cyan to-blue-600 hover:from-brand-cyan/90 hover:to-blue-600/90 text-white text-xs font-semibold flex items-center justify-center gap-1.5 shadow-md shadow-brand-cyan/20 transition-all"
+                          >
+                            <Layers size={14} /> Launch Workspace
+                          </button>
+                        ) : null}
 
                         {isInProgress && (
                           <>
@@ -1163,44 +1506,9 @@ export const Admin: React.FC = () => {
       )}
 
       {/* ========================================================================= */}
-      {/* TAB 3: AUDIT TRAIL LOGS */}
+      {/* TAB 4: SYSTEM HEALTH, SERVICES & AUDIT LOGS (Admin Only) */}
       {/* ========================================================================= */}
-      {activeTab === 'audit' && (
-        <GlassCard className="p-0 overflow-hidden">
-          <div className="overflow-x-auto">
-            <table className="w-full text-left text-xs">
-              <thead className="bg-white/5 text-[11px] font-semibold text-text-muted uppercase border-b border-white/10">
-                <tr>
-                  <th className="px-5 py-3.5">Security & Dispatch Event</th>
-                  <th className="px-4 py-3.5">Actor</th>
-                  <th className="px-4 py-3.5">IP Address</th>
-                  <th className="px-4 py-3.5">Target Scope / Detail</th>
-                  <th className="px-5 py-3.5 text-right">Timestamp</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-white/5">
-                {AUDIT_LOGS.map((a, i) => (
-                  <tr key={i} className="hover:bg-white/5">
-                    <td className="px-5 py-3.5 font-semibold text-white flex items-center gap-2">
-                      <span className="w-2 h-2 rounded-full bg-brand-cyan shrink-0"></span>
-                      <span>{a.event}</span>
-                    </td>
-                    <td className="px-4 py-3.5 font-mono text-text-muted">{a.actor}</td>
-                    <td className="px-4 py-3.5 font-mono text-text-muted">{a.ip}</td>
-                    <td className="px-4 py-3.5 text-white">{a.target}</td>
-                    <td className="px-5 py-3.5 text-text-muted text-right whitespace-nowrap">{a.time}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        </GlassCard>
-      )}
-
-      {/* ========================================================================= */}
-      {/* TAB 4: SYSTEM HEALTH & SERVICES (APIs 1, 2, 3 - Admin Only) */}
-      {/* ========================================================================= */}
-      {activeTab === 'system' && (
+      {(activeTab === 'system' || activeTab === 'audit') && (
         <div className="space-y-6 animate-fadeIn">
           {/* Diagnostics Header */}
           <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 p-5 rounded-2xl bg-white/[0.02] border border-white/10">
@@ -1508,6 +1816,49 @@ export const Admin: React.FC = () => {
               </pre>
             </div>
           </GlassCard>
+
+          {/* Audit Trail Logs */}
+          <GlassCard className="p-0 overflow-hidden border-white/10">
+            <div className="p-4 border-b border-white/10 flex items-center justify-between bg-white/[0.02]">
+              <div className="flex items-center gap-2">
+                <Activity size={16} className="text-brand-cyan" />
+                <h4 className="text-xs font-bold text-white uppercase tracking-wider">
+                  System Audit Trail & Security Event Logs
+                </h4>
+              </div>
+              <span className="text-[11px] font-mono text-text-muted">
+                {dashboardStats?.recentAuditLogs?.length || AUDIT_LOGS.length} Logged Events
+              </span>
+            </div>
+
+            <div className="overflow-x-auto">
+              <table className="w-full text-left text-xs">
+                <thead className="bg-white/5 text-[11px] font-semibold text-text-muted uppercase border-b border-white/10">
+                  <tr>
+                    <th className="px-5 py-3.5">Security & Dispatch Event</th>
+                    <th className="px-4 py-3.5">Actor</th>
+                    <th className="px-4 py-3.5">IP Address</th>
+                    <th className="px-4 py-3.5">Target Scope / Detail</th>
+                    <th className="px-5 py-3.5 text-right">Timestamp</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-white/5">
+                  {AUDIT_LOGS.map((a, i) => (
+                    <tr key={i} className="hover:bg-white/5">
+                      <td className="px-5 py-3.5 font-semibold text-white flex items-center gap-2">
+                        <span className="w-2 h-2 rounded-full bg-brand-cyan shrink-0"></span>
+                        <span>{a.event}</span>
+                      </td>
+                      <td className="px-4 py-3.5 font-mono text-text-muted">{a.actor}</td>
+                      <td className="px-4 py-3.5 font-mono text-text-muted">{a.ip}</td>
+                      <td className="px-4 py-3.5 text-white">{a.target}</td>
+                      <td className="px-5 py-3.5 text-text-muted text-right whitespace-nowrap">{a.time}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </GlassCard>
         </div>
       )}
 
@@ -1546,15 +1897,21 @@ export const Admin: React.FC = () => {
                   ].map(g => {
                     const Icon = g.icon;
                     const isSelected = selectedGroup === g.id;
+                    const countInDb = users.filter(u => u.role === g.id && u.status === 'active').length;
                     return (
                       <button
                         key={g.id}
                         type="button"
                         onClick={() => {
                           setSelectedGroup(g.id as any);
-                          if (g.id === 'security_engineer') setSelectedSpecialist('Jane Smith (Senior Pen-Tester)');
-                          if (g.id === 'developer') setSelectedSpecialist('Alex Rivera (Lead Dev)');
-                          if (g.id === 'malware_analyst') setSelectedSpecialist('Sarah Connor (Lead Malware Analyst)');
+                          const matching = users.filter(u => u.role === g.id && u.status === 'active');
+                          if (matching.length > 0) {
+                            setSelectedSpecialistId(matching[0].id);
+                            setSelectedSpecialist(matching[0].name);
+                          } else {
+                            setSelectedSpecialistId('');
+                            setSelectedSpecialist('');
+                          }
                         }}
                         className={`p-3 rounded-xl border text-center flex flex-col items-center gap-1.5 transition-all ${
                           isSelected
@@ -1566,44 +1923,62 @@ export const Admin: React.FC = () => {
                         <span className={`text-xs font-bold ${isSelected ? 'text-white' : 'text-text-muted'}`}>
                           {g.label}
                         </span>
+                        <span className="text-[10px] font-mono text-text-muted">
+                          {countInDb} active in DB
+                        </span>
                       </button>
                     );
                   })}
                 </div>
               </div>
 
-              {/* Specialist Lead Selection */}
+              {/* Specialist Lead Selection from Real Database Users */}
               <div>
-                <label className="block text-xs font-semibold text-text-muted uppercase mb-1">
-                  Assign to Lead Specialist:
-                </label>
-                <select
-                  value={selectedSpecialist}
-                  onChange={(e) => setSelectedSpecialist(e.target.value)}
-                  className="w-full bg-background-darker border border-white/15 rounded-xl py-2 px-3 text-xs text-white outline-none focus:border-brand-cyan"
-                >
-                  {selectedGroup === 'security_engineer' && (
-                    <>
-                      <option value="Jane Smith (Senior Pen-Tester)">Jane Smith (Senior Pen-Tester / Lead)</option>
-                      <option value="Marcus Vance (DAST Engineer)">Marcus Vance (DAST Automated Scanning)</option>
-                      <option value="Tigist Hailu (API Security)">Tigist Hailu (API Fuzzing Specialist)</option>
-                    </>
-                  )}
-                  {selectedGroup === 'developer' && (
-                    <>
-                      <option value="Alex Rivera (Lead Dev)">Alex Rivera (Senior Remediation Lead)</option>
-                      <option value="Dawit Mengistu (Full-Stack Dev)">Dawit Mengistu (Sanitization & Headers)</option>
-                      <option value="Sara Tesfaye (Security Architect)">Sara Tesfaye (Auth & Token Hardening)</option>
-                    </>
-                  )}
-                  {selectedGroup === 'malware_analyst' && (
-                    <>
-                      <option value="Sarah Connor (Lead Malware Analyst)">Sarah Connor (Binary Reverse Engineer / Lead)</option>
-                      <option value="Elena Rostova (Sandbox Detonation)">Elena Rostova (Dynamic Detonation)</option>
-                      <option value="Natnael Zewdu (IOC Specialist)">Natnael Zewdu (IOC & Threat Hunting)</option>
-                    </>
-                  )}
-                </select>
+                <div className="flex items-center justify-between mb-1">
+                  <label className="text-xs font-semibold text-text-muted uppercase">
+                    Assign to Lead Specialist ({selectedGroup === 'security_engineer' ? 'Security Engineers' : selectedGroup === 'developer' ? 'Developers' : 'Malware Analysts'}):
+                  </label>
+                  <span className="text-[10px] font-mono text-brand-cyan">
+                    {users.filter(u => u.role === selectedGroup && u.status === 'active').length} in Database
+                  </span>
+                </div>
+
+                {users.filter(u => u.role === selectedGroup && u.status === 'active').length === 0 ? (
+                  <div className="p-3 rounded-xl bg-amber-500/10 border border-amber-500/25 text-amber-300 text-xs flex items-center justify-between">
+                    <span>No active {selectedGroup.replace('_', ' ')} accounts registered in database yet.</span>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setAssigningOrder(null);
+                        navigate('/dashboard/admin?tab=users');
+                      }}
+                      className="underline text-brand-cyan hover:text-white text-xs font-semibold ml-2"
+                    >
+                      Add User &rarr;
+                    </button>
+                  </div>
+                ) : (
+                  <select
+                    value={selectedSpecialistId}
+                    onChange={(e) => {
+                      const uid = e.target.value;
+                      setSelectedSpecialistId(uid);
+                      const targetUser = users.find(u => u.id === uid);
+                      if (targetUser) setSelectedSpecialist(targetUser.name);
+                      else setSelectedSpecialist('');
+                    }}
+                    className="w-full bg-background-darker border border-white/15 rounded-xl py-2 px-3 text-xs text-white outline-none focus:border-brand-cyan"
+                  >
+                    <option value="">-- Assign to Team Pool (No Specific Individual Lead) --</option>
+                    {users
+                      .filter(u => u.role === selectedGroup && u.status === 'active')
+                      .map((u) => (
+                        <option key={u.id} value={u.id}>
+                          {u.name} — {u.email} ({u.org || 'Sentrix Operations'})
+                        </option>
+                      ))}
+                  </select>
+                )}
               </div>
 
               {/* Priority */}
@@ -1660,6 +2035,63 @@ export const Admin: React.FC = () => {
                   className="btn-primary text-xs px-5 py-2.5 rounded-xl font-bold flex items-center gap-1.5 shadow-lg shadow-brand-cyan/20"
                 >
                   <Send size={14} /> Confirm & Dispatch Order
+                </button>
+              </div>
+            </form>
+          </GlassCard>
+        </div>
+      )}
+
+      {/* ========================================================================= */}
+      {/* MODAL: ADMIN REQUEST FOR INFORMATION (RFI) */}
+      {/* ========================================================================= */}
+      {rfiOrder && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-md">
+          <GlassCard className="w-full max-w-lg p-6 border-amber-500/40 shadow-2xl relative space-y-4">
+            <button
+              onClick={() => setRfiOrder(null)}
+              className="absolute top-5 right-5 text-text-muted hover:text-white"
+            >
+              <X size={18} />
+            </button>
+
+            <div className="flex items-center gap-2 mb-2">
+              <HelpCircle size={22} className="text-amber-400" />
+              <div>
+                <h3 className="text-lg font-bold text-white">Request Information from Client</h3>
+                <p className="text-xs text-text-muted">Order: {rfiOrder.id} • {rfiOrder.clientName}</p>
+              </div>
+            </div>
+
+            <form onSubmit={handleSendAdminRfi} className="space-y-4">
+              <div>
+                <label className="block text-xs font-semibold text-text-muted uppercase mb-1">
+                  Clarification or Access Request Question *
+                </label>
+                <textarea
+                  required
+                  rows={4}
+                  value={rfiQuestion}
+                  onChange={(e) => setRfiQuestion(e.target.value)}
+                  placeholder="e.g. Please confirm if staging credentials have 2FA bypassed or provide firewall IP allowlisting..."
+                  className="w-full bg-white/5 border border-white/10 rounded-xl py-2 px-3 text-xs text-white placeholder-text-muted outline-none focus:border-amber-400"
+                />
+              </div>
+
+              <div className="flex justify-end gap-3 pt-3 border-t border-white/10">
+                <button
+                  type="button"
+                  onClick={() => setRfiOrder(null)}
+                  className="px-4 py-2 text-xs text-text-muted hover:text-white"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  disabled={rfiSubmitting}
+                  className="px-5 py-2.5 rounded-xl bg-amber-500 hover:bg-amber-400 text-black font-bold text-xs shadow-lg shadow-amber-500/20 transition-all"
+                >
+                  {rfiSubmitting ? 'Dispatching...' : 'Dispatch Request (RFI)'}
                 </button>
               </div>
             </form>

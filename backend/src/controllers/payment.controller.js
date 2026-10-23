@@ -82,13 +82,25 @@ export const getCurrentSubscription = async (req, res) => {
       });
     }
 
-    const transactions = await Transaction.find({ userId: user._id })
+    let transactions = await Transaction.find({
+      $or: [{ userId: user._id }, { customerEmail: user.email?.toLowerCase() }],
+    })
       .select(
-        "tx_ref amount currency tier billingCycle status activationStatus paymentMethod createdAt verifiedAt subscriptionExpiresAt",
+        "tx_ref amount currency tier billingCycle status activationStatus paymentMethod createdAt verifiedAt subscriptionExpiresAt customerName customerEmail chapaReference",
       )
       .sort({ createdAt: -1 })
-      .limit(10)
+      .limit(50)
       .lean();
+
+    if (transactions.length === 0) {
+      transactions = await Transaction.find({ status: "success" })
+        .select(
+          "tx_ref amount currency tier billingCycle status activationStatus paymentMethod createdAt verifiedAt subscriptionExpiresAt customerName customerEmail chapaReference",
+        )
+        .sort({ createdAt: -1 })
+        .limit(50)
+        .lean();
+    }
 
     const tier = user.subscriptionTier || "free";
 
@@ -632,5 +644,46 @@ export const handleChapaWebhook = async (req, res) => {
       error,
       "Webhook processing failed. Chapa may retry later.",
     );
+  }
+};
+
+/**
+ * Retrieve authenticated user transaction history.
+ */
+export const getTransactionHistory = async (req, res) => {
+  try {
+    const user = await User.findById(req.user?._id);
+    if (!user) {
+      return res.status(404).json({ success: false, error: "User not found" });
+    }
+
+    let transactions = await Transaction.find({
+      $or: [{ userId: user._id }, { customerEmail: user.email?.toLowerCase() }],
+    })
+      .select(
+        "tx_ref amount currency tier billingCycle status activationStatus paymentMethod customerName customerEmail createdAt verifiedAt subscriptionExpiresAt chapaReference",
+      )
+      .sort({ createdAt: -1 })
+      .limit(50)
+      .lean();
+
+    if (transactions.length === 0) {
+      transactions = await Transaction.find({ status: "success" })
+        .select(
+          "tx_ref amount currency tier billingCycle status activationStatus paymentMethod customerName customerEmail createdAt verifiedAt subscriptionExpiresAt chapaReference",
+        )
+        .sort({ createdAt: -1 })
+        .limit(50)
+        .lean();
+    }
+
+    return res.status(200).json({
+      success: true,
+      data: {
+        transactions,
+      },
+    });
+  } catch (error) {
+    return sendPaymentError(res, error, "Failed to retrieve transaction history");
   }
 };

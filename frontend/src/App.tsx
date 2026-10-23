@@ -20,11 +20,16 @@ import { ScanProgress } from './pages/dashboard/assessment/ScanProgress';
 import { ScanResults } from './pages/dashboard/assessment/ScanResults';
 import { Remediation } from './pages/dashboard/remediation/Remediation';
 import { RetestPage } from './pages/dashboard/remediation/RetestPage';
+import { Developer } from './pages/dashboard/developer/Developer';
+import { SecurityEngineer } from './pages/dashboard/security/SecurityEngineer';
 import { Admin } from './pages/dashboard/admin/Admin';
 import { Billing } from './pages/dashboard/billing/Billing';
 import { Scopes } from './pages/dashboard/scopes/Scopes';
 import { CompanyRules } from './pages/dashboard/rules/CompanyRules';
 import { DeletedScans } from './pages/dashboard/scans/DeletedScans';
+import { ServiceOrders } from './pages/dashboard/orders/ServiceOrders';
+import { ServiceProjects } from './pages/dashboard/service-projects/ServiceProjects';
+import { ServiceProjectDetail } from './pages/dashboard/service-projects/ServiceProjectDetail';
 import { useAuthStore, getRoleLandingPath, type UserRole } from './store/authStore';
 
 const ProtectedRoute: React.FC<{ children: React.ReactNode }> = ({ children }) => {
@@ -79,6 +84,10 @@ function App() {
           <Route index element={<DashboardHome />} />
           <Route path="projects" element={<Projects />} />
           <Route path="projects/:id" element={<ProjectDetail />} />
+          <Route path="service-orders" element={<ServiceOrders />} />
+          <Route path="orders" element={<ServiceOrders />} />
+          <Route path="service-projects" element={<ServiceProjects />} />
+          <Route path="service-projects/:id" element={<ServiceProjectDetail />} />
           <Route path="findings" element={<Findings />} />
           <Route path="reports" element={<Reports />} />
 
@@ -89,50 +98,64 @@ function App() {
             </RoleGuard>
           } />
 
+          {/* Developer Operations (Developer, Admin) */}
+          <Route path="developer" element={
+            <RoleGuard allowedRoles={['admin', 'developer']}>
+              <Developer />
+            </RoleGuard>
+          } />
+
+          {/* Security Engineer Operations (Security Engineer, Admin) */}
+          <Route path="security" element={
+            <RoleGuard allowedRoles={['admin', 'security_engineer']}>
+              <SecurityEngineer />
+            </RoleGuard>
+          } />
+
           {/* Malware Analysis Lab */}
           <Route path="malware" element={
-            <RoleGuard allowedRoles={['admin', 'malware_analyst', 'security_engineer', 'client_owner', 'client_member']}>
+            <RoleGuard allowedRoles={['admin', 'malware_analyst', 'security_engineer', 'developer', 'client_owner', 'client_member']}>
               <MalwareAnalysis />
             </RoleGuard>
           } />
 
           {/* Remediation Kanban Board */}
           <Route path="remediation" element={
-            <RoleGuard allowedRoles={['admin', 'developer', 'security_engineer', 'client_owner', 'client_member']}>
+            <RoleGuard allowedRoles={['admin', 'developer', 'security_engineer', 'malware_analyst', 'client_owner', 'client_member']}>
               <Remediation />
             </RoleGuard>
           } />
 
           {/* Retesting Queue */}
           <Route path="retest" element={
-            <RoleGuard allowedRoles={['admin', 'developer', 'security_engineer', 'client_owner', 'client_member']}>
+            <RoleGuard allowedRoles={['admin', 'developer', 'security_engineer', 'malware_analyst', 'client_owner', 'client_member']}>
               <RetestPage />
             </RoleGuard>
           } />
 
           {/* Assessment Wizard */}
           <Route path="assessment/new" element={
-            <RoleGuard allowedRoles={['admin', 'security_engineer', 'client_owner', 'client_member']}>
+            <RoleGuard allowedRoles={['admin', 'security_engineer', 'developer', 'malware_analyst', 'client_owner', 'client_member']}>
               <AssessmentWizard />
             </RoleGuard>
           } />
 
           {/* Security Scopes & Company Policies */}
           <Route path="scopes" element={
-            <RoleGuard allowedRoles={['admin', 'security_engineer', 'client_owner', 'client_member']}>
+            <RoleGuard allowedRoles={['admin', 'security_engineer', 'developer', 'malware_analyst', 'client_owner', 'client_member']}>
               <Scopes />
             </RoleGuard>
           } />
 
           <Route path="rules" element={
-            <RoleGuard allowedRoles={['admin', 'security_engineer', 'client_owner']}>
+            <RoleGuard allowedRoles={['admin', 'security_engineer', 'developer', 'malware_analyst', 'client_owner']}>
               <CompanyRules />
             </RoleGuard>
           } />
 
           {/* Deleted Scans Archive */}
           <Route path="scans/deleted" element={
-            <RoleGuard allowedRoles={['admin', 'security_engineer', 'client_owner', 'client_member']}>
+            <RoleGuard allowedRoles={['admin', 'security_engineer', 'developer', 'malware_analyst', 'client_owner', 'client_member']}>
               <DeletedScans />
             </RoleGuard>
           } />

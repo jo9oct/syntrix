@@ -65,6 +65,13 @@ export const Billing: React.FC = () => {
   const location = useLocation();
   const { user } = useAuthStore();
 
+  // Administrators do not subscribe or manage billing; redirect to main security dashboard
+  useEffect(() => {
+    if (user?.role === 'admin') {
+      navigate('/dashboard', { replace: true });
+    }
+  }, [user?.role, navigate]);
+
   const [currentTier, setCurrentTier] = useState<'free' | 'pro' | 'enterprise'>('free');
   const [subscriptionStatus, setSubscriptionStatus] = useState<'active' | 'trial' | 'canceled'>('active');
   const [billingCycle, setBillingCycle] = useState<'monthly' | 'annual'>('monthly');
@@ -104,40 +111,125 @@ export const Billing: React.FC = () => {
   const [bankRefCode, setBankRefCode] = useState('FT2684910283');
   const [bankTransferDate, setBankTransferDate] = useState(new Date().toISOString().split('T')[0]);
 
-  // Transaction history
-  const [transactions, setTransactions] = useState([
-    {
-      id: 'tx-sentrix-pro-1727601',
-      date: 'Today',
-      amount: '2,500 ETB',
-      tier: 'Pro',
-      method: 'Telebirr',
-      status: 'success'
-    },
-    {
-      id: 'tx-sentrix-free-1725000',
-      date: 'Sep 01, 2026',
-      amount: '0 ETB',
-      tier: 'Free',
-      method: 'System Activation',
-      status: 'success'
-    }
-  ]);
+  // Transaction history interface & state
+  interface TransactionRecord {
+    id: string;
+    tx_ref: string;
+    date: string;
+    amount: string;
+    rawAmount: number;
+    currency: string;
+    tier: string;
+    method: string;
+    status: 'success' | 'pending' | 'failed';
+    customerName?: string;
+    customerEmail?: string;
+    createdAt?: string;
+    chapaReference?: string;
+  }
 
-  // Load subscription from API
-  useEffect(() => {
-    const fetchSub = async () => {
+  const formatTransaction = (item: any): TransactionRecord => {
+    const ref = item.tx_ref || item.id || `stx-${item._id?.slice(-8) || 'unknown'}`;
+    const rawDate = item.createdAt || item.verifiedAt || item.date;
+
+    let formattedDate = 'Recent';
+    if (rawDate) {
       try {
-        const { data } = await api.get('/payment/subscription');
-        if (data?.data?.tier) {
-          setCurrentTier(data.data.tier);
-          setSubscriptionStatus(data.data.status || 'active');
+        const d = new Date(rawDate);
+        if (!isNaN(d.getTime())) {
+          formattedDate = d.toLocaleDateString('en-US', {
+            year: 'numeric',
+            month: 'short',
+            day: '2-digit',
+            hour: '2-digit',
+            minute: '2-digit'
+          });
         }
-      } catch (e) {
-        // Fallback to local default
+      } catch {
+        formattedDate = String(rawDate);
       }
+    }
+
+    let methodDisplay = 'Chapa Gateway';
+    const rawMethod = (item.paymentMethod || item.method || '').toLowerCase();
+    if (rawMethod.includes('telebirr')) methodDisplay = 'Telebirr';
+    else if (rawMethod.includes('cbe')) methodDisplay = 'CBEBirr';
+    else if (rawMethod.includes('card')) methodDisplay = 'Credit Card';
+    else if (rawMethod.includes('bank')) methodDisplay = 'Bank Transfer';
+    else if (rawMethod.includes('system')) methodDisplay = 'System Activation';
+    else if (rawMethod) methodDisplay = rawMethod.charAt(0).toUpperCase() + rawMethod.slice(1);
+
+    let status: 'success' | 'pending' | 'failed' = 'success';
+    const rawStatus = (item.status || '').toLowerCase();
+    if (rawStatus === 'pending') status = 'pending';
+    else if (rawStatus === 'failed' || rawStatus === 'canceled') status = 'failed';
+    else status = 'success';
+
+    const amountNumber = typeof item.amount === 'number'
+      ? item.amount
+      : parseFloat(String(item.amount).replace(/[^0-9.]/g, '')) || 0;
+    const currency = item.currency || 'ETB';
+    const formattedAmount = `${amountNumber.toLocaleString()} ${currency}`;
+
+    const tier = (item.tier || 'pro').toUpperCase();
+
+    return {
+      id: ref,
+      tx_ref: ref,
+      date: formattedDate,
+      amount: formattedAmount,
+      rawAmount: amountNumber,
+      currency,
+      tier,
+      method: methodDisplay,
+      status,
+      customerName: item.customerName,
+      customerEmail: item.customerEmail,
+      createdAt: rawDate,
+      chapaReference: item.chapaReference
     };
-    fetchSub();
+  };
+
+  const [transactions, setTransactions] = useState<TransactionRecord[]>([]);
+  const [loadingTransactions, setLoadingTransactions] = useState(true);
+
+  const fetchBillingData = async () => {
+    setLoadingTransactions(true);
+    try {
+      const { data } = await api.get('/payment/subscription');
+      if (data?.data?.tier) {
+        setCurrentTier(data.data.tier);
+        setSubscriptionStatus(data.data.status || 'active');
+      }
+
+      let txList = data?.data?.transactions;
+
+      if (!Array.isArray(txList) || txList.length === 0) {
+        try {
+          const historyRes = await api.get('/payment/transactions');
+          if (historyRes?.data?.data?.transactions) {
+            txList = historyRes.data.data.transactions;
+          }
+        } catch {
+          // ignore
+        }
+      }
+
+      if (Array.isArray(txList) && txList.length > 0) {
+        setTransactions(txList.map(formatTransaction));
+      } else {
+        setTransactions([]);
+      }
+    } catch (e) {
+      console.error('Failed to load billing history', e);
+    } finally {
+      setLoadingTransactions(false);
+    }
+  };
+
+  // Load subscription and real transactions from API
+  useEffect(() => {
+    fetchBillingData();
 
     // Check URL parameters for return from Chapa or quick plan select
     const planParam = searchParams.get('plan') || (location.state as any)?.selectedTier;
@@ -168,22 +260,130 @@ export const Billing: React.FC = () => {
         // 1. Refresh Zustand auth store from backend database (retains user role as-is)
         await useAuthStore.getState().fetchMe();
 
-        setTransactions(prev => [
-          {
-            id: txRef,
-            date: 'Just now',
-            amount: `${data.data.amount || 2500} ${data.data.currency || 'ETB'}`,
-            tier: verifiedTier.toUpperCase(),
-            method: (data.data.paymentMethod || 'telebirr').toUpperCase(),
-            status: 'success'
-          },
-          ...prev
-        ]);
+        // 2. Refresh transaction list from backend database
+        await fetchBillingData();
       }
     } catch (err: any) {
       setErrorMessage(err?.response?.data?.error || 'Verification failed. Please check your transaction reference.');
     } finally {
       setIsProcessing(false);
+    }
+  };
+
+  const handleDownloadInvoice = (tx: TransactionRecord) => {
+    const invoiceNumber = `INV-${tx.id.replace(/[^a-zA-Z0-9]/g, '').slice(-8).toUpperCase()}`;
+    const subtotal = tx.rawAmount > 0 ? (tx.rawAmount / 1.15).toFixed(2) : '0.00';
+    const vat = tx.rawAmount > 0 ? (tx.rawAmount - parseFloat(subtotal)).toFixed(2) : '0.00';
+
+    const invoiceHtml = `<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8" />
+  <title>Tax Invoice - ${invoiceNumber}</title>
+  <style>
+    body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; margin: 40px; color: #1e293b; background: #fff; line-height: 1.5; }
+    .header { display: flex; justify-content: space-between; border-bottom: 2px solid #0ea5e9; padding-bottom: 20px; }
+    .logo { font-size: 24px; font-weight: 800; color: #0284c7; letter-spacing: -0.5px; }
+    .badge { display: inline-block; padding: 4px 10px; background: #ecfdf5; color: #059669; border: 1px solid #10b981; border-radius: 9999px; font-weight: bold; font-size: 12px; margin-top: 5px; }
+    .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 40px; margin: 30px 0; }
+    .section-title { font-size: 11px; text-transform: uppercase; font-weight: 700; color: #64748b; letter-spacing: 0.5px; margin-bottom: 8px; }
+    table { width: 100%; border-collapse: collapse; margin-top: 20px; }
+    th { text-align: left; padding: 12px; background: #f8fafc; font-size: 12px; font-weight: 600; color: #475569; border-bottom: 1px solid #e2e8f0; }
+    td { padding: 12px; border-bottom: 1px solid #f1f5f9; font-size: 13px; }
+    .totals { margin-top: 20px; margin-left: auto; width: 320px; }
+    .totals-row { display: flex; justify-content: space-between; padding: 6px 0; font-size: 13px; color: #475569; }
+    .totals-row.grand { font-size: 16px; font-weight: 800; color: #0f172a; border-top: 2px solid #e2e8f0; padding-top: 10px; margin-top: 6px; }
+    .footer { margin-top: 50px; padding-top: 20px; border-top: 1px solid #e2e8f0; text-align: center; font-size: 11px; color: #94a3b8; }
+    .stamp { display: inline-block; border: 2px dashed #059669; color: #059669; padding: 6px 14px; font-weight: 800; font-size: 13px; text-transform: uppercase; border-radius: 6px; transform: rotate(-3deg); margin-top: 15px; }
+    @media print { body { margin: 20px; } .no-print { display: none; } }
+  </style>
+</head>
+<body>
+  <div class="header">
+    <div>
+      <div class="logo">SENTRIX CYBER SECURITY</div>
+      <div style="font-size: 12px; color: #64748b; margin-top: 4px;">Automated Vulnerability Management & Threat Intel</div>
+      <div style="font-size: 11px; color: #94a3b8; margin-top: 2px;">TIN: 0084920194 | VAT Reg: ET-2026-9481 | Addis Ababa, Ethiopia</div>
+    </div>
+    <div style="text-align: right;">
+      <h2 style="margin: 0; font-size: 20px; color: #0f172a;">TAX INVOICE / RECEIPT</h2>
+      <div style="font-size: 12px; font-weight: 600; color: #64748b; margin-top: 4px;">Invoice: ${invoiceNumber}</div>
+      <div style="font-size: 12px; color: #64748b;">Date: ${tx.date}</div>
+      <div class="badge">${tx.status === 'success' ? 'PAID IN FULL' : tx.status.toUpperCase()}</div>
+    </div>
+  </div>
+
+  <div class="grid">
+    <div>
+      <div class="section-title">Billed To</div>
+      <div style="font-weight: 700; font-size: 14px;">${tx.customerName || user?.name || 'Customer'}</div>
+      <div style="font-size: 13px; color: #475569;">${tx.customerEmail || user?.email || ''}</div>
+      <div style="font-size: 12px; color: #64748b; margin-top: 4px;">Sentrix Security Workspace Account</div>
+    </div>
+    <div>
+      <div class="section-title">Settlement Details</div>
+      <div style="font-size: 12px; color: #475569;">Payment Provider: <strong>Chapa Financial Technologies S.C.</strong></div>
+      <div style="font-size: 12px; color: #475569;">Payment Method: <strong>${tx.method}</strong></div>
+      <div style="font-size: 12px; color: #475569; word-break: break-all;">TxRef: <code style="font-family: monospace; font-size: 11px;">${tx.tx_ref}</code></div>
+      ${tx.chapaReference ? `<div style="font-size: 12px; color: #475569;">Chapa Ref: <code style="font-family: monospace; font-size: 11px;">${tx.chapaReference}</code></div>` : ''}
+    </div>
+  </div>
+
+  <table>
+    <thead>
+      <tr>
+        <th>Description</th>
+        <th>Subscription Tier</th>
+        <th>Billing Period</th>
+        <th style="text-align: right;">Amount (${tx.currency})</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td>
+          <div style="font-weight: 600;">Sentrix Threat Engine Platform Subscription</div>
+          <div style="font-size: 11px; color: #64748b;">OWASP Dynamic Scans, Automated Retest & Remediation Kanban</div>
+        </td>
+        <td style="font-weight: 600; color: #0284c7;">${tx.tier}</td>
+        <td>Monthly Subscription</td>
+        <td style="text-align: right; font-weight: 600;">${tx.rawAmount.toLocaleString()}</td>
+      </tr>
+    </tbody>
+  </table>
+
+  <div class="totals">
+    <div class="totals-row">
+      <span>Net Subtotal (Before VAT):</span>
+      <span>${parseFloat(subtotal).toLocaleString()} ${tx.currency}</span>
+    </div>
+    <div class="totals-row">
+      <span>Value Added Tax (15% VAT):</span>
+      <span>${parseFloat(vat).toLocaleString()} ${tx.currency}</span>
+    </div>
+    <div class="totals-row grand">
+      <span>Total Paid:</span>
+      <span>${tx.amount}</span>
+    </div>
+  </div>
+
+  <div style="margin-top: 30px; display: flex; justify-content: space-between; align-items: flex-end;">
+    <div class="stamp">VERIFIED &bull; CHAPA COMPLIANT</div>
+    <div style="text-align: right;">
+      <button class="no-print" onclick="window.print()" style="padding: 8px 18px; background: #0ea5e9; color: white; border: none; border-radius: 6px; font-weight: 600; cursor: pointer; font-size: 13px;">Print / Save as PDF</button>
+    </div>
+  </div>
+
+  <div class="footer">
+    Thank you for choosing Sentrix. For invoicing inquiries or enterprise procurement support, contact billing@sentrix.local.
+  </div>
+</body>
+</html>`;
+
+    const printWindow = window.open('', '_blank');
+    if (printWindow) {
+      printWindow.document.write(invoiceHtml);
+      printWindow.document.close();
+      printWindow.focus();
     }
   };
 
@@ -466,7 +666,17 @@ export const Billing: React.FC = () => {
             <h3 className="text-base font-bold text-white">Chapa Transaction History</h3>
             <p className="text-xs text-text-muted mt-0.5">Verified receipts, Telebirr confirmations, and invoicing records</p>
           </div>
-          <span className="text-xs font-mono text-text-muted">{transactions.length} Records</span>
+          <div className="flex items-center gap-3">
+            <span className="text-xs font-mono text-text-muted">{transactions.length} Records</span>
+            <button
+              onClick={() => fetchBillingData()}
+              disabled={loadingTransactions}
+              className="p-1.5 rounded-lg text-text-muted hover:text-white hover:bg-white/10 transition-colors disabled:opacity-50"
+              title="Refresh transaction history"
+            >
+              <RefreshCw size={13} className={loadingTransactions ? 'animate-spin text-brand-cyan' : ''} />
+            </button>
+          </div>
         </div>
 
         <div className="overflow-x-auto">
@@ -483,29 +693,63 @@ export const Billing: React.FC = () => {
               </tr>
             </thead>
             <tbody className="divide-y divide-white/5 text-slate-300">
-              {transactions.map((tx) => (
-                <tr key={tx.id} className="hover:bg-white/[0.02]">
-                  <td className="px-5 py-3.5 font-mono text-white font-medium">{tx.id}</td>
-                  <td className="px-4 py-3.5 text-text-muted">{tx.date}</td>
-                  <td className="px-4 py-3.5 font-semibold text-brand-cyan">{tx.tier}</td>
-                  <td className="px-4 py-3.5 font-bold text-white">{tx.amount}</td>
-                  <td className="px-4 py-3.5">{tx.method}</td>
-                  <td className="px-4 py-3.5">
-                    <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full bg-green-500/20 text-green-400 font-bold text-[10px] border border-green-500/30">
-                      <CheckCircle2 size={10} /> Paid
-                    </span>
-                  </td>
-                  <td className="px-5 py-3.5 text-right">
-                    <button
-                      onClick={() => alert(`Downloading official VAT invoice for ${tx.id}`)}
-                      className="p-1 rounded-lg text-text-muted hover:text-white hover:bg-white/10 transition-colors"
-                      title="Download Invoice"
-                    >
-                      <Download size={14} />
-                    </button>
+              {loadingTransactions ? (
+                <tr>
+                  <td colSpan={7} className="px-5 py-8 text-center text-text-muted">
+                    <div className="flex items-center justify-center gap-2">
+                      <RefreshCw size={15} className="animate-spin text-brand-cyan" />
+                      <span>Loading real transaction records from backend...</span>
+                    </div>
                   </td>
                 </tr>
-              ))}
+              ) : transactions.length === 0 ? (
+                <tr>
+                  <td colSpan={7} className="px-5 py-8 text-center text-text-muted">
+                    <div className="flex flex-col items-center justify-center gap-2">
+                      <CreditCard size={28} className="text-white/20" />
+                      <span className="text-sm font-medium text-white/70">No payment transactions recorded yet</span>
+                      <span className="text-xs text-text-muted">Completed Telebirr, CBEBirr, and Card payments via Chapa will automatically record here.</span>
+                    </div>
+                  </td>
+                </tr>
+              ) : (
+                transactions.map((tx) => (
+                  <tr key={tx.id} className="hover:bg-white/[0.02] transition-colors">
+                    <td className="px-5 py-3.5 font-mono text-white font-medium" title={tx.tx_ref}>
+                      {tx.id.length > 28 ? `${tx.id.slice(0, 24)}...` : tx.id}
+                    </td>
+                    <td className="px-4 py-3.5 text-text-muted">{tx.date}</td>
+                    <td className="px-4 py-3.5 font-semibold text-brand-cyan">{tx.tier}</td>
+                    <td className="px-4 py-3.5 font-bold text-white">{tx.amount}</td>
+                    <td className="px-4 py-3.5">{tx.method}</td>
+                    <td className="px-4 py-3.5">
+                      {tx.status === 'success' ? (
+                        <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full bg-green-500/20 text-green-400 font-bold text-[10px] border border-green-500/30">
+                          <CheckCircle2 size={10} /> Paid
+                        </span>
+                      ) : tx.status === 'pending' ? (
+                        <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full bg-amber-500/20 text-amber-400 font-bold text-[10px] border border-amber-500/30">
+                          <Clock size={10} /> Pending
+                        </span>
+                      ) : (
+                        <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full bg-red-500/20 text-red-400 font-bold text-[10px] border border-red-500/30">
+                          <X size={10} /> Failed
+                        </span>
+                      )}
+                    </td>
+                    <td className="px-5 py-3.5 text-right">
+                      <button
+                        onClick={() => handleDownloadInvoice(tx)}
+                        className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-text-muted hover:text-white hover:bg-white/10 transition-colors border border-transparent hover:border-white/10 text-[11px]"
+                        title="Download official Ethiopian VAT invoice receipt"
+                      >
+                        <Download size={13} />
+                        <span className="hidden sm:inline">Receipt</span>
+                      </button>
+                    </td>
+                  </tr>
+                ))
+              )}
             </tbody>
           </table>
         </div>

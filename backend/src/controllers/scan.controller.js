@@ -12,6 +12,7 @@ import {
 } from "../services/scanLifecycle.service.js";
 
 import { getLatestComparisonResult } from "../services/scanComparison.service.js";
+import * as scanRepository from "../database/repositories/scan.repository.js";
 
 const createScanController = async (req, res, next) => {
   try {
@@ -156,7 +157,32 @@ const listDeletedScansController = async (req, res, next) => {
   }
 };
 
+const listScansController = async (req, res, next) => {
+  try {
+    const ownerId = getOwnerId(req);
+    const limit = Number(req.query.limit ?? 100);
+    const skip = Number(req.query.skip ?? 0);
+
+    const result = await scanRepository.list(ownerId, {
+      limit,
+      skip,
+      sort: { createdAt: -1, _id: -1 },
+    });
+
+    return res.status(200).json({
+      success: true,
+      data: {
+        scans: result,
+        items: result,
+      },
+    });
+  } catch (error) {
+    return next(error);
+  }
+};
+
 export {
+  listScansController,
   createScanController,
   getScanController,
   cancelScanController,

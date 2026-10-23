@@ -1,14 +1,13 @@
 import React, { useState } from 'react';
 import { Outlet, NavLink, useNavigate, Link, useLocation } from 'react-router-dom';
 import {
-  LayoutDashboard, FolderKanban, Bug,
-  FileText, Settings, LogOut, Bell, ChevronDown,
+  LayoutDashboard, Bug,
+  FileText, Settings, LogOut, Bell,
   ShieldCheck, ArrowRightLeft, RotateCcw, Search, Globe,
-  CheckCircle2, AlertTriangle, Shield, UserCheck, Code,
-  CreditCard, Menu, X, Sparkles, Network, Sliders, Trash2,
-  Users, Activity, ClipboardList, ArrowRight, Zap
+  Shield, Code, CreditCard, Menu, X, Sparkles, Network, Sliders, Trash2,
+  Users, Activity, ClipboardList, Layers
 } from 'lucide-react';
-import { useAuthStore, type UserRole, getRoleLandingPath, useUserTier } from '../../store/authStore';
+import { useAuthStore, type UserRole, useUserTier } from '../../store/authStore';
 
 interface NavItemDef {
   to: string;
@@ -18,7 +17,7 @@ interface NavItemDef {
   roles?: UserRole[];
 }
 
-// Enterprise analysis console navigation items for Admin when in Analysis mode
+// Enterprise analysis console navigation items (Billing & Plans is excluded for admin)
 const enterpriseNavItems: NavItemDef[] = [
   { to: '/dashboard', label: 'Dashboard', icon: LayoutDashboard, end: true },
   { to: '/dashboard/projects', label: 'Targets & Inventory', icon: Globe },
@@ -30,17 +29,18 @@ const enterpriseNavItems: NavItemDef[] = [
   { to: '/dashboard/remediation', label: 'Remediation', icon: ArrowRightLeft },
   { to: '/dashboard/retest', label: 'Retesting', icon: RotateCcw },
   { to: '/dashboard/malware', label: 'Malware Analysis', icon: Bug },
-  { to: '/dashboard/billing', label: 'Billing & Plans', icon: CreditCard },
 ];
 
 // Standard role-filtered navigation items for non-admin actors
 const standardNavItems: NavItemDef[] = [
-  { to: '/dashboard', label: 'Dashboard', icon: LayoutDashboard, end: true, roles: ['security_engineer', 'client_owner', 'client_member'] },
-  { to: '/dashboard/projects', label: 'Targets & Inventory', icon: Globe, roles: ['security_engineer', 'client_owner', 'client_member'] },
+  { to: '/dashboard', label: 'Dashboard', icon: LayoutDashboard, end: true, roles: ['security_engineer', 'developer', 'malware_analyst', 'client_owner', 'client_member'] },
+  { to: '/dashboard/service-orders', label: 'Service Orders', icon: ClipboardList, roles: ['client_owner', 'client_member'] },
+  { to: '/dashboard/service-projects', label: 'Project Workspaces', icon: Layers, roles: ['client_owner', 'client_member'] },
+  { to: '/dashboard/projects', label: 'Targets & Inventory', icon: Globe, roles: ['security_engineer', 'developer', 'malware_analyst', 'client_owner', 'client_member'] },
   { to: '/dashboard/assessment/new', label: 'New Assessment', icon: ShieldCheck, roles: ['security_engineer', 'client_owner', 'client_member'] },
   { to: '/dashboard/scopes', label: 'Security Scopes', icon: Network, roles: ['security_engineer', 'client_owner', 'client_member'] },
   { to: '/dashboard/rules', label: 'Company Policies', icon: Sliders, roles: ['security_engineer', 'client_owner'] },
-  { to: '/dashboard/reports', label: 'Reports', icon: FileText, roles: ['security_engineer', 'client_owner', 'malware_analyst', 'client_member'] },
+  { to: '/dashboard/reports', label: 'Reports', icon: FileText, roles: ['security_engineer', 'developer', 'malware_analyst', 'client_owner', 'client_member'] },
   { to: '/dashboard/scans/deleted', label: 'Deleted Scans', icon: Trash2, roles: ['security_engineer', 'client_owner', 'client_member'] },
   { to: '/dashboard/remediation', label: 'Remediation', icon: ArrowRightLeft, roles: ['developer', 'security_engineer', 'client_owner', 'client_member'] },
   { to: '/dashboard/retest', label: 'Retesting', icon: RotateCcw, roles: ['security_engineer', 'developer', 'client_owner', 'client_member'] },
@@ -59,7 +59,7 @@ export const AppShell: React.FC = () => {
   const navigate = useNavigate();
   const location = useLocation();
   const { user, logout } = useAuthStore();
-  const { tier: userTier, isFree, isPro, isEnterprise } = useUserTier();
+  const { tier: userTier } = useUserTier();
   const [showNotifications, setShowNotifications] = useState(false);
   const [notifications, setNotifications] = useState(DEMO_NOTIFICATIONS);
   const [mobileSidebarOpen, setMobileSidebarOpen] = useState(false);
@@ -75,8 +75,53 @@ export const AppShell: React.FC = () => {
   };
 
   const isAdmin = currentUser.role === 'admin';
-  const isAdminSection = isAdmin && location.pathname.startsWith('/dashboard/admin');
-  const isAnalysisMode = isAdmin && !isAdminSection;
+  const isAdminSection = isAdmin && (location.pathname.startsWith('/dashboard/admin') || location.pathname.startsWith('/dashboard/service-projects'));
+
+  // Configuration for specialist operation switcher button at top navbar
+  const getSpecialistSwitcher = () => {
+    switch (currentUser.role) {
+      case 'admin':
+        return {
+          isOnOperation: location.pathname.startsWith('/dashboard/admin') || location.pathname.startsWith('/dashboard/service-projects'),
+          operationPath: '/dashboard/admin',
+          operationLabel: 'Admin Operations',
+          operationIcon: Settings,
+          badgeColor: 'bg-purple-500/15 hover:bg-purple-500/25 border-purple-500/35 text-purple-300',
+        };
+      case 'developer':
+        return {
+          isOnOperation: location.pathname.startsWith('/dashboard/developer') || location.pathname.startsWith('/dashboard/remediation') || location.pathname.startsWith('/dashboard/retest') || location.pathname.startsWith('/dashboard/service-projects'),
+          operationPath: '/dashboard/developer',
+          operationLabel: 'Developer Operations',
+          operationIcon: Code,
+          badgeColor: 'bg-emerald-500/15 hover:bg-emerald-500/25 border-emerald-500/35 text-emerald-400',
+        };
+      case 'malware_analyst':
+        return {
+          isOnOperation: location.pathname.startsWith('/dashboard/malware') || location.pathname.startsWith('/dashboard/service-projects'),
+          operationPath: '/dashboard/malware',
+          operationLabel: 'Malware Operations',
+          operationIcon: Bug,
+          badgeColor: 'bg-amber-500/15 hover:bg-amber-500/25 border-amber-500/35 text-amber-400',
+        };
+      case 'security_engineer':
+        return {
+          isOnOperation: location.pathname.startsWith('/dashboard/security') || location.pathname.startsWith('/dashboard/retest') || location.pathname.startsWith('/dashboard/service-projects'),
+          operationPath: '/dashboard/security',
+          operationLabel: 'Security Operations',
+          operationIcon: ShieldCheck,
+          badgeColor: 'bg-brand-cyan/15 hover:bg-brand-cyan/25 border-brand-cyan/35 text-brand-cyan',
+        };
+      default:
+        return null;
+    }
+  };
+
+  const switcher = getSpecialistSwitcher();
+
+  // Any specialist (Admin, Developer, Malware Analyst, Security Tester) entering Analysis Console gains the exact same interface
+  const isSpecialistRole = ['admin', 'developer', 'malware_analyst', 'security_engineer'].includes(currentUser.role);
+  const isAnalysisMode = isSpecialistRole ? (switcher ? !switcher.isOnOperation : false) : false;
 
   const filteredNavItems = standardNavItems.filter(item => !item.roles || item.roles.includes(currentUser.role));
 
@@ -165,10 +210,23 @@ export const AppShell: React.FC = () => {
                     <ClipboardList size={18} className="shrink-0" />
                     <span className="truncate">Client Orders</span>
                   </Link>
+
+                  <Link
+                    to="/dashboard/service-projects"
+                    onClick={() => setMobileSidebarOpen(false)}
+                    className={`flex items-center gap-3 px-3.5 py-2.5 rounded-xl text-xs sm:text-sm font-medium transition-all duration-150 ${
+                      location.pathname.startsWith('/dashboard/service-projects')
+                        ? 'bg-brand-cyan/15 text-brand-cyan border border-brand-cyan/25 shadow-sm shadow-brand-cyan/10 font-semibold'
+                        : 'text-text-muted hover:text-white hover:bg-white/5'
+                    }`}
+                  >
+                    <Layers size={18} className="shrink-0" />
+                    <span className="truncate">Project Workspaces</span>
+                  </Link>
                 </div>
               </div>
 
-              {/* Specialist Teams Section (Security Testers, Developers, Malware Analysts) */}
+              {/* Specialist Teams Section */}
               <div>
                 <div className="px-3 pb-1.5 text-[10px] font-bold uppercase tracking-wider text-text-muted">
                   Specialist Teams
@@ -263,88 +321,187 @@ export const AppShell: React.FC = () => {
                   </Link>
                 </div>
               </div>
-
-              {/* Dedicated Analysis Button for Admin */}
-              <div className="pt-3 border-t border-white/10">
-                <div className="px-3 pb-2 text-[10px] font-bold uppercase tracking-wider text-text-muted flex items-center justify-between">
-                  <span>Security Assessment</span>
-                  <span className="text-[9px] bg-brand-cyan/20 text-brand-cyan px-1.5 py-0.2 rounded font-mono font-bold">SOVEREIGN</span>
+            </div>
+          ) : currentUser.role === 'developer' && !isAnalysisMode ? (
+            /* DEVELOPER OPERATIONS & ASSIGNED ORDERS DISPATCH NAVIGATION */
+            <div className="space-y-4">
+              {/* Dev Workspace & Assigned Orders */}
+              <div>
+                <div className="px-3 pb-1.5 text-[10px] font-bold uppercase tracking-wider text-text-muted flex items-center justify-between">
+                  <span>Developer Operations</span>
+                  <span className="text-[9px] bg-emerald-500/20 text-emerald-400 px-1.5 py-0.2 rounded font-mono font-bold">DevSecOps</span>
                 </div>
-                <button
-                  onClick={() => {
-                    setMobileSidebarOpen(false);
-                    navigate('/dashboard');
-                  }}
-                  className="w-full flex items-center justify-between p-3 rounded-2xl bg-gradient-to-r from-brand-cyan/20 via-brand-purple/15 to-brand-magenta/20 border border-brand-cyan/40 hover:border-brand-cyan text-white font-semibold transition-all shadow-lg shadow-brand-cyan/10 group"
-                >
-                  <div className="flex items-center gap-2.5">
-                    <div className="w-8 h-8 rounded-xl bg-brand-cyan/20 flex items-center justify-center text-brand-cyan shrink-0 group-hover:scale-110 transition-transform">
-                      <Sparkles size={16} />
+                <div className="space-y-1">
+                  {/* Developer Dashboard */}
+                  <Link
+                    to="/dashboard/developer"
+                    onClick={() => setMobileSidebarOpen(false)}
+                    className={`flex items-center gap-3 px-3.5 py-2.5 rounded-xl text-xs sm:text-sm font-medium transition-all duration-150 ${
+                      location.pathname === '/dashboard/developer' && (!location.search || location.search === '' || location.search === '?tab=overview')
+                        ? 'bg-emerald-500/15 text-emerald-400 border border-emerald-500/25 shadow-sm shadow-emerald-500/10 font-semibold'
+                        : 'text-text-muted hover:text-white hover:bg-white/5'
+                    }`}
+                  >
+                    <LayoutDashboard size={18} className="shrink-0" />
+                    <span className="truncate">Developer Dashboard</span>
+                  </Link>
+
+                  {/* Accept Orders from Admin */}
+                  <Link
+                    to="/dashboard/developer?tab=orders"
+                    onClick={() => setMobileSidebarOpen(false)}
+                    className={`flex items-center justify-between px-3.5 py-2.5 rounded-xl text-xs sm:text-sm font-medium transition-all duration-150 ${
+                      location.pathname === '/dashboard/developer' && location.search.includes('tab=orders')
+                        ? 'bg-emerald-500/15 text-emerald-400 border border-emerald-500/25 shadow-sm shadow-emerald-500/10 font-semibold'
+                        : 'text-text-muted hover:text-white hover:bg-white/5'
+                    }`}
+                  >
+                    <div className="flex items-center gap-3 min-w-0">
+                      <ClipboardList size={18} className="shrink-0 text-emerald-400" />
+                      <span className="truncate">Assigned Orders</span>
                     </div>
-                    <div className="text-left">
-                      <div className="text-xs font-bold text-white flex items-center gap-1.5">
-                        Analysis
-                        <span className="text-[9px] font-mono uppercase bg-brand-cyan text-black px-1.5 py-0.2 rounded font-black tracking-wider">Enterprise</span>
-                      </div>
-                      <div className="text-[10px] text-text-muted">Launch full scanner suite</div>
+                    <span className="text-[10px] font-mono px-1.5 py-0.5 rounded bg-emerald-500/15 text-emerald-400 border border-emerald-500/20 font-bold">
+                      Accept
+                    </span>
+                  </Link>
+
+                  {/* Project Workspaces */}
+                  <Link
+                    to="/dashboard/service-projects"
+                    onClick={() => setMobileSidebarOpen(false)}
+                    className={`flex items-center gap-3 px-3.5 py-2.5 rounded-xl text-xs sm:text-sm font-medium transition-all duration-150 ${
+                      location.pathname.startsWith('/dashboard/service-projects')
+                        ? 'bg-emerald-500/15 text-emerald-400 border border-emerald-500/25 shadow-sm shadow-emerald-500/10 font-semibold'
+                        : 'text-text-muted hover:text-white hover:bg-white/5'
+                    }`}
+                  >
+                    <Layers size={18} className="shrink-0" />
+                    <span className="truncate">Project Workspaces</span>
+                  </Link>
+                </div>
+              </div>
+
+              {/* Code Remediation */}
+              <div>
+                <div className="px-3 pb-1.5 text-[10px] font-bold uppercase tracking-wider text-text-muted">
+                  Remediation & Fixes
+                </div>
+                <div className="space-y-1">
+                  <Link
+                    to="/dashboard/remediation"
+                    onClick={() => setMobileSidebarOpen(false)}
+                    className={`flex items-center gap-3 px-3.5 py-2.5 rounded-xl text-xs sm:text-sm font-medium transition-all duration-150 ${
+                      location.pathname.startsWith('/dashboard/remediation')
+                        ? 'bg-emerald-500/15 text-emerald-400 border border-emerald-500/25 shadow-sm shadow-emerald-500/10 font-semibold'
+                        : 'text-text-muted hover:text-white hover:bg-white/5'
+                    }`}
+                  >
+                    <Code size={18} className="shrink-0 text-emerald-400" />
+                    <span className="truncate">Code Remediation</span>
+                  </Link>
+                </div>
+              </div>
+            </div>
+          ) : currentUser.role === 'security_engineer' && !isAnalysisMode ? (
+            /* SECURITY OPERATIONS & ASSIGNED AUDITS NAVIGATION */
+            <div className="space-y-4">
+              <div>
+                <div className="px-3 pb-1.5 text-[10px] font-bold uppercase tracking-wider text-text-muted flex items-center justify-between">
+                  <span>Security Operations</span>
+                  <span className="text-[9px] bg-brand-cyan/20 text-brand-cyan px-1.5 py-0.2 rounded font-mono font-bold">SecOps</span>
+                </div>
+                <div className="space-y-1">
+                  {/* Security Dashboard */}
+                  <Link
+                    to="/dashboard/security"
+                    onClick={() => setMobileSidebarOpen(false)}
+                    className={`flex items-center gap-3 px-3.5 py-2.5 rounded-xl text-xs sm:text-sm font-medium transition-all duration-150 ${
+                      location.pathname === '/dashboard/security' && (!location.search || location.search === '' || location.search === '?tab=overview')
+                        ? 'bg-brand-cyan/15 text-brand-cyan border border-brand-cyan/25 shadow-sm shadow-brand-cyan/10 font-semibold'
+                        : 'text-text-muted hover:text-white hover:bg-white/5'
+                    }`}
+                  >
+                    <LayoutDashboard size={18} className="shrink-0" />
+                    <span className="truncate">Security Dashboard</span>
+                  </Link>
+
+                  {/* Accept Orders from Admin */}
+                  <Link
+                    to="/dashboard/security?tab=orders"
+                    onClick={() => setMobileSidebarOpen(false)}
+                    className={`flex items-center justify-between px-3.5 py-2.5 rounded-xl text-xs sm:text-sm font-medium transition-all duration-150 ${
+                      location.pathname === '/dashboard/security' && location.search.includes('tab=orders')
+                        ? 'bg-brand-cyan/15 text-brand-cyan border border-brand-cyan/25 shadow-sm shadow-brand-cyan/10 font-semibold'
+                        : 'text-text-muted hover:text-white hover:bg-white/5'
+                    }`}
+                  >
+                    <div className="flex items-center gap-3 min-w-0">
+                      <ClipboardList size={18} className="shrink-0 text-brand-cyan" />
+                      <span className="truncate">Assigned Orders</span>
                     </div>
-                  </div>
-                  <ArrowRight size={14} className="text-brand-cyan group-hover:translate-x-1 transition-transform" />
-                </button>
+                    <span className="text-[10px] font-mono px-1.5 py-0.5 rounded bg-brand-cyan/15 text-brand-cyan border border-brand-cyan/20 font-bold">
+                      Accept
+                    </span>
+                  </Link>
+
+                  {/* Project Workspaces */}
+                  <Link
+                    to="/dashboard/service-projects"
+                    onClick={() => setMobileSidebarOpen(false)}
+                    className={`flex items-center gap-3 px-3.5 py-2.5 rounded-xl text-xs sm:text-sm font-medium transition-all duration-150 ${
+                      location.pathname.startsWith('/dashboard/service-projects')
+                        ? 'bg-brand-cyan/15 text-brand-cyan border border-brand-cyan/25 shadow-sm shadow-brand-cyan/10 font-semibold'
+                        : 'text-text-muted hover:text-white hover:bg-white/5'
+                    }`}
+                  >
+                    <Layers size={18} className="shrink-0" />
+                    <span className="truncate">Project Workspaces</span>
+                  </Link>
+                </div>
+              </div>
+
+              {/* Retest Verification */}
+              <div>
+                <div className="px-3 pb-1.5 text-[10px] font-bold uppercase tracking-wider text-text-muted">
+                  Audits & Retest
+                </div>
+                <div className="space-y-1">
+                  <Link
+                    to="/dashboard/retest"
+                    onClick={() => setMobileSidebarOpen(false)}
+                    className={`flex items-center gap-3 px-3.5 py-2.5 rounded-xl text-xs sm:text-sm font-medium transition-all duration-150 ${
+                      location.pathname.startsWith('/dashboard/retest')
+                        ? 'bg-brand-cyan/15 text-brand-cyan border border-brand-cyan/25 shadow-sm shadow-brand-cyan/10 font-semibold'
+                        : 'text-text-muted hover:text-white hover:bg-white/5'
+                    }`}
+                  >
+                    <RotateCcw size={18} className="shrink-0 text-brand-cyan" />
+                    <span className="truncate">Retest Verification</span>
+                  </Link>
+                </div>
               </div>
             </div>
           ) : isAnalysisMode ? (
-            /* ADMIN ENTERPRISE SOVEREIGN ANALYSIS SUITE */
-            <div className="space-y-3">
-              {/* Enterprise Mode Banner with Return Button */}
-              <div className="p-3 rounded-2xl bg-gradient-to-br from-brand-cyan/20 via-[#1e1b4b]/40 to-brand-magenta/20 border border-brand-cyan/40 text-white shadow-lg shadow-brand-cyan/10">
-                <div className="flex items-center justify-between mb-1.5">
-                  <span className="text-[10px] font-mono uppercase tracking-wider text-brand-cyan font-bold flex items-center gap-1">
-                    <Sparkles size={12} className="animate-pulse" /> Enterprise Sovereign
-                  </span>
-                  <span className="text-[9px] bg-brand-cyan/30 text-brand-cyan px-1.5 py-0.2 rounded font-mono font-bold border border-brand-cyan/40">Admin Active</span>
-                </div>
-                <div className="text-[11px] text-slate-300 leading-tight mb-2.5">
-                  All 25 scanners, scopes, policies, and findings unlocked with enterprise privileges.
-                </div>
-                <button
-                  onClick={() => {
-                    setMobileSidebarOpen(false);
-                    navigate('/dashboard/admin');
-                  }}
-                  className="w-full flex items-center justify-center gap-2 py-1.5 px-3 rounded-xl bg-white/10 hover:bg-white/20 text-xs font-semibold text-white border border-white/15 transition-all shadow-sm"
+            /* ADMIN IN USER DASHBOARD / ANALYSIS CONSOLE (Billing & Plans Removed) */
+            <div className="space-y-1">
+              {enterpriseNavItems.map(({ to, label, icon: Icon, end }) => (
+                <NavLink
+                  key={to}
+                  to={to}
+                  end={end}
+                  onClick={() => setMobileSidebarOpen(false)}
+                  className={({ isActive }: { isActive: boolean }) =>
+                    `flex items-center gap-3 px-3.5 py-2.5 rounded-xl text-xs sm:text-sm font-medium transition-all duration-150 ${
+                      isActive
+                        ? 'bg-brand-cyan/15 text-brand-cyan border border-brand-cyan/25 shadow-sm shadow-brand-cyan/10 font-semibold'
+                        : 'text-text-muted hover:text-white hover:bg-white/5'
+                    }`
+                  }
                 >
-                  <Settings size={13} />
-                  <span>Return to Admin Operations</span>
-                </button>
-              </div>
-
-              {/* Complete Enterprise Scanner & Assessment Navigation */}
-              <div className="space-y-1">
-                {enterpriseNavItems.map(({ to, label, icon: Icon, end }) => (
-                  <NavLink
-                    key={to}
-                    to={to}
-                    end={end}
-                    onClick={() => setMobileSidebarOpen(false)}
-                    className={({ isActive }: { isActive: boolean }) =>
-                      `flex items-center gap-3 px-3.5 py-2.5 rounded-xl text-xs sm:text-sm font-medium transition-all duration-150 ${
-                        isActive
-                          ? 'bg-brand-cyan/15 text-brand-cyan border border-brand-cyan/25 shadow-sm shadow-brand-cyan/10 font-semibold'
-                          : 'text-text-muted hover:text-white hover:bg-white/5'
-                      }`
-                    }
-                  >
-                    <Icon size={18} className="shrink-0" />
-                    <span className="truncate">{label}</span>
-                    {label === 'Billing & Plans' && (
-                      <span className="ml-auto text-[10px] font-bold px-1.5 py-0.5 rounded bg-brand-cyan/20 text-brand-cyan border border-brand-cyan/30">
-                        Chapa
-                      </span>
-                    )}
-                  </NavLink>
-                ))}
-              </div>
+                  <Icon size={18} className="shrink-0" />
+                  <span className="truncate">{label}</span>
+                </NavLink>
+              ))}
             </div>
           ) : (
             /* STANDARD ROLE-FILTERED NAVIGATION */
@@ -376,8 +533,8 @@ export const AppShell: React.FC = () => {
           )}
         </nav>
 
-        {/* Workspace Plan & Capacity Status for Client Owner & Member */}
-        {(currentUser.role === 'client_owner' || currentUser.role === 'client_member') && (
+        {/* Workspace Plan & Capacity Status - Shown ONLY for client users (NEVER for admin/specialists) */}
+        {!isSpecialistRole && (currentUser.role === 'client_owner' || currentUser.role === 'client_member') && (
           <div className="p-3 mx-3 mb-2 rounded-2xl bg-white/[0.03] border border-white/10 space-y-2">
             <div className="flex items-center justify-between">
               <span className="text-[10px] font-bold uppercase tracking-wider text-text-muted">Workspace Plan</span>
@@ -466,26 +623,25 @@ export const AppShell: React.FC = () => {
           </div>
 
           <div className="flex items-center gap-2 sm:gap-3">
-            {/* Admin Mode Quick Switcher Pill */}
-            {isAdmin && (
-              isAdminSection ? (
+            {/* Specialist & Admin Operation Mode Switcher Pill */}
+            {switcher && (
+              switcher.isOnOperation ? (
                 <button
                   onClick={() => navigate('/dashboard')}
                   className="hidden md:flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-brand-cyan/15 hover:bg-brand-cyan/25 border border-brand-cyan/35 text-brand-cyan text-xs font-semibold transition-all shadow-sm shadow-brand-cyan/10"
-                  title="Switch to Enterprise Sovereign Analysis Console"
+                  title="Switch to Analysis Console"
                 >
                   <Sparkles size={13} className="animate-pulse" />
                   <span>Analysis Console</span>
-                  <span className="text-[9px] bg-brand-cyan text-black px-1.5 py-0.2 rounded font-black">ENT</span>
                 </button>
               ) : (
                 <button
-                  onClick={() => navigate('/dashboard/admin')}
-                  className="hidden md:flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-purple-500/15 hover:bg-purple-500/25 border border-purple-500/35 text-purple-300 text-xs font-semibold transition-all shadow-sm"
-                  title="Return to Admin Operations & Client Orders Dispatch"
+                  onClick={() => navigate(switcher.operationPath)}
+                  className={`hidden md:flex items-center gap-1.5 px-3 py-1.5 rounded-full border text-xs font-semibold transition-all shadow-sm ${switcher.badgeColor}`}
+                  title={`Return to ${switcher.operationLabel}`}
                 >
-                  <Settings size={13} />
-                  <span>Admin Operations</span>
+                  <switcher.operationIcon size={13} />
+                  <span>{switcher.operationLabel}</span>
                 </button>
               )
             )}
@@ -503,8 +659,8 @@ export const AppShell: React.FC = () => {
                 </span>
               </div>
 
-              {/* Tier Badge for client_owner & client_member */}
-              {(currentUser.role === 'client_owner' || currentUser.role === 'client_member') && (
+              {/* Tier Badge - Shown ONLY for client users (NEVER for admin/specialists) */}
+              {!isSpecialistRole && (currentUser.role === 'client_owner' || currentUser.role === 'client_member') && (
                 <div className="flex items-center gap-1.5">
                   <span className={`px-2.5 py-1 rounded-full text-xs font-bold uppercase tracking-wider ${
                     userTier === 'enterprise'
@@ -524,15 +680,6 @@ export const AppShell: React.FC = () => {
                     >
                       <Sparkles size={11} />
                       <span className="hidden sm:inline">Upgrade</span>
-                    </button>
-                  )}
-                  {userTier === 'pro' && (
-                    <button
-                      onClick={() => navigate('/dashboard/billing')}
-                      className="text-xs px-2.5 py-1 rounded-full font-semibold bg-white/5 hover:bg-white/10 text-brand-purple border border-brand-purple/30 transition-colors"
-                      title="Upgrade to Enterprise"
-                    >
-                      <span className="hidden sm:inline">Enterprise</span> &rarr;
                     </button>
                   )}
                 </div>
@@ -555,7 +702,7 @@ export const AppShell: React.FC = () => {
                 )}
               </button>
 
-              {/* Invisible click-away overlay (no shading of existing page) */}
+              {/* Invisible click-away overlay */}
               {showNotifications && (
                 <div
                   className="fixed inset-0 z-40 bg-transparent"
@@ -563,7 +710,7 @@ export const AppShell: React.FC = () => {
                 />
               )}
 
-              {/* Notification Popover - Solid dark opaque container displayed cleanly above everything */}
+              {/* Notification Popover */}
               {showNotifications && (
                 <div className="absolute right-0 top-full mt-2 w-80 sm:w-96 bg-[#0f172a] border border-white/20 rounded-2xl p-4 shadow-2xl shadow-black z-50 text-white">
                   <div className="flex items-center justify-between pb-3 border-b border-white/10 mb-3">
@@ -600,7 +747,6 @@ export const AppShell: React.FC = () => {
                 </div>
               )}
             </div>
-
 
             {/* User pill & Sign Out */}
             <div className="flex items-center gap-2 pl-2 border-l border-white/10">

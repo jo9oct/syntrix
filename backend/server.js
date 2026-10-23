@@ -17,6 +17,10 @@ import { errorMiddleware } from "./src/middleware/error.middleware.js";
 //auth
 import authRoutes from "./src/routes/auth.routes.js";
 import adminRoutes from "./src/routes/admin.routes.js";
+import dashboardRoutes from "./src/routes/dashboard.routes.js";
+import serviceOrderRoutes from "./src/routes/serviceOrder.routes.js";
+import serviceProjectRoutes from "./src/routes/serviceProject.routes.js";
+import projectTaskRoutes from "./src/routes/projectTask.routes.js";
 
 // Existing Web Security Assessment routes.
 import healthRoutes from "./src/routes/health.routes.js";
@@ -147,6 +151,15 @@ app.use("/api/v1/reports", reportRoutes);
 
 // Authentication routes
 app.use("/api/v1/auth", authRoutes);
+
+// Dashboard routes (User Dashboard /dashboard/user and adaptive /dashboard)
+app.use("/api/v1/dashboard", dashboardRoutes);
+
+// Service Order & Project Management routes
+app.use("/api/v1/service-orders", serviceOrderRoutes);
+app.use("/api/v1/service-projects", serviceProjectRoutes);
+app.use("/api/v1/project-tasks", projectTaskRoutes);
+
 app.use("/api/v1", adminRoutes);
 
 // Sentrix health endpoint.

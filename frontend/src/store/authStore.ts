@@ -48,7 +48,7 @@ export const DEMO_ACTORS: Record<UserRole, DemoActor> = {
     email: 'jane@sentrix.local',
     role: 'security_engineer',
     title: 'Senior Security Engineer',
-    defaultPath: '/dashboard',
+    defaultPath: '/dashboard/security',
     description: 'Vulnerability assessment, 25-scanner execution, scopes, company rules, and finding triage.',
     badgeColor: 'bg-brand-cyan/15 text-brand-cyan border-brand-cyan/30'
   },
@@ -57,7 +57,7 @@ export const DEMO_ACTORS: Record<UserRole, DemoActor> = {
     email: 'dev@sentrix.local',
     role: 'developer',
     title: 'Remediation Developer',
-    defaultPath: '/dashboard/remediation',
+    defaultPath: '/dashboard/developer',
     description: 'Kanban remediation tickets, patch development, and 1-click verification retest requests.',
     badgeColor: 'bg-emerald-500/15 text-emerald-400 border-emerald-500/30'
   },
@@ -98,7 +98,7 @@ export const getRoleLandingPath = (role?: string): string => {
     case 'admin':
       return '/dashboard/admin';
     case 'developer':
-      return '/dashboard/remediation';
+      return '/dashboard/developer';
     case 'malware_analyst':
       return '/dashboard/malware';
     case 'client_owner':
@@ -106,6 +106,7 @@ export const getRoleLandingPath = (role?: string): string => {
     case 'client_member':
       return '/dashboard/findings';
     case 'security_engineer':
+      return '/dashboard/security';
     default:
       return '/dashboard';
   }
@@ -290,11 +291,12 @@ export const useAuthStore = create<AuthState>()(
 export const useUserTier = () => {
   const user = useAuthStore(s => s.user);
   const tier = (user?.subscriptionTier || 'free') as 'free' | 'pro' | 'enterprise';
+  const isAdmin = user?.role === 'admin';
   return {
-    tier,
-    isFree: tier === 'free',
-    isPro: tier === 'pro',
-    isEnterprise: tier === 'enterprise',
+    tier: (isAdmin ? 'admin' : tier) as any,
+    isFree: !isAdmin && tier === 'free',
+    isPro: !isAdmin && tier === 'pro',
+    isEnterprise: !isAdmin && tier === 'enterprise',
     status: user?.subscriptionStatus || 'active',
   };
 };
