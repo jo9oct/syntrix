@@ -60,6 +60,22 @@ const serviceProjectSchema = new Schema(
       max: 100,
       default: 0,
     },
+    developmentProgress: {
+      type: Number,
+      min: 0,
+      max: 100,
+      default: 0,
+    },
+    securityTestingProgress: {
+      type: Number,
+      min: 0,
+      max: 100,
+      default: 0,
+    },
+    submittedByDeveloper: {
+      type: Boolean,
+      default: false,
+    },
     deadline: {
       type: Date,
     },
@@ -93,11 +109,18 @@ const serviceProjectSchema = new Schema(
     ],
     deliverables: [
       {
-        title: { type: String, required: true },
+        title: { type: String, default: "" },
+        name: { type: String, default: "" },
         description: { type: String, default: "" },
-        url: { type: String, required: true },
+        url: { type: String, default: "" },
+        fileUrl: { type: String, default: "" },
+        fileName: { type: String, default: "" },
+        fileSize: { type: String, default: "" },
+        fileType: { type: String, default: "report" },
         submittedBy: { type: Schema.Types.ObjectId, ref: "User" },
+        uploadedBy: { type: Schema.Types.ObjectId, ref: "User" },
         submittedAt: { type: Date, default: Date.now },
+        uploadedAt: { type: Date, default: Date.now },
       },
     ],
     signOffs: {
@@ -119,6 +142,42 @@ const serviceProjectSchema = new Schema(
         acceptedAt: { type: Date },
         feedback: { type: String, default: "" },
       },
+    },
+    isDeliveredToClient: {
+      type: Boolean,
+      default: false,
+      index: true,
+    },
+    testingFeedback: [
+      {
+        rejectedBy: { type: Schema.Types.ObjectId, ref: "User" },
+        reason: { type: String, required: true },
+        notes: { type: String, default: "" },
+        severity: { type: String, enum: ["critical", "high", "medium", "low"], default: "high" },
+        attachments: [
+          {
+            name: { type: String, default: "" },
+            url: { type: String, default: "" },
+            fileType: { type: String, default: "document" },
+            fileSize: { type: String, default: "" },
+          },
+        ],
+        resolved: { type: Boolean, default: false },
+        resolvedAt: { type: Date },
+        resolutionNotes: { type: String, default: "" },
+        createdAt: { type: Date, default: Date.now },
+      },
+    ],
+    deliveredAt: {
+      type: Date,
+    },
+    deliveredBy: {
+      type: Schema.Types.ObjectId,
+      ref: "User",
+    },
+    deliveryNotes: {
+      type: String,
+      default: "",
     },
   },
   {

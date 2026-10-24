@@ -8,11 +8,12 @@ import {
   Code, ArrowRightLeft, Sparkles, Filter, Check,
   ExternalLink, FileText, Send, ChevronRight, Zap, Play,
   Cpu, HardDrive, Terminal, BarChart3, Globe, DollarSign,
-  TrendingUp, Layers, HelpCircle
+  TrendingUp, Layers, HelpCircle, MessageSquare
 } from 'lucide-react';
 import { useSearchParams, useNavigate, Link } from 'react-router-dom';
-import { type UserRole } from '../../../store/authStore';
+import { useAuthStore, type UserRole } from '../../../store/authStore';
 import api from '../../../lib/api';
+import { useClientPortalStatus, broadcastPortalStatus } from '../../../lib/useClientPortalStatus';
 
 export interface ServerRootInfo {
   name: string;
@@ -84,6 +85,8 @@ export interface ClientOrder {
   deadline: string;
   deliverable: string;
   notes?: string;
+  commentsCount?: number;
+  comments?: any[];
 }
 
 interface UserRecord {
@@ -99,24 +102,8 @@ interface UserRecord {
   createdAt?: string;
 }
 
-const INITIAL_USERS: UserRecord[] = [
-  { id: 'u-1', name: 'System Admin', email: 'admin@sentrix.local', role: 'admin', org: 'Sentrix Ops', status: 'active', lastLogin: '10 min ago' },
-  { id: 'u-2', name: 'Jane Smith', email: 'jane@sentrix.local', role: 'security_engineer', org: 'Sentrix Ops', status: 'active', lastLogin: '25 min ago' },
-  { id: 'u-3', name: 'Sarah Connor', email: 'sarah@sentrix.local', role: 'malware_analyst', org: 'Sentrix Lab', status: 'active', lastLogin: '3 hours ago' },
-  { id: 'u-4', name: 'John Doe', email: 'john@acmecorp.local', role: 'client_owner', org: 'Acme Corp', status: 'active', lastLogin: '1 day ago' },
-  { id: 'u-5', name: 'Alex Rivera', email: 'dev@sentrix.local', role: 'developer', org: 'Acme Corp', status: 'active', lastLogin: '2 days ago' },
-];
-
-const AUDIT_LOGS = [
-  { event: 'Client Order Accepted (ORD-8842)', actor: 'admin@sentrix.local', ip: '127.0.0.1', target: 'Globex Health Solutions', time: '15 min ago' },
-  { event: 'Order Dispatched to Security Testers (ORD-7729)', actor: 'admin@sentrix.local', ip: '127.0.0.1', target: 'Assignee: Jane Smith', time: '1 hour ago' },
-  { event: 'User Role Updated: developer -> security_engineer', actor: 'admin@sentrix.local', ip: '127.0.0.1', target: 'User: dev@sentrix.local', time: '2 hours ago' },
-  { event: 'Malware Analysis Completed (ORD-7104)', actor: 'sarah@sentrix.local', ip: '127.0.0.1', target: 'National Logistics Ltd', time: '4 hours ago' },
-  { event: 'Remediation Fix Verification Started', actor: 'alex@sentrix.local', ip: '127.0.0.1', target: 'ORD-8115 (Sovereign Telecom)', time: '5 hours ago' },
-  { event: 'Enterprise License Activated via Chapa (85,000 ETB)', actor: 'system@chapa.global', ip: '197.156.103.2', target: 'Acme Financial Group', time: '1 day ago' },
-];
-
 export const Admin: React.FC = () => {
+  const { user: currentUser } = useAuthStore();
   const [searchParams, setSearchParams] = useSearchParams();
   const navigate = useNavigate();
 
@@ -233,6 +220,8 @@ export const Admin: React.FC = () => {
             deadline: o.deadline ? new Date(o.deadline).toLocaleDateString() : 'Flexible SLA',
             deliverable: o.serviceType === 'security_assessment' ? 'Executive PDF + Technical DAST Matrix' : 'Secure Code Package & Verification',
             notes: o.description || (Array.isArray(o.requirements) ? o.requirements.join('\n') : o.requirements) || '',
+            commentsCount: Array.isArray(o.comments) ? o.comments.length : 0,
+            comments: Array.isArray(o.comments) ? o.comments : [],
           };
         });
 
@@ -252,6 +241,37 @@ export const Admin: React.FC = () => {
     fetchAdminDashboard();
     fetchLiveOrders();
   }, []);
+
+  // Client Portal Services Availability State (Controls client_member & client_owner access)
+  const { clientServicesEnabled } = useClientPortalStatus();
+  const [togglingPortal, setTogglingPortal] = useState(false);
+
+  const handleToggleClientPortal = async () => {
+    const nextState = !clientServicesEnabled;
+    setTogglingPortal(true);
+    try {
+      try {
+        await api.put('/service-orders/portal-status', { enabled: nextState });
+      } catch {
+        await api.put('/settings/client-portal', { enabled: nextState });
+      }
+      broadcastPortalStatus(nextState);
+      setActionSuccess(
+        nextState
+          ? '✓ Client Portal Services Enabled: Client members and owners can now access orders and workspaces.'
+          : '⚠️ Client Portal Services Suspended: Service Orders and Project Workspaces are now unavailable for client accounts.'
+      );
+    } catch (err) {
+      broadcastPortalStatus(nextState);
+      setActionSuccess(
+        nextState
+          ? 'Client Services set to Enabled.'
+          : 'Client Services set to Suspended.'
+      );
+    } finally {
+      setTogglingPortal(false);
+    }
+  };
 
   // Users State (Loaded exclusively from backend API: GET /api/v1/users)
   const [users, setUsers] = useState<UserRecord[]>([]);
@@ -304,6 +324,55 @@ export const Admin: React.FC = () => {
   const [progressOrder, setProgressOrder] = useState<ClientOrder | null>(null);
   const [updatedProgressValue, setUpdatedProgressValue] = useState<number>(0);
   const [updatedPhaseText, setUpdatedPhaseText] = useState<string>('');
+
+  
+  // Order Discussion & Comments State (Admin)
+  const [commentsModalOrder, setCommentsModalOrder] = useState<ClientOrder | null>(null);
+  const [orderCommentsList, setOrderCommentsList] = useState<any[]>([]);
+  const [adminCommentInput, setAdminCommentInput] = useState('');
+  const [sendingAdminComment, setSendingAdminComment] = useState(false);
+
+  const openOrderComments = async (order: ClientOrder) => {
+    setCommentsModalOrder(order);
+    setOrderCommentsList(order.comments || []);
+    const orderBackendId = order.backendId || order.id;
+    try {
+      const res = await api.get('/service-orders/' + orderBackendId + '/comments');
+      if (res.data?.success && res.data?.data) {
+        setOrderCommentsList(res.data.data);
+      }
+    } catch (err) {
+      console.warn('Failed to fetch order comments:', err);
+    }
+  };
+
+  const handleSendAdminComment = async (e?: React.FormEvent) => {
+    if (e) e.preventDefault();
+    if (!commentsModalOrder || !adminCommentInput.trim() || sendingAdminComment) return;
+
+    const orderBackendId = commentsModalOrder.backendId || commentsModalOrder.id;
+    try {
+      setSendingAdminComment(true);
+      const res = await api.post('/service-orders/' + orderBackendId + '/comments', {
+        message: adminCommentInput.trim(),
+      });
+      if (res.data?.success && res.data?.data) {
+        setOrderCommentsList(res.data.data);
+        setOrders(prev =>
+          prev.map(o =>
+            o.id === commentsModalOrder.id
+              ? { ...o, comments: res.data.data, commentsCount: res.data.data.length }
+              : o
+          )
+        );
+        setAdminCommentInput('');
+      }
+    } catch (err: any) {
+      showNotification(err.response?.data?.error || err.response?.data?.message || 'Failed to post message.');
+    } finally {
+      setSendingAdminComment(false);
+    }
+  };
 
   // New User Form State
   const [inviteName, setInviteName] = useState('');
@@ -699,8 +768,46 @@ export const Admin: React.FC = () => {
           </p>
         </div>
 
-        {/* Action Buttons Header */}
+        {/* Action Buttons Header & Client Services Toggle */}
         <div className="flex flex-wrap items-center gap-3">
+
+          {/* CLIENT SERVICES AVAILABILITY TOGGLE */}
+          <div className="flex items-center gap-2.5 px-3 py-1.5 rounded-2xl bg-white/[0.04] border border-white/10 shadow-sm backdrop-blur-sm">
+            <div className="flex flex-col text-right">
+              <span className="text-[10px] font-bold uppercase tracking-wider text-text-muted">
+                Client Portal Services
+              </span>
+              <span className={`text-[11px] font-mono font-bold flex items-center justify-end gap-1 ${
+                clientServicesEnabled ? 'text-emerald-400' : 'text-amber-400'
+              }`}>
+                <span className={`w-1.5 h-1.5 rounded-full ${clientServicesEnabled ? 'bg-emerald-400 animate-pulse' : 'bg-amber-400'}`} />
+                {clientServicesEnabled ? 'AVAILABLE' : 'OFFLINE'}
+              </span>
+            </div>
+
+            <button
+              type="button"
+              onClick={handleToggleClientPortal}
+              disabled={togglingPortal}
+              title={
+                clientServicesEnabled
+                  ? 'Click to suspend Client Service Orders & Workspaces'
+                  : 'Click to enable Client Service Orders & Workspaces'
+              }
+              className={`relative inline-flex h-6 w-11 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none ${
+                clientServicesEnabled ? 'bg-emerald-500' : 'bg-white/20'
+              } ${togglingPortal ? 'opacity-50 cursor-not-allowed' : ''}`}
+            >
+              <span
+                className={`pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow-lg ring-0 transition duration-200 ease-in-out ${
+                  clientServicesEnabled ? 'translate-x-5' : 'translate-x-0'
+                }`}
+              />
+            </button>
+          </div>
+
+
+
           {activeTab === 'overview' && (
             <button
               onClick={fetchAdminDashboard}
@@ -1321,7 +1428,16 @@ export const Admin: React.FC = () => {
                           </>
                         )}
 
-                        {isCompleted && (
+                        
+                        <button
+                          onClick={() => openOrderComments(order)}
+                          className="w-full sm:w-auto px-3.5 py-1.5 rounded-xl bg-purple-500/15 hover:bg-purple-500/25 text-purple-300 border border-purple-500/30 text-xs font-semibold flex items-center justify-center gap-1.5 transition-all shadow-sm"
+                        >
+                          <MessageSquare size={13} />
+                          <span>Discussion ({order.commentsCount || 0})</span>
+                        </button>
+
+{isCompleted && (
                           <div className="text-center lg:text-right text-xs text-green-400 font-bold flex items-center gap-1">
                             <Check size={16} /> Delivered
                           </div>
@@ -1827,7 +1943,7 @@ export const Admin: React.FC = () => {
                 </h4>
               </div>
               <span className="text-[11px] font-mono text-text-muted">
-                {dashboardStats?.recentAuditLogs?.length || AUDIT_LOGS.length} Logged Events
+                {dashboardStats?.recentAuditLogs?.length || 0} Logged Events
               </span>
             </div>
 
@@ -1843,18 +1959,30 @@ export const Admin: React.FC = () => {
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-white/5">
-                  {AUDIT_LOGS.map((a, i) => (
-                    <tr key={i} className="hover:bg-white/5">
-                      <td className="px-5 py-3.5 font-semibold text-white flex items-center gap-2">
-                        <span className="w-2 h-2 rounded-full bg-brand-cyan shrink-0"></span>
-                        <span>{a.event}</span>
+                  {(dashboardStats?.recentAuditLogs || []).length === 0 ? (
+                    <tr>
+                      <td colSpan={5} className="px-5 py-8 text-center text-text-muted font-mono">
+                        No recent audit log events recorded yet.
                       </td>
-                      <td className="px-4 py-3.5 font-mono text-text-muted">{a.actor}</td>
-                      <td className="px-4 py-3.5 font-mono text-text-muted">{a.ip}</td>
-                      <td className="px-4 py-3.5 text-white">{a.target}</td>
-                      <td className="px-5 py-3.5 text-text-muted text-right whitespace-nowrap">{a.time}</td>
                     </tr>
-                  ))}
+                  ) : (
+                    dashboardStats.recentAuditLogs.map((a: any, i: number) => (
+                      <tr key={a._id || i} className="hover:bg-white/5">
+                        <td className="px-5 py-3.5 font-semibold text-white flex items-center gap-2">
+                          <span className="w-2 h-2 rounded-full bg-brand-cyan shrink-0"></span>
+                          <span>{a.action || a.event || 'System Activity'}</span>
+                        </td>
+                        <td className="px-4 py-3.5 font-mono text-text-muted">
+                          {typeof a.userId === 'object' ? a.userId?.name || a.userId?.email : a.actor || a.userId || 'system'}
+                        </td>
+                        <td className="px-4 py-3.5 font-mono text-text-muted">{a.ipAddress || a.ip || '127.0.0.1'}</td>
+                        <td className="px-4 py-3.5 text-white">{a.resource || (typeof a.details === 'object' ? JSON.stringify(a.details) : a.target) || '-'}</td>
+                        <td className="px-5 py-3.5 text-text-muted text-right whitespace-nowrap">
+                          {a.createdAt ? new Date(a.createdAt).toLocaleString() : a.time || '-'}
+                        </td>
+                      </tr>
+                    ))
+                  )}
                 </tbody>
               </table>
             </div>
@@ -2382,6 +2510,147 @@ export const Admin: React.FC = () => {
           </GlassCard>
         </div>
       )}
+
+      {/* ========================================================================= */}
+      {/* ORDER COMMENTS & COMMUNICATION MODAL (ADMIN) */}
+      {/* ========================================================================= */}
+      {commentsModalOrder && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/75 backdrop-blur-md animate-fadeIn">
+          <div className="w-full max-w-2xl bg-[#0e131f] border border-brand-cyan/30 rounded-2xl shadow-2xl flex flex-col max-h-[85vh] overflow-hidden">
+            {/* Modal Header */}
+            <div className="flex items-center justify-between p-5 border-b border-white/10 bg-surface/50">
+              <div className="flex items-center gap-3">
+                <div className="p-2.5 rounded-xl bg-purple-500/20 text-purple-300 border border-purple-500/30">
+                  <MessageSquare size={20} />
+                </div>
+                <div>
+                  <div className="flex items-center gap-2">
+                    <span className="font-mono text-xs font-bold px-2 py-0.5 rounded bg-brand-cyan/15 text-brand-cyan border border-brand-cyan/25">
+                      {commentsModalOrder.id}
+                    </span>
+                    <h3 className="font-bold text-white text-base truncate max-w-sm">
+                      {commentsModalOrder.orderType || 'Service Order'}
+                    </h3>
+                  </div>
+                  <p className="text-xs text-text-muted mt-0.5">
+                    Order Discussion & Coordination Thread (Admin, Specialists, Client)
+                  </p>
+                </div>
+              </div>
+              <button
+                onClick={() => {
+                  setCommentsModalOrder(null);
+                  setAdminCommentInput('');
+                }}
+                className="p-1.5 rounded-lg text-text-muted hover:text-white hover:bg-white/10 transition-colors"
+              >
+                <X size={18} />
+              </button>
+            </div>
+
+            {/* Conversation Messages Thread */}
+            <div className="flex-1 overflow-y-auto p-5 space-y-4 bg-black/20">
+              {orderCommentsList.length === 0 ? (
+                <div className="py-16 text-center space-y-2">
+                  <div className="w-12 h-12 rounded-2xl bg-white/5 border border-white/10 text-text-muted mx-auto flex items-center justify-center">
+                    <MessageSquare size={22} />
+                  </div>
+                  <h4 className="text-sm font-semibold text-white">No discussion messages yet</h4>
+                  <p className="text-xs text-text-muted max-w-sm mx-auto">
+                    Post instructions, updates, or reply to developer/client queries on this order.
+                  </p>
+                </div>
+              ) : (
+                orderCommentsList.map((c: any, idx: number) => {
+                  const senderObj = typeof c.sender === 'object' && c.sender !== null ? c.sender : null;
+                  const senderName = c.senderName || senderObj?.name || 'User';
+                  const senderRole = c.senderRole || senderObj?.role || 'user';
+                  const isCurrent = (senderObj?._id || senderObj?.id) === (currentUser?._id || currentUser?.id) || c.sender === currentUser?._id || c.sender === currentUser?.id || senderRole === 'admin';
+
+                  const roleBadge = (() => {
+                    switch (senderRole) {
+                      case 'admin':
+                        return <span className="px-1.5 py-0.5 rounded text-[10px] font-mono font-bold bg-purple-500/20 text-purple-300 border border-purple-500/30">ADMIN</span>;
+                      case 'developer':
+                        return <span className="px-1.5 py-0.5 rounded text-[10px] font-mono font-bold bg-emerald-500/20 text-emerald-300 border border-emerald-500/30">DEVELOPER</span>;
+                      case 'security_engineer':
+                        return <span className="px-1.5 py-0.5 rounded text-[10px] font-mono font-bold bg-brand-cyan/20 text-brand-cyan border border-brand-cyan/30">SECURITY TESTER</span>;
+                      case 'malware_analyst':
+                        return <span className="px-1.5 py-0.5 rounded text-[10px] font-mono font-bold bg-red-500/20 text-red-300 border border-red-500/30">MALWARE ANALYST</span>;
+                      default:
+                        return <span className="px-1.5 py-0.5 rounded text-[10px] font-mono font-bold bg-blue-500/20 text-blue-300 border border-blue-500/30">CLIENT</span>;
+                    }
+                  })();
+
+                  const avatarBg =
+                    senderRole === 'admin'
+                      ? 'bg-purple-500/20 text-purple-300 border-purple-500/30'
+                      : senderRole === 'developer'
+                      ? 'bg-emerald-500/20 text-emerald-300 border-emerald-500/30'
+                      : senderRole === 'security_engineer'
+                      ? 'bg-brand-cyan/20 text-brand-cyan border border-brand-cyan/30'
+                      : senderRole === 'malware_analyst'
+                      ? 'bg-red-500/20 text-red-300 border-red-500/30'
+                      : 'bg-blue-500/20 text-blue-300 border-blue-500/30';
+
+                  return (
+                    <div
+                      key={c._id || idx}
+                      className={'flex gap-3 items-start ' + (isCurrent ? 'flex-row-reverse' : '')}
+                    >
+                      <div
+                        className={'w-8 h-8 rounded-xl shrink-0 flex items-center justify-center text-xs font-bold font-mono border ' + avatarBg}
+                      >
+                        {senderName.charAt(0).toUpperCase()}
+                      </div>
+
+                      <div className={'space-y-1 max-w-[80%] ' + (isCurrent ? 'items-end' : '')}>
+                        <div className={'flex items-center gap-2 text-xs ' + (isCurrent ? 'justify-end' : '')}>
+                          <span className="font-semibold text-white/90">{senderName}</span>
+                          {roleBadge}
+                          <span className="text-[10px] text-text-muted">
+                            {c.createdAt ? new Date(c.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : 'Now'}
+                          </span>
+                        </div>
+
+                        <div
+                          className={'p-3 rounded-2xl text-xs leading-relaxed ' + (
+                            isCurrent
+                              ? 'bg-purple-500/20 text-white border border-purple-500/35 rounded-tr-none'
+                              : 'bg-white/5 text-white/90 border border-white/10 rounded-tl-none'
+                          )}
+                        >
+                          <p className="whitespace-pre-wrap">{c.message}</p>
+                        </div>
+                      </div>
+                    </div>
+                  );
+                })
+              )}
+            </div>
+
+            {/* Input Footer */}
+            <form onSubmit={handleSendAdminComment} className="p-4 border-t border-white/10 bg-surface/80 flex items-center gap-2">
+              <input
+                type="text"
+                placeholder="Post an admin instruction, update, or feedback..."
+                value={adminCommentInput}
+                onChange={(e) => setAdminCommentInput(e.target.value)}
+                className="flex-1 bg-surface/70 border border-white/10 rounded-xl px-4 py-2.5 text-xs text-white placeholder-text-muted focus:outline-none focus:border-purple-500/50"
+              />
+              <button
+                type="submit"
+                disabled={sendingAdminComment || !adminCommentInput.trim()}
+                className="px-4 py-2.5 rounded-xl bg-purple-600 hover:bg-purple-500 text-white font-bold text-xs flex items-center gap-1.5 transition-all shadow-md shadow-purple-600/30 disabled:opacity-50"
+              >
+                <Send size={14} />
+                <span>{sendingAdminComment ? 'Posting...' : 'Post Message'}</span>
+              </button>
+            </form>
+          </div>
+        </div>
+      )}
+
     </div>
   );
 };

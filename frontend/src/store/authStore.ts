@@ -15,6 +15,7 @@ export const UserRole = {
 
 export interface User {
   id: string;
+  _id?: string;
   name: string;
   email: string;
   role: UserRole;
@@ -290,13 +291,17 @@ export const useAuthStore = create<AuthState>()(
 
 export const useUserTier = () => {
   const user = useAuthStore(s => s.user);
-  const tier = (user?.subscriptionTier || 'free') as 'free' | 'pro' | 'enterprise';
-  const isAdmin = user?.role === 'admin';
+  const role = user?.role;
+  const isSpecialistOrAdmin = role === 'admin' || role === 'security_engineer' || role === 'developer' || role === 'malware_analyst';
+
+  // Admin, Security Engineer, Developer, and Malware Analyst roles equate to Enterprise subscription
+  const tier = isSpecialistOrAdmin ? 'enterprise' : ((user?.subscriptionTier || 'free') as 'free' | 'pro' | 'enterprise');
+
   return {
-    tier: (isAdmin ? 'admin' : tier) as any,
-    isFree: !isAdmin && tier === 'free',
-    isPro: !isAdmin && tier === 'pro',
-    isEnterprise: !isAdmin && tier === 'enterprise',
+    tier: tier as 'free' | 'pro' | 'enterprise',
+    isFree: !isSpecialistOrAdmin && tier === 'free',
+    isPro: !isSpecialistOrAdmin && tier === 'pro',
+    isEnterprise: isSpecialistOrAdmin || tier === 'enterprise',
     status: user?.subscriptionStatus || 'active',
   };
 };

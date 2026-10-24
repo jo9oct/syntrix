@@ -7,6 +7,8 @@ import {
   createUser,
   toggleUserStatus,
   updateUserRole,
+  getClientPortalStatus,
+  updateClientPortalStatus,
 } from "../controllers/admin.controller.js";
 import { protect, authorize } from "../middleware/auth.js";
 import { validate } from "../middleware/validation.middleware.js";
@@ -46,5 +48,16 @@ router
     validate(updateUserRoleSchema, "body"),
     updateUserRole,
   );
+
+// Client Portal Services Availability Toggle API
+router
+  .route("/settings/client-portal")
+  .get(getClientPortalStatus)
+  .put(updateClientPortalStatus);
+
+router
+  .route("/admin/settings/client-portal")
+  .get(getClientPortalStatus)
+  .put(updateClientPortalStatus);
 
 export default router;

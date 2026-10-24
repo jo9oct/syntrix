@@ -5,11 +5,10 @@ import api from '../../../lib/api';
 import {
   ShieldCheck, Shield, Globe, Server, CheckCircle2,
   AlertTriangle, ArrowRight, ArrowLeft, Play, Lock, Sliders, Layers,
-  Search, Check
+  Search, Check, X, Key, Sparkles
 } from 'lucide-react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { useAuthStore, useUserTier } from '../../../store/authStore';
-import { Sparkles } from 'lucide-react';
 
 export const AssessmentWizard: React.FC = () => {
   const navigate = useNavigate();
@@ -37,6 +36,40 @@ export const AssessmentWizard: React.FC = () => {
   const [confirmedAuth, setConfirmedAuth] = useState(false);
   const [launching, setLaunching] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  // User Tier & Role Access Check for Credentialed Cookie Scanning
+  const isStaff = user?.role === 'admin' || user?.role === 'security_engineer' || user?.role === 'developer' || user?.role === 'malware_analyst';
+  const isCredentialCookieAllowed = !isFree || isStaff;
+
+  // Credential Cookie Name & Value State (Step 1)
+  const [cookiePairs, setCookiePairs] = useState<Array<{ name: string; value: string }>>([
+    { name: '', value: '' }
+  ]);
+
+  const handleCookieChange = (index: number, field: 'name' | 'value', val: string) => {
+    setCookiePairs(prev => {
+      const updated = [...prev];
+      updated[index] = { ...updated[index], [field]: val };
+      return updated;
+    });
+  };
+
+  const handleAddCookieRow = () => {
+    setCookiePairs(prev => [...prev, { name: '', value: '' }]);
+  };
+
+  const handleRemoveCookieRow = (index: number) => {
+    setCookiePairs(prev => {
+      if (prev.length <= 1) return [{ name: '', value: '' }];
+      return prev.filter((_, i) => i !== index);
+    });
+  };
+
+  // Compile active session cookies into "name=value; name2=value2"
+  const activeSessionCookie = cookiePairs
+    .filter(c => c.name.trim() && c.value.trim())
+    .map(c => `${c.name.trim()}=${c.value.trim()}`)
+    .join('; ');
 
   useEffect(() => {
     const initData = async () => {
@@ -197,6 +230,7 @@ export const AssessmentWizard: React.FC = () => {
         scanSelection: { recon: string[]; security: string[] };
         scopes?: string[];
         companyRuleIds?: string[];
+        credentials?: { sessionCookie?: string; username?: string; password?: string } | null;
       } = {
         targetUrl: trimmedUrl,
         scanSelection: {
@@ -212,6 +246,13 @@ export const AssessmentWizard: React.FC = () => {
       const validRuleIds = selectedRuleIds.filter(isValidHex24);
       if (validRuleIds.length > 0) {
         payload.companyRuleIds = validRuleIds;
+      }
+
+      // Include authentication credentials cookie if provided and allowed by user tier
+      if (isCredentialCookieAllowed && activeSessionCookie) {
+        payload.credentials = {
+          sessionCookie: activeSessionCookie
+        };
       }
 
       const res = await api.post('/scans', payload);
@@ -393,46 +434,197 @@ export const AssessmentWizard: React.FC = () => {
               </div>
             </div>
 
-            {/* Company Rules Selection (API 13) */}
-            <div className="space-y-2 pt-2 border-t border-white/10">
+            {/* Credential Cookie Name & Value (Step 1) */}
+            <div className="space-y-3 pt-2 border-t border-white/10">
               <div className="flex items-center justify-between">
-                <label className="block text-xs font-semibold text-text-muted uppercase tracking-wider">
-                  Enforce Corporate Security Policies (API 12-16)
+                <label className="block text-xs font-semibold text-text-muted uppercase tracking-wider flex items-center gap-1.5">
+                  <Key size={13} className="text-brand-cyan" />
+                  <span>Credential Cookie (Name & Value)</span>
                 </label>
-                <span className="text-[11px] text-text-muted">
-                  {selectedRuleIds.length} of {companyRules.length} policies selected
-                </span>
+                {isCredentialCookieAllowed ? (
+                  <span className="text-[10px] font-mono px-2 py-0.5 rounded-full bg-emerald-500/15 text-emerald-400 border border-emerald-500/30 font-bold flex items-center gap-1">
+                    <Check size={11} /> {userTier.toUpperCase()} Allowed
+                  </span>
+                ) : (
+                  <span className="text-[10px] font-mono px-2 py-0.5 rounded-full bg-amber-500/15 text-amber-400 border border-amber-500/30 font-bold flex items-center gap-1">
+                    <Lock size={10} /> Free Tier Not Allowed
+                  </span>
+                )}
               </div>
 
-              <div className="space-y-2">
-                {companyRules.map(rule => (
-                  <div
-                    key={rule._id}
-                    onClick={() => toggleRule(rule._id)}
-                    className={`p-3 rounded-xl border flex items-center justify-between cursor-pointer transition-colors ${
-                      selectedRuleIds.includes(rule._id)
-                        ? 'bg-white/5 border-brand-cyan/40 text-white'
-                        : 'bg-white/[0.02] border-white/5 text-text-muted hover:border-white/10'
-                    }`}
-                  >
-                    <div className="space-y-0.5">
-                      <div className="flex items-center gap-2">
-                        <span className="font-bold text-xs text-white">{rule.name}</span>
-                        <span className="text-[10px] px-1.5 py-0.2 rounded bg-white/5 font-mono text-brand-cyan">
-                          {rule.category}
-                        </span>
+              {!isCredentialCookieAllowed ? (
+                /* Free Tier Not Allowed Message */
+                <div className="p-4 rounded-xl bg-amber-500/10 border border-amber-500/30 space-y-2">
+                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                    <div className="flex items-start sm:items-center gap-2.5">
+                      <div className="w-8 h-8 rounded-lg bg-amber-500/20 text-amber-400 flex items-center justify-center shrink-0 mt-0.5 sm:mt-0">
+                        <Lock size={16} />
                       </div>
-                      <div className="text-[11px] text-text-muted">{rule.description}</div>
+                      <div>
+                        <div className="text-xs font-bold text-white flex items-center gap-2">
+                          <span>Credential Cookie Input Not Allowed</span>
+                          <span className="text-[10px] text-amber-400 font-mono px-1.5 py-0.2 rounded bg-amber-500/20 border border-amber-500/30">
+                            {userTier.toUpperCase()} TIER
+                          </span>
+                        </div>
+                        <p className="text-[11px] text-amber-300/90 mt-0.5">
+                          This input is not allowed for free tier accounts. Authenticated scanning using credential cookies is restricted to Pro and Enterprise tiers.
+                        </p>
+                      </div>
                     </div>
-                    <input
-                      type="checkbox"
-                      checked={selectedRuleIds.includes(rule._id)}
-                      onChange={() => {}}
-                      className="w-4 h-4 rounded text-brand-cyan focus:ring-0"
-                    />
+                    {user?.role === 'client_owner' && (
+                      <button
+                        type="button"
+                        onClick={() => navigate('/dashboard/billing')}
+                        className="btn-primary text-xs px-3.5 py-1.5 rounded-lg font-bold flex items-center gap-1.5 shrink-0 shadow-sm shadow-brand-cyan/20 self-start sm:self-auto"
+                      >
+                        <Sparkles size={12} />
+                        <span>Upgrade to Pro</span>
+                      </button>
+                    )}
                   </div>
-                ))}
-              </div>
+                </div>
+              ) : (
+                /* Allowed: Cookie Name and Value Inputs */
+                <div className="p-4 rounded-xl bg-white/[0.02] border border-white/10 space-y-3">
+                  <div className="text-[11px] text-text-muted leading-relaxed">
+                    Provide the session cookie <strong>Name</strong> and <strong>Value</strong> to allow the scanner to authenticate and audit protected routes.
+                  </div>
+
+                  <div className="space-y-2.5">
+                    {cookiePairs.map((pair, idx) => (
+                      <div key={idx} className="flex flex-col sm:flex-row items-center gap-2">
+                        <div className="w-full sm:w-1/3">
+                          <input
+                            type="text"
+                            value={pair.name}
+                            onChange={(e) => handleCookieChange(idx, 'name', e.target.value)}
+                            placeholder="Cookie Name (e.g. session_id)"
+                            className="w-full bg-white/5 border border-white/10 rounded-xl px-3.5 py-2 text-xs text-white font-mono placeholder:text-text-muted focus:outline-none focus:border-brand-cyan"
+                          />
+                        </div>
+                        <div className="w-full sm:flex-1">
+                          <input
+                            type="text"
+                            value={pair.value}
+                            onChange={(e) => handleCookieChange(idx, 'value', e.target.value)}
+                            placeholder="Cookie Value (e.g. e3b0c44298fc1c149af...)"
+                            className="w-full bg-white/5 border border-white/10 rounded-xl px-3.5 py-2 text-xs text-emerald-300 font-mono placeholder:text-text-muted focus:outline-none focus:border-brand-cyan"
+                          />
+                        </div>
+                        {cookiePairs.length > 1 && (
+                          <button
+                            type="button"
+                            onClick={() => handleRemoveCookieRow(idx)}
+                            className="p-2 rounded-xl bg-white/5 hover:bg-red-500/20 hover:text-red-400 text-text-muted transition-colors self-end sm:self-auto shrink-0"
+                            title="Remove cookie"
+                          >
+                            <X size={14} />
+                          </button>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+
+                  <div className="flex items-center justify-between pt-1">
+                    <button
+                      type="button"
+                      onClick={handleAddCookieRow}
+                      className="text-[11px] text-brand-cyan hover:underline flex items-center gap-1 font-semibold"
+                    >
+                      + Add Another Cookie
+                    </button>
+                    {activeSessionCookie && (
+                      <span className="text-[10px] text-emerald-400 font-mono flex items-center gap-1">
+                        <CheckCircle2 size={12} /> Cookie Header Ready ({cookiePairs.filter(c => c.name && c.value).length} set)
+                      </span>
+                    )}
+                  </div>
+
+                  {activeSessionCookie && (
+                    <div className="pt-2 border-t border-white/5">
+                      <div className="text-[10px] text-text-muted font-mono mb-1">
+                        Compiled Cookie Header:
+                      </div>
+                      <div className="px-3 py-1.5 rounded-lg bg-black/40 border border-white/10 text-[11px] font-mono text-emerald-300 break-all select-all">
+                        {activeSessionCookie}
+                      </div>
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
+
+            {/* Corporate Security Policies (Pro & Enterprise) */}
+            <div className="space-y-2 pt-2 border-t border-white/10">
+              {isFree ? (
+                <div className="p-3.5 rounded-xl bg-white/[0.02] border border-white/10 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                  <div className="space-y-1">
+                    <div className="text-xs font-semibold text-white flex items-center gap-2">
+                      <Sliders size={14} className="text-brand-cyan" />
+                      <span>Corporate Security Policies</span>
+                      <span className="text-[10px] font-mono px-2 py-0.5 rounded-full bg-brand-cyan/15 text-brand-cyan border border-brand-cyan/25 font-bold">
+                        Pro Feature
+                      </span>
+                    </div>
+                    <p className="text-[11px] text-text-muted">
+                      Upgrade to Pro to create and enforce custom corporate security policies and compliance rules across assessments.
+                    </p>
+                  </div>
+                  {user?.role === 'client_owner' && (
+                    <button
+                      type="button"
+                      onClick={() => navigate('/dashboard/billing')}
+                      className="btn-primary text-xs px-3.5 py-1.5 rounded-lg font-bold flex items-center gap-1.5 shrink-0 shadow-sm shadow-brand-cyan/20 self-start sm:self-auto"
+                    >
+                      <Sparkles size={12} />
+                      <span>Upgrade to Pro</span>
+                    </button>
+                  )}
+                </div>
+              ) : companyRules.length > 0 ? (
+                <>
+                  <div className="flex items-center justify-between">
+                    <label className="block text-xs font-semibold text-text-muted uppercase tracking-wider flex items-center gap-1.5">
+                      <Sliders size={13} className="text-brand-cyan" />
+                      <span>Enforce Corporate Security Policies</span>
+                    </label>
+                    <span className="text-[11px] text-text-muted">
+                      {selectedRuleIds.length} of {companyRules.length} policies selected
+                    </span>
+                  </div>
+
+                  <div className="space-y-2">
+                    {companyRules.map(rule => (
+                      <div
+                        key={rule._id}
+                        onClick={() => toggleRule(rule._id)}
+                        className={`p-3 rounded-xl border flex items-center justify-between cursor-pointer transition-colors ${
+                          selectedRuleIds.includes(rule._id)
+                            ? 'bg-white/5 border-brand-cyan/40 text-white'
+                            : 'bg-white/[0.02] border-white/5 text-text-muted hover:border-white/10'
+                        }`}
+                      >
+                        <div className="space-y-0.5">
+                          <div className="flex items-center gap-2">
+                            <span className="font-bold text-xs text-white">{rule.name}</span>
+                            <span className="text-[10px] px-1.5 py-0.2 rounded bg-white/5 font-mono text-brand-cyan">
+                              {rule.category}
+                            </span>
+                          </div>
+                          <div className="text-[11px] text-text-muted">{rule.description}</div>
+                        </div>
+                        <input
+                          type="checkbox"
+                          checked={selectedRuleIds.includes(rule._id)}
+                          onChange={() => {}}
+                          className="w-4 h-4 rounded text-brand-cyan focus:ring-0"
+                        />
+                      </div>
+                    ))}
+                  </div>
+                </>
+              ) : null}
             </div>
 
             <div className="flex justify-end pt-4 border-t border-white/10">
@@ -624,6 +816,16 @@ export const AssessmentWizard: React.FC = () => {
                 <div>
                   <span className="text-text-muted block">Security Scanners ({selectedSecurityIds.length}):</span>
                   <span className="text-slate-300">{selectedSecurityIds.join(', ') || 'None'}</span>
+                </div>
+                <div>
+                  <span className="text-text-muted block">Authentication Mode:</span>
+                  {activeSessionCookie ? (
+                    <span className="text-emerald-400 font-semibold flex items-center gap-1">
+                      <CheckCircle2 size={12} /> Cookie Configured ({cookiePairs.filter(c => c.name && c.value).length} variable{cookiePairs.filter(c => c.name && c.value).length > 1 ? 's' : ''})
+                    </span>
+                  ) : (
+                    <span className="text-slate-400">Unauthenticated Scan</span>
+                  )}
                 </div>
               </div>
 

@@ -25,51 +25,7 @@ interface KanbanItem {
   notes?: string;
 }
 
-const getFallbackKanban = (realName: string): KanbanItem[] => [
-  {
-    id: 'F-101',
-    title: 'SQL Injection in Login Form',
-    category: 'Injection Vulnerability',
-    severity: 'critical',
-    column: 'open',
-    assignee: realName,
-    endpoint: 'POST /api/v1/auth/login',
-    notes: 'Prioritized P0 for immediate hotfix.'
-  },
-  {
-    id: 'F-102',
-    title: 'IDOR in User Profile Endpoint',
-    category: 'Broken Object Level Auth',
-    severity: 'high',
-    column: 'in_progress',
-    assignee: realName,
-    endpoint: 'GET /api/v1/users/:id/billing',
-    commitRef: 'git commit 4a8f9c2: Add req.user context checks',
-    notes: 'Refactoring ownership validation middleware.'
-  },
-  {
-    id: 'F-103',
-    title: 'Reflected Cross-Site Scripting (XSS)',
-    category: 'Cross-Site Scripting (XSS)',
-    severity: 'medium',
-    column: 'ready_for_retest',
-    assignee: realName,
-    endpoint: 'GET /catalog/search?q=',
-    commitRef: 'PR #142: DOMPurify & HTML encoding applied',
-    notes: 'Fix merged to staging. Awaiting security retest verification.'
-  },
-  {
-    id: 'F-104',
-    title: 'Missing Security Headers (CSP & HSTS)',
-    category: 'Security Misconfiguration',
-    severity: 'low',
-    column: 'fixed',
-    assignee: realName,
-    endpoint: 'Global Response Headers',
-    commitRef: 'nginx.conf: add_header Content-Security-Policy',
-    notes: 'Verified passed by automated retest.'
-  }
-];
+
 
 const mapStatusToColumn = (status?: string): KanbanItem['column'] => {
   if (!status) return 'open';
@@ -279,44 +235,10 @@ export const Remediation: React.FC = () => {
           }
         }
 
-        // Fallback default scan if no scans exist
-        if (scans.length === 0) {
-          scans = [
-            {
-              _id: 'default_scan_1',
-              ownerId: 'default',
-              targetId: selectedTarget._id,
-              targetUrl: selectedTarget.url,
-              scopeId: null,
-              scanSelection: { recon: [], security: [] },
-              companyRuleIds: [],
-              status: 'completed',
-              version: 1,
-              startedAt: new Date().toISOString(),
-              completedAt: new Date().toISOString(),
-              cancelledAt: null,
-              failedAt: null,
-              deletedAt: null,
-              previousStatus: null,
-              statusHistory: [],
-              progress: 100,
-              totalScanners: 6,
-              completedScanners: 6,
-              findingCounts: { critical: 1, high: 1, medium: 1, low: 1, info: 0 },
-              riskScore: 21,
-              errorCode: null,
-              errorMessage: null,
-              scannerOutcomes: [],
-              createdAt: new Date().toISOString(),
-              updatedAt: new Date().toISOString()
-            }
-          ];
-        }
-
         setTargetScans(scans);
 
         // Preselect active scan
-        let active = scans[0];
+        let active = scans[0] || null;
         if (urlScanId) {
           const match = scans.find(s => s._id === urlScanId);
           if (match) active = match;
@@ -357,37 +279,11 @@ export const Remediation: React.FC = () => {
           }));
           setItems(mapped);
         } else {
-          // If default demo scan or empty
-          if (selectedScan._id === 'default_scan_1') {
-            setItems(getFallbackKanban(realScannerName));
-          } else {
-            // Check all findings as fallback
-            try {
-              const allFindingsRes = await api.get('/findings');
-              const allList = allFindingsRes?.data?.data?.findings || (Array.isArray(allFindingsRes?.data?.data) ? allFindingsRes.data.data : []);
-              if (allList.length > 0) {
-                const mapped: KanbanItem[] = allList.map((f: any) => ({
-                  id: f._id || f.id,
-                  title: f.title || 'Security Finding',
-                  category: f.category || 'Vulnerability',
-                  severity: (f.severity === 'informational' || f.severity === 'info' ? 'low' : f.severity) as KanbanItem['severity'],
-                  column: mapStatusToColumn(f.status),
-                  assignee: f.assignedDeveloper?.name || f.assignedTo?.name || realScannerName,
-                  endpoint: f.affectedEndpoint || f.metadata?.header || f.category || selectedTarget?.hostname || 'Target Endpoint',
-                  commitRef: f.commitRef || undefined,
-                  notes: f.remediation || f.remediationNotes || f.recommendation || undefined
-                }));
-                setItems(mapped);
-              } else {
-                setItems(getFallbackKanban(realScannerName));
-              }
-            } catch {
-              setItems(getFallbackKanban(realScannerName));
-            }
-          }
+          setItems([]);
         }
       } catch (err) {
-        setItems(getFallbackKanban(realScannerName));
+        console.error('Failed to load findings for scan', err);
+        setItems([]);
       } finally {
         setLoadingFindings(false);
       }

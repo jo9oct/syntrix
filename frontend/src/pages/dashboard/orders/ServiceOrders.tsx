@@ -4,14 +4,16 @@ import {
   ClipboardList, Plus, Shield, Code, Search, Filter,
   Clock, CheckCircle2, AlertTriangle, ArrowRight, UserCheck,
   Send, RefreshCw, ExternalLink, HelpCircle, FileText, Check,
-  X, Sparkles, Building2, Calendar, DollarSign, Layers
+  X, Sparkles, Building2, Calendar, DollarSign, Layers, MessageSquare
 } from 'lucide-react';
 import { Link, useNavigate } from 'react-router-dom';
 import api from '../../../lib/api';
 import { useAuthStore } from '../../../store/authStore';
+import { useClientPortalStatus } from '../../../lib/useClientPortalStatus';
+import { ServiceUnavailableNotice } from '../../../components/ui/ServiceUnavailableNotice';
 import type {
   ServiceOrder, ServiceType, ServicePriority,
-  AssignedTeamType, UserSummary
+  AssignedTeamType, UserSummary, OrderComment
 } from '../../../types/serviceManagement';
 
 export const ServiceOrders: React.FC = () => {
@@ -30,6 +32,10 @@ export const ServiceOrders: React.FC = () => {
   const [showRfiModal, setShowRfiModal] = useState<ServiceOrder | null>(null);
   const [showAssignModal, setShowAssignModal] = useState<ServiceOrder | null>(null);
   const [showAdminRfiModal, setShowAdminRfiModal] = useState<ServiceOrder | null>(null);
+  const [showCommentsModal, setShowCommentsModal] = useState<ServiceOrder | null>(null);
+  const [commentMessage, setCommentMessage] = useState('');
+  const [commentsList, setCommentsList] = useState<any[]>([]);
+  const [sendingComment, setSendingComment] = useState(false);
 
   // New Order Form state
   const [newOrder, setNewOrder] = useState({
@@ -53,7 +59,10 @@ export const ServiceOrders: React.FC = () => {
   const [assignSpecialistId, setAssignSpecialistId] = useState('');
 
   const isAdmin = user?.role === 'admin';
+  const isStaff = ['admin', 'developer', 'security_engineer', 'malware_analyst'].includes(user?.role || '');
   const isSpecialist = ['developer', 'security_engineer', 'malware_analyst'].includes(user?.role || '');
+  const isClient = user?.role === 'client_member' || user?.role === 'client_owner' || (!isStaff && Boolean(user));
+  const { clientServicesEnabled } = useClientPortalStatus();
 
   const showToast = (message: string, type: 'success' | 'error' = 'success') => {
     setNotification({ message, type });
@@ -240,6 +249,46 @@ export const ServiceOrders: React.FC = () => {
     }
   };
 
+  // Handle Open Discussion & Comments
+  const handleOpenComments = async (order: ServiceOrder) => {
+    setShowCommentsModal(order);
+    setCommentsList(order.comments || []);
+    try {
+      const res = await api.get(`/service-orders/${order._id}/comments`);
+      if (res.data?.success && res.data?.data) {
+        setCommentsList(res.data.data);
+      }
+    } catch (err) {
+      console.warn('Failed to refresh comments:', err);
+    }
+  };
+
+  // Handle Send Comment on Order
+  const handleSendComment = async (e?: React.FormEvent) => {
+    if (e) e.preventDefault();
+    if (!showCommentsModal || !commentMessage.trim() || sendingComment) return;
+
+    try {
+      setSendingComment(true);
+      const res = await api.post(`/service-orders/${showCommentsModal._id}/comments`, {
+        message: commentMessage.trim(),
+      });
+      if (res.data?.success && res.data?.data) {
+        setCommentsList(res.data.data);
+        setOrders((prev) =>
+          prev.map((o) =>
+            o._id === showCommentsModal._id ? { ...o, comments: res.data.data } : o
+          )
+        );
+        setCommentMessage('');
+      }
+    } catch (err: any) {
+      showToast(err.response?.data?.error || err.response?.data?.message || 'Failed to post message', 'error');
+    } finally {
+      setSendingComment(false);
+    }
+  };
+
   // Filter Logic
   const filteredOrders = orders.filter(o => {
     const matchesSearch =
@@ -290,6 +339,10 @@ export const ServiceOrders: React.FC = () => {
         return <span className="px-2 py-0.5 rounded text-[11px] font-bold uppercase tracking-wider bg-blue-500/20 text-blue-300 border border-blue-500/30">Low</span>;
     }
   };
+
+  if (isClient && !clientServicesEnabled) {
+    return <ServiceUnavailableNotice message="service now not avlible" />;
+  }
 
   return (
     <div className="p-4 sm:p-6 lg:p-8 max-w-7xl mx-auto space-y-8 animate-fadeIn">
@@ -507,7 +560,7 @@ export const ServiceOrders: React.FC = () => {
                 ? (order.serviceProjectId as any)._id
                 : order.serviceProjectId;
 
-            return (
+  return (
               <GlassCard
                 key={order._id}
                 className="p-5 sm:p-6 border-white/10 hover:border-brand-cyan/30 transition-all duration-200 group"
@@ -612,6 +665,16 @@ export const ServiceOrders: React.FC = () => {
 
                     {/* Right Column: Dynamic Action Buttons */}
                     <div className="flex flex-wrap lg:flex-col items-stretch lg:items-end justify-end gap-2 pt-3 lg:pt-0 border-t lg:border-t-0 border-white/10 shrink-0">
+                      {/* Discussion & Messages Thread Button */}
+                      <button
+                        onClick={() => handleOpenComments(order)}
+                        className="flex items-center justify-center gap-1.5 px-3 py-1.5 rounded-xl border border-white/10 hover:border-brand-cyan/40 bg-white/5 hover:bg-brand-cyan/10 text-white hover:text-brand-cyan text-xs font-semibold transition-all shadow-sm"
+                        title="Open Order Communication Thread"
+                      >
+                        <MessageSquare size={14} className="text-brand-cyan" />
+                        <span>Discussion ({order.comments?.length || 0})</span>
+                      </button>
+
                       {/* If Project Workspace exists -> direct link */}
                       {projectId ? (
                         <Link
@@ -1003,6 +1066,144 @@ export const ServiceOrders: React.FC = () => {
                   {submitting ? 'Assigning...' : 'Confirm Assignment'}
                 </button>
               </div>
+            </form>
+          </div>
+        </div>
+      )}
+      {/* ORDER COMMENTS & COMMUNICATION MODAL */}
+      {showCommentsModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/75 backdrop-blur-md animate-fadeIn">
+          <div className="w-full max-w-2xl bg-[#0e131f] border border-brand-cyan/30 rounded-2xl shadow-2xl flex flex-col max-h-[85vh] overflow-hidden">
+            {/* Modal Header */}
+            <div className="flex items-center justify-between p-5 border-b border-white/10 bg-surface/50">
+              <div className="flex items-center gap-3">
+                <div className="p-2.5 rounded-xl bg-brand-cyan/20 text-brand-cyan border border-brand-cyan/30">
+                  <MessageSquare size={20} />
+                </div>
+                <div>
+                  <div className="flex items-center gap-2">
+                    <span className="font-mono text-xs font-bold px-2 py-0.5 rounded bg-brand-cyan/15 text-brand-cyan border border-brand-cyan/25">
+                      {showCommentsModal.orderNumber}
+                    </span>
+                    <h3 className="font-bold text-white text-base truncate max-w-sm">
+                      {showCommentsModal.title}
+                    </h3>
+                  </div>
+                  <p className="text-xs text-text-muted mt-0.5">
+                    Order Communication & Discussions between Admin, Specialists, and Client
+                  </p>
+                </div>
+              </div>
+              <button
+                onClick={() => {
+                  setShowCommentsModal(null);
+                  setCommentMessage('');
+                }}
+                className="p-1.5 rounded-lg text-text-muted hover:text-white hover:bg-white/10 transition-colors"
+              >
+                <X size={18} />
+              </button>
+            </div>
+
+            {/* Conversation Messages Thread */}
+            <div className="flex-1 overflow-y-auto p-5 space-y-4 bg-black/20">
+              {commentsList.length === 0 ? (
+                <div className="py-16 text-center space-y-2">
+                  <div className="w-12 h-12 rounded-2xl bg-white/5 border border-white/10 text-text-muted mx-auto flex items-center justify-center">
+                    <MessageSquare size={22} />
+                  </div>
+                  <h4 className="text-sm font-semibold text-white">No messages yet</h4>
+                  <p className="text-xs text-text-muted max-w-sm mx-auto">
+                    Be the first to post a message or question regarding this service order. Admins, specialists, and clients will receive your updates.
+                  </p>
+                </div>
+              ) : (
+                commentsList.map((c: any, idx: number) => {
+                  const senderObj = typeof c.sender === 'object' && c.sender !== null ? c.sender : null;
+                  const senderName = c.senderName || senderObj?.name || 'User';
+                  const senderRole = c.senderRole || senderObj?.role || 'user';
+                  const isCurrentUser = (senderObj?._id || senderObj?.id) === (user?._id || user?.id) || c.sender === user?._id || c.sender === user?.id;
+
+                  // Dynamic role styling
+                  const roleBadge = (() => {
+                    switch (senderRole) {
+                      case 'admin':
+                        return <span className="px-1.5 py-0.5 rounded text-[10px] font-mono font-bold bg-purple-500/20 text-purple-300 border border-purple-500/30">ADMIN</span>;
+                      case 'developer':
+                        return <span className="px-1.5 py-0.5 rounded text-[10px] font-mono font-bold bg-emerald-500/20 text-emerald-300 border border-emerald-500/30">DEVELOPER</span>;
+                      case 'security_engineer':
+                        return <span className="px-1.5 py-0.5 rounded text-[10px] font-mono font-bold bg-brand-cyan/20 text-brand-cyan border border-brand-cyan/30">SECURITY TESTER</span>;
+                      case 'malware_analyst':
+                        return <span className="px-1.5 py-0.5 rounded text-[10px] font-mono font-bold bg-red-500/20 text-red-300 border border-red-500/30">MALWARE ANALYST</span>;
+                      default:
+                        return <span className="px-1.5 py-0.5 rounded text-[10px] font-mono font-bold bg-blue-500/20 text-blue-300 border border-blue-500/30">CLIENT</span>;
+                    }
+                  })();
+
+                  const avatarBg =
+                    senderRole === 'admin'
+                      ? 'bg-purple-500/20 text-purple-300 border-purple-500/30'
+                      : senderRole === 'developer'
+                      ? 'bg-emerald-500/20 text-emerald-300 border-emerald-500/30'
+                      : senderRole === 'security_engineer'
+                      ? 'bg-brand-cyan/20 text-brand-cyan border border-brand-cyan/30'
+                      : senderRole === 'malware_analyst'
+                      ? 'bg-red-500/20 text-red-300 border-red-500/30'
+                      : 'bg-blue-500/20 text-blue-300 border-blue-500/30';
+
+        return (
+                    <div
+                      key={c._id || idx}
+                      className={`flex gap-3 items-start ${isCurrentUser ? 'flex-row-reverse' : ''}`}
+                    >
+                      <div
+                        className={`w-8 h-8 rounded-xl shrink-0 flex items-center justify-center text-xs font-bold font-mono border ${avatarBg}`}
+                      >
+                        {senderName.charAt(0).toUpperCase()}
+                      </div>
+
+                      <div className={`space-y-1 max-w-[80%] ${isCurrentUser ? 'items-end' : ''}`}>
+                        <div className={`flex items-center gap-2 text-xs ${isCurrentUser ? 'justify-end' : ''}`}>
+                          <span className="font-semibold text-white/90">{senderName}</span>
+                          {roleBadge}
+                          <span className="text-[10px] text-text-muted">
+                            {c.createdAt ? new Date(c.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : 'Now'}
+                          </span>
+                        </div>
+
+                        <div
+                          className={`p-3 rounded-2xl text-xs leading-relaxed ${
+                            isCurrentUser
+                              ? 'bg-brand-cyan/20 text-white border border-brand-cyan/35 rounded-tr-none'
+                              : 'bg-white/5 text-white/90 border border-white/10 rounded-tl-none'
+                          }`}
+                        >
+                          <p className="whitespace-pre-wrap">{c.message}</p>
+                        </div>
+                      </div>
+                    </div>
+                  );
+                })
+              )}
+            </div>
+
+            {/* Input Footer */}
+            <form onSubmit={handleSendComment} className="p-4 border-t border-white/10 bg-surface/80 flex items-center gap-2">
+              <input
+                type="text"
+                placeholder="Write a message to Admin, Specialist, or Client..."
+                value={commentMessage}
+                onChange={(e) => setCommentMessage(e.target.value)}
+                className="flex-1 bg-surface/70 border border-white/10 rounded-xl px-4 py-2.5 text-xs text-white placeholder-text-muted focus:outline-none focus:border-brand-cyan/50"
+              />
+              <button
+                type="submit"
+                disabled={sendingComment || !commentMessage.trim()}
+                className="px-4 py-2.5 rounded-xl bg-brand-cyan hover:bg-brand-cyan/90 text-background-darker font-bold text-xs flex items-center gap-1.5 transition-all shadow-md shadow-brand-cyan/20 disabled:opacity-50"
+              >
+                <Send size={14} />
+                <span>{sendingComment ? 'Sending...' : 'Send'}</span>
+              </button>
             </form>
           </div>
         </div>

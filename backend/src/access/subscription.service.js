@@ -30,7 +30,7 @@ const resolveEffectivePlanName = async ({ userId, isGuest = false }) => {
   }
 
   const user = await User.findById(userId).select(
-    "isActive subscriptionTier subscriptionStatus subscriptionExpiresAt",
+    "role isActive subscriptionTier subscriptionStatus subscriptionExpiresAt",
   );
 
   if (!user) {
@@ -47,6 +47,11 @@ const resolveEffectivePlanName = async ({ userId, isGuest = false }) => {
       403,
       "SUBSCRIPTION_ACCOUNT_INACTIVE",
     );
+  }
+
+  // Admin, Security Engineer, Developer, and Malware Analyst roles equate to Enterprise subscription
+  if (["admin", "security_engineer", "developer", "malware_analyst"].includes(user.role)) {
+    return "enterprise";
   }
 
   const status = user.subscriptionStatus;

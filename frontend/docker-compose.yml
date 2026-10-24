@@ -1,10 +1,15 @@
 services:
   web:
-    build: .
+    build:
+      context: .
+      dockerfile: Dockerfile
+      target: production
+      args:
+        VITE_API_URL: http://localhost:3001/api/v1
+    image: sentrix-frontend:latest
     container_name: sentrix-web
     restart: unless-stopped
     ports:
-      - "5173:5173"
+      - "5173:80"
     environment:
       - VITE_API_URL=http://localhost:3001/api/v1
-

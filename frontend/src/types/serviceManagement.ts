@@ -23,7 +23,17 @@ export type ProjectPhase =
   | 'client_acceptance'
   | 'delivered';
 
-export type ProjectStatus = 'active' | 'on_hold' | 'completed' | 'archived';
+export type ProjectStatus =
+  | 'active'
+  | 'on_hold'
+  | 'completed'
+  | 'archived'
+  | 'planning'
+  | 'in_development'
+  | 'ready_for_security_review'
+  | 'in_security_testing'
+  | 'remediation_in_progress'
+  | 'final_approval';
 
 export type TaskType =
   | 'development'
@@ -60,6 +70,8 @@ export interface ServiceOrder {
   orderNumber: string;
   title: string;
   serviceType: ServiceType;
+  projectType?: string;
+  submittedByDeveloper?: boolean;
   description: string;
   requirements?: string[];
   targetUrl: string;
@@ -91,17 +103,52 @@ export interface ServiceOrder {
     feedback?: string;
     rating?: number;
   };
+  comments?: OrderComment[];
   createdAt: string;
   updatedAt: string;
+}
+
+export interface OrderComment {
+  _id?: string;
+  sender: UserSummary | string;
+  senderRole?: string;
+  senderName?: string;
+  message: string;
+  createdAt: string;
+}
+
+export interface TestingFeedbackAttachment {
+  name: string;
+  url: string;
+  fileType?: string;
+  fileSize?: string;
+}
+
+export interface TestingFeedbackItem {
+  _id?: string;
+  rejectedBy?: UserSummary | string;
+  reason: string;
+  notes?: string;
+  severity: 'critical' | 'high' | 'medium' | 'low';
+  attachments?: TestingFeedbackAttachment[];
+  resolved?: boolean;
+  resolvedAt?: string;
+  resolutionNotes?: string;
+  createdAt?: string;
 }
 
 export interface DeliverableItem {
   _id?: string;
   name: string;
+  title?: string;
   fileUrl: string;
+  url?: string;
+  fileName?: string;
+  fileSize?: string;
   fileType?: string;
   uploadedBy?: UserSummary | string;
   uploadedAt?: string;
+  submittedAt?: string;
   approved?: boolean;
   approvedBy?: UserSummary | string;
 }
@@ -142,12 +189,16 @@ export interface ServiceProject {
   serviceOrderId: ServiceOrder | string;
   title: string;
   serviceType: ServiceType;
+  projectType?: string;
+  submittedByDeveloper?: boolean;
   description?: string;
   targetUrl?: string;
   status: ProjectStatus;
   phase: ProjectPhase;
   priority: ServicePriority;
   progress: number;
+  developmentProgress?: number;
+  securityTestingProgress?: number;
   deadline?: string;
   dueDate?: string;
   clientId: UserSummary | string;
@@ -155,9 +206,13 @@ export interface ServiceProject {
   developmentLead?: UserSummary | string;
   securityLead?: UserSummary | string;
   assignedTeam?: (UserSummary | string)[];
+  assignedDevelopers?: (UserSummary | string)[];
+  assignedSecurityEngineers?: (UserSummary | string)[];
+  assignedMalwareAnalysts?: (UserSummary | string)[];
   tasks?: ProjectTask[];
   findings?: any[];
   deliverables?: DeliverableItem[];
+  testingFeedback?: TestingFeedbackItem[];
   signOffs?: {
     securityLead?: {
       approved?: boolean;
@@ -190,6 +245,11 @@ export interface ServiceProject {
   startDate?: string;
   targetCompletionDate?: string;
   actualCompletionDate?: string;
+  isDeliveredToClient?: boolean;
+  deliveredAt?: string;
+  deliveredBy?: UserSummary | string;
+  deliveryNotes?: string;
+  deliverablesPendingRelease?: boolean;
   createdAt: string;
   updatedAt: string;
 }

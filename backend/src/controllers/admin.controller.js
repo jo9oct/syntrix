@@ -10,6 +10,7 @@ import { MalwareCase } from "../models/MalwareCase.js";
 import { AuditLog } from "../models/AuditLog.js";
 import { Transaction } from "../models/Transaction.js";
 import { ServiceOrder } from "../models/ServiceOrder.js";
+import { SystemSetting } from "../models/SystemSetting.js";
 import Scan from "../database/models/scan.model.js";
 import Finding from "../database/models/finding.model.js";
 import Target from "../database/models/target.model.js";
@@ -489,6 +490,65 @@ export const getAdminDashboardStats = async (req, res) => {
     return res.status(500).json({
       success: false,
       error: "Failed to generate dashboard statistics",
+    });
+  }
+};
+
+/**
+ * Get Client Portal Services availability status
+ * Controls whether client_member and client_owner can access Service Orders & Project Workspaces
+ */
+export const getClientPortalStatus = async (req, res) => {
+  try {
+    const setting = await SystemSetting.findOne({ key: "client_portal_services_enabled" });
+    const enabled = setting ? Boolean(setting.value) : true;
+
+    return res.status(200).json({
+      success: true,
+      enabled,
+      clientServicesEnabled: enabled,
+    });
+  } catch (err) {
+    console.error("[SystemSetting] Error fetching portal status:", err);
+    return res.status(200).json({
+      success: true,
+      enabled: true,
+      clientServicesEnabled: true,
+    });
+  }
+};
+
+/**
+ * Update Client Portal Services availability status (Admin only)
+ */
+export const updateClientPortalStatus = async (req, res) => {
+  try {
+    const { enabled } = req.body;
+    const isEnabled = Boolean(enabled);
+
+    await SystemSetting.findOneAndUpdate(
+      { key: "client_portal_services_enabled" },
+      {
+        key: "client_portal_services_enabled",
+        value: isEnabled,
+        updatedBy: req.user._id,
+      },
+      { upsert: true, new: true }
+    );
+
+    return res.status(200).json({
+      success: true,
+      message: isEnabled
+        ? "Client Portal Services enabled! Client members and owners can access orders and workspaces."
+        : "Client Portal Services suspended! Service Orders and Project Workspaces are now unavailable for clients.",
+      enabled: isEnabled,
+      clientServicesEnabled: isEnabled,
+    });
+  } catch (err) {
+    console.error("[SystemSetting] Error updating portal status:", err);
+    return res.status(500).json({
+      success: false,
+      error: "Failed to update client portal status",
     });
   }
 };

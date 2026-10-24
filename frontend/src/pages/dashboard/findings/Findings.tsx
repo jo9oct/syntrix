@@ -134,8 +134,8 @@ export const Findings: React.FC = () => {
         </div>
       </div>
 
-      {/* Tier Retention & Capability Banner for client_member & client_owner */}
-      {(user?.role === 'client_owner' || user?.role === 'client_member') && isFree && (
+      {/* Tier Retention & Capability Banner for client_owner */}
+      {user?.role === 'client_owner' && isFree && (
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 p-4 rounded-2xl bg-amber-500/10 border border-amber-500/30 text-xs shadow-sm">
           <div className="flex items-center gap-2.5 text-amber-300">
             <AlertTriangle size={18} className="shrink-0" />

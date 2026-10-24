@@ -116,19 +116,16 @@ export const listServiceOrders = async (req, res) => {
       query.$or = [
         { assignedLead: user._id },
         { assignedTeam: { $in: ["developer", "development"] } },
-        { serviceType: "secure_development" },
       ];
     } else if (user.role === "security_engineer") {
       query.$or = [
         { assignedLead: user._id },
         { assignedTeam: { $in: ["security_engineer", "security_engineering"] } },
-        { serviceType: "security_assessment" },
       ];
     } else if (user.role === "malware_analyst") {
       query.$or = [
         { assignedLead: user._id },
         { assignedTeam: { $in: ["malware_analyst", "malware_analysis"] } },
-        { serviceType: "malware_analysis" },
       ];
     }
 
@@ -153,6 +150,7 @@ export const listServiceOrders = async (req, res) => {
       .populate("organizationId", "name")
       .populate("assignedLead", "name email role")
       .populate("projectId", "projectCode status progress")
+      .populate("comments.sender", "name email role")
       .lean();
 
     return res.status(200).json({
@@ -183,6 +181,7 @@ export const getServiceOrderById = async (req, res) => {
       .populate("assignedLead", "name email role")
       .populate("projectId")
       .populate("infoRequests.requestedBy", "name email role")
+      .populate("comments.sender", "name email role")
       .lean();
 
     if (!order) {
@@ -227,41 +226,9 @@ export const getServiceOrderById = async (req, res) => {
 export const updateServiceOrderStatus = async (req, res) => {
   try {
     const { id } = req.params;
-    const { status, rejectionReason, estimatedBudget } = req.body;
+    const { status, rejectionReason, estimatedBudget, progress, phase } = req.body;
 
-    const validStatuses = [
-      "submitted",
-      "under_review",
-      "info_requested",
-      "accepted",
-      "rejected",
-      "converted_to_project",
-      "in_progress",
-      "completed",
-      "canceled",
-    ];
-
-    if (!status || !validStatuses.includes(status)) {
-      return res.status(400).json({
-        success: false,
-        error: `Invalid status. Must be one of: ${validStatuses.join(", ")}`,
-      });
-    }
-
-    const updateFields = { status };
-    if (status === "rejected" && rejectionReason) {
-      updateFields.rejectionReason = rejectionReason;
-    }
-    if (estimatedBudget) {
-      updateFields.estimatedBudget = estimatedBudget;
-    }
-
-    const order = await ServiceOrder.findByIdAndUpdate(id, updateFields, {
-      new: true,
-    })
-      .populate("clientId", "name email role")
-      .populate("assignedLead", "name email role");
-
+    const order = await ServiceOrder.findById(id);
     if (!order) {
       return res.status(404).json({
         success: false,
@@ -269,10 +236,83 @@ export const updateServiceOrderStatus = async (req, res) => {
       });
     }
 
+    if (status) {
+      const validStatuses = [
+        "submitted",
+        "under_review",
+        "info_requested",
+        "accepted",
+        "rejected",
+        "converted_to_project",
+        "in_progress",
+        "completed",
+        "canceled",
+      ];
+
+      if (!validStatuses.includes(status)) {
+        return res.status(400).json({
+          success: false,
+          error: `Invalid status. Must be one of: ${validStatuses.join(", ")}`,
+        });
+      }
+
+      order.status = status;
+      if (status === "rejected" && rejectionReason) {
+        order.rejectionReason = rejectionReason;
+      }
+    }
+
+    if (typeof progress === "number") {
+      order.progress = Math.min(100, Math.max(0, progress));
+      if (order.progress >= 100) {
+        // Do NOT automatically complete or deliver to user at 100%
+        // Only mark completed if explicitly delivered by admin
+        if (order.isDelivered) {
+          order.status = "completed";
+        } else {
+          if (order.status !== "completed") {
+            order.status = "in_progress";
+            if (!order.phase || order.phase === "") {
+              order.phase = "Ready for Admin Review";
+            }
+          }
+        }
+      } else if (order.status === "completed" && order.progress < 100) {
+        order.status = "in_progress";
+      }
+    }
+
+    if (typeof phase === "string") {
+      order.phase = phase;
+    }
+
+    if (estimatedBudget) {
+      order.estimatedBudget = estimatedBudget;
+    }
+
+    await order.save();
+
+    // If order has an active project workspace, sync progress and phase
+    if (order.projectId) {
+      const projectUpdate = {};
+      if (typeof progress === "number") {
+        projectUpdate.progress = Math.min(100, Math.max(0, progress));
+      }
+      if (order.status === "completed" && order.isDelivered) {
+        projectUpdate.status = "completed";
+      }
+      await ServiceProject.findByIdAndUpdate(order.projectId, projectUpdate);
+    }
+
+    const populated = await ServiceOrder.findById(id)
+      .populate("clientId", "name email role")
+      .populate("assignedLead", "name email role")
+      .populate("projectId", "projectCode status progress");
+
     return res.status(200).json({
       success: true,
-      message: `Order ${order.orderNumber} status updated to '${status}'`,
-      data: order,
+      message: `Order ${order.orderNumber} updated successfully`,
+      data: populated,
     });
   } catch (err) {
     console.error("[ServiceOrder] Error updating status:", err);
@@ -405,7 +445,7 @@ export const respondOrderInfo = async (req, res) => {
 export const assignOrderTeam = async (req, res) => {
   try {
     const { id } = req.params;
-    const { assignedLead, assignedTeam } = req.body;
+    const { assignedLead, assignedTeam, priority, notes } = req.body;
 
     const order = await ServiceOrder.findById(id);
     if (!order) {
@@ -417,6 +457,11 @@ export const assignOrderTeam = async (req, res) => {
 
     if (assignedLead) order.assignedLead = assignedLead;
     if (assignedTeam) order.assignedTeam = assignedTeam;
+    if (priority) order.priority = priority;
+
+    if (order.status === "submitted" || order.status === "under_review") {
+      order.status = "accepted";
+    }
 
     await order.save();
 
@@ -537,6 +582,104 @@ export const convertToProject = async (req, res) => {
     return res.status(500).json({
       success: false,
       error: "Failed to convert service order into project workspace",
+    });
+  }
+};
+
+/**
+ * 8. Add Comment / Message to Service Order
+ * POST /api/v1/service-orders/:id/comments
+ */
+export const addOrderComment = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { message } = req.body;
+    const user = req.user;
+
+    if (!message || !message.trim()) {
+      return res.status(400).json({
+        success: false,
+        error: "Message content cannot be empty",
+      });
+    }
+
+    const order = await ServiceOrder.findById(id);
+    if (!order) {
+      return res.status(404).json({
+        success: false,
+        error: "Service order not found",
+      });
+    }
+
+    // Role-based visibility check for client users
+    if (["client_owner", "client_member", "user"].includes(user.role)) {
+      const isOwner = String(order.clientId) === String(user._id);
+      const isSameOrg = user.organizationId && String(order.organizationId) === String(user.organizationId);
+      if (!isOwner && !isSameOrg && user.role !== "admin") {
+        return res.status(403).json({
+          success: false,
+          error: "You are not authorized to comment on this service order",
+        });
+      }
+    }
+
+    const newComment = {
+      sender: user._id,
+      senderRole: user.role,
+      senderName: user.name || user.email,
+      message: message.trim(),
+      createdAt: new Date(),
+    };
+
+    order.comments = order.comments || [];
+    order.comments.push(newComment);
+    await order.save();
+
+    const populatedOrder = await ServiceOrder.findById(id)
+      .populate("comments.sender", "name email role")
+      .lean();
+
+    return res.status(201).json({
+      success: true,
+      message: "Comment posted successfully",
+      data: populatedOrder.comments,
+    });
+  } catch (err) {
+    console.error("[ServiceOrder] Error adding comment:", err);
+    return res.status(500).json({
+      success: false,
+      error: "Failed to post comment",
+    });
+  }
+};
+
+/**
+ * 9. Get Comments / Messages for Service Order
+ * GET /api/v1/service-orders/:id/comments
+ */
+export const getOrderComments = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const order = await ServiceOrder.findById(id)
+      .populate("comments.sender", "name email role")
+      .lean();
+
+    if (!order) {
+      return res.status(404).json({
+        success: false,
+        error: "Service order not found",
+      });
+    }
+
+    return res.status(200).json({
+      success: true,
+      data: order.comments || [],
+    });
+  } catch (err) {
+    console.error("[ServiceOrder] Error fetching comments:", err);
+    return res.status(500).json({
+      success: false,
+      error: "Failed to retrieve comments",
     });
   }
 };

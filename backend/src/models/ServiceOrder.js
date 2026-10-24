@@ -21,7 +21,7 @@ const serviceOrderSchema = new Schema(
     },
     serviceType: {
       type: String,
-      enum: ["security_assessment", "secure_development"],
+      enum: ["security_assessment", "secure_development", "malware_analysis"],
       required: true,
     },
     title: {
@@ -100,13 +100,64 @@ const serviceOrderSchema = new Schema(
     },
     assignedTeam: {
       type: String,
-      enum: ["developer", "security_engineer", "unassigned"],
+      enum: [
+        "developer",
+        "development",
+        "security_engineer",
+        "security_engineering",
+        "malware_analyst",
+        "malware_analysis",
+        "unassigned",
+      ],
       default: "unassigned",
     },
     projectId: {
       type: Schema.Types.ObjectId,
       ref: "ServiceProject",
     },
+    progress: {
+      type: Number,
+      min: 0,
+      max: 100,
+      default: 0,
+    },
+    phase: {
+      type: String,
+      default: "",
+    },
+    isDelivered: {
+      type: Boolean,
+      default: false,
+    },
+    deliveredAt: {
+      type: Date,
+    },
+    comments: [
+      {
+        sender: {
+          type: Schema.Types.ObjectId,
+          ref: "User",
+          required: true,
+        },
+        senderRole: {
+          type: String,
+          default: "",
+        },
+        senderName: {
+          type: String,
+          default: "",
+        },
+        message: {
+          type: String,
+          required: true,
+          trim: true,
+        },
+        createdAt: {
+          type: Date,
+          default: Date.now,
+        },
+      },
+    ],
   },
   {
     timestamps: true,

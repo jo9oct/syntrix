@@ -8,6 +8,11 @@ const projectTaskSchema = new Schema(
       required: true,
       index: true,
     },
+    taskCode: {
+      type: String,
+      default: "",
+      index: true,
+    },
     title: {
       type: String,
       required: true,
@@ -16,6 +21,10 @@ const projectTaskSchema = new Schema(
     description: {
       type: String,
       default: "",
+    },
+    estimatedHours: {
+      type: Number,
+      default: 0,
     },
     taskType: {
       type: String,

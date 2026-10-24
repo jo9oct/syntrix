@@ -186,10 +186,10 @@ export const AppShell: React.FC = () => {
                 </div>
                 <div className="space-y-1">
                   <Link
-                    to="/dashboard/admin"
+                    to="/dashboard/admin?tab=overview"
                     onClick={() => setMobileSidebarOpen(false)}
                     className={`flex items-center gap-3 px-3.5 py-2.5 rounded-xl text-xs sm:text-sm font-medium transition-all duration-150 ${
-                      location.pathname === '/dashboard/admin' && (!location.search || location.search === '' || location.search === '?tab=overview')
+                      location.pathname === '/dashboard/admin' && (!location.search || location.search === '' || location.search.includes('tab=overview'))
                         ? 'bg-brand-cyan/15 text-brand-cyan border border-brand-cyan/25 shadow-sm shadow-brand-cyan/10 font-semibold'
                         : 'text-text-muted hover:text-white hover:bg-white/5'
                     }`}
@@ -481,6 +481,64 @@ export const AppShell: React.FC = () => {
                 </div>
               </div>
             </div>
+          ) : currentUser.role === 'malware_analyst' && !isAnalysisMode ? (
+            /* MALWARE OPERATIONS & ASSIGNED LAB DISPATCH NAVIGATION */
+            <div className="space-y-4">
+              <div>
+                <div className="px-3 pb-1.5 text-[10px] font-bold uppercase tracking-wider text-text-muted flex items-center justify-between">
+                  <span>Malware Operations</span>
+                  <span className="text-[9px] bg-amber-500/20 text-amber-400 px-1.5 py-0.2 rounded font-mono font-bold">MalLab</span>
+                </div>
+                <div className="space-y-1">
+                  {/* Malware Dashboard */}
+                  <Link
+                    to="/dashboard/malware"
+                    onClick={() => setMobileSidebarOpen(false)}
+                    className={`flex items-center gap-3 px-3.5 py-2.5 rounded-xl text-xs sm:text-sm font-medium transition-all duration-150 ${
+                      location.pathname === '/dashboard/malware' && (!location.search || location.search === '' || location.search === '?tab=overview')
+                        ? 'bg-amber-500/15 text-amber-400 border border-amber-500/25 shadow-sm shadow-amber-500/10 font-semibold'
+                        : 'text-text-muted hover:text-white hover:bg-white/5'
+                    }`}
+                  >
+                    <LayoutDashboard size={18} className="shrink-0" />
+                    <span className="truncate">Malware Dashboard</span>
+                  </Link>
+
+                  {/* Accept Orders from Admin */}
+                  <Link
+                    to="/dashboard/malware?tab=orders"
+                    onClick={() => setMobileSidebarOpen(false)}
+                    className={`flex items-center justify-between px-3.5 py-2.5 rounded-xl text-xs sm:text-sm font-medium transition-all duration-150 ${
+                      location.pathname === '/dashboard/malware' && location.search.includes('tab=orders')
+                        ? 'bg-amber-500/15 text-amber-400 border border-amber-500/25 shadow-sm shadow-amber-500/10 font-semibold'
+                        : 'text-text-muted hover:text-white hover:bg-white/5'
+                    }`}
+                  >
+                    <div className="flex items-center gap-3 min-w-0">
+                      <ClipboardList size={18} className="shrink-0 text-amber-400" />
+                      <span className="truncate">Assigned Orders</span>
+                    </div>
+                    <span className="text-[10px] font-mono px-1.5 py-0.5 rounded bg-amber-500/15 text-amber-400 border border-amber-500/20 font-bold">
+                      Accept
+                    </span>
+                  </Link>
+
+                  {/* Project Workspaces */}
+                  <Link
+                    to="/dashboard/service-projects"
+                    onClick={() => setMobileSidebarOpen(false)}
+                    className={`flex items-center gap-3 px-3.5 py-2.5 rounded-xl text-xs sm:text-sm font-medium transition-all duration-150 ${
+                      location.pathname.startsWith('/dashboard/service-projects')
+                        ? 'bg-amber-500/15 text-amber-400 border border-amber-500/25 shadow-sm shadow-amber-500/10 font-semibold'
+                        : 'text-text-muted hover:text-white hover:bg-white/5'
+                    }`}
+                  >
+                    <Layers size={18} className="shrink-0" />
+                    <span className="truncate">Project Workspaces</span>
+                  </Link>
+                </div>
+              </div>
+            </div>
           ) : isAnalysisMode ? (
             /* ADMIN IN USER DASHBOARD / ANALYSIS CONSOLE (Billing & Plans Removed) */
             <div className="space-y-1">
@@ -555,7 +613,7 @@ export const AppShell: React.FC = () => {
               {userTier === 'enterprise' && 'Sovereign Lab • Dedicated Detonation'}
             </div>
 
-            {userTier !== 'enterprise' && (
+            {userTier !== 'enterprise' && currentUser.role === 'client_owner' && (
               <button
                 onClick={() => {
                   setMobileSidebarOpen(false);
@@ -672,7 +730,7 @@ export const AppShell: React.FC = () => {
                     {userTier}
                   </span>
 
-                  {userTier === 'free' && (
+                  {userTier === 'free' && currentUser.role === 'client_owner' && (
                     <button
                       onClick={() => navigate('/dashboard/billing')}
                       className="btn-primary text-xs px-2.5 py-1 rounded-full font-bold flex items-center gap-1 shadow-sm shadow-brand-cyan/20"

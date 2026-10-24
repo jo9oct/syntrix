@@ -273,8 +273,8 @@ export const DashboardHome: React.FC = () => {
       {/* Evidence Viewer Modal */}
       <EvidenceViewer evidence={selectedEvidence} onClose={() => setSelectedEvidence(null)} />
 
-      {/* Free Tier Workspace Banner Notice */}
-      {(user?.role === 'client_owner' || user?.role === 'client_member') && isFree && (
+      {/* Free Tier Workspace Banner Notice (Shown only for client_owner who has billing authority) */}
+      {user?.role === 'client_owner' && isFree && (
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 p-5 rounded-2xl bg-amber-500/10 border border-amber-500/30 shadow-lg shadow-amber-500/5">
           <div className="flex items-center gap-3.5">
             <div className="w-10 h-10 rounded-xl bg-amber-500/20 border border-amber-500/30 flex items-center justify-center text-amber-400 shrink-0">

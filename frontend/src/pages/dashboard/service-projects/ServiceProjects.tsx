@@ -8,11 +8,16 @@ import {
 import { Link, useNavigate } from 'react-router-dom';
 import api from '../../../lib/api';
 import { useAuthStore } from '../../../store/authStore';
+import { useClientPortalStatus } from '../../../lib/useClientPortalStatus';
+import { ServiceUnavailableNotice } from '../../../components/ui/ServiceUnavailableNotice';
 import type { ServiceProject, ProjectPhase, ServicePriority } from '../../../types/serviceManagement';
 
 export const ServiceProjects: React.FC = () => {
   const navigate = useNavigate();
   const { user } = useAuthStore();
+  const isStaff = ['admin', 'developer', 'security_engineer', 'malware_analyst'].includes(user?.role || '');
+  const isClient = user?.role === 'client_member' || user?.role === 'client_owner' || (!isStaff && Boolean(user));
+  const { clientServicesEnabled } = useClientPortalStatus();
   const [projects, setProjects] = useState<ServiceProject[]>([]);
   const [loading, setLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState('');
@@ -78,6 +83,10 @@ export const ServiceProjects: React.FC = () => {
     const matchesPhase = phaseFilter === 'all' || p.phase === phaseFilter;
     return matchesSearch && matchesPhase;
   });
+
+  if (isClient && !clientServicesEnabled) {
+    return <ServiceUnavailableNotice message="service now not avlible" />;
+  }
 
   return (
     <div className="p-4 sm:p-6 lg:p-8 max-w-7xl mx-auto space-y-8 animate-fadeIn">

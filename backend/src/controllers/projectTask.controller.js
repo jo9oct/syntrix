@@ -7,18 +7,19 @@ import { ServiceProject } from "../models/ServiceProject.js";
  */
 export const listProjectTasks = async (req, res) => {
   try {
-    const { projectId, status, taskType, assignedTo } = req.query;
+    const targetProjectId = req.query.projectId || req.query.serviceProjectId;
+    const { status, taskType, assignedTo } = req.query;
 
     const query = {};
-    if (projectId) query.projectId = projectId;
+    if (targetProjectId) query.projectId = targetProjectId;
     if (status) query.status = status;
     if (taskType) query.taskType = taskType;
     if (assignedTo) query.assignedTo = assignedTo;
 
     // Specialist users can view assigned tasks or tasks in projects they belong to
-    if (req.user.role === "developer" && !projectId) {
+    if (req.user.role === "developer" && !targetProjectId) {
       query.$or = [{ assignedTo: req.user._id }, { taskType: "vulnerability_fix" }];
-    } else if (req.user.role === "security_engineer" && !projectId) {
+    } else if (req.user.role === "security_engineer" && !targetProjectId) {
       query.$or = [{ assignedTo: req.user._id }, { taskType: "security_audit" }];
     }
 
@@ -44,13 +45,13 @@ export const listProjectTasks = async (req, res) => {
 };
 
 /**
- * 2. Create Project Task (Admin, Developer, Security Engineer)
+ * 2. Create Project Task (Admin, Developer, Security Engineer, etc.)
  * POST /api/v1/project-tasks
  */
 export const createProjectTask = async (req, res) => {
   try {
+    const targetProjectId = req.body.projectId || req.body.serviceProjectId;
     const {
-      projectId,
       title,
       description,
       taskType,
@@ -59,16 +60,17 @@ export const createProjectTask = async (req, res) => {
       assignedTo,
       dueDate,
       findingId,
+      estimatedHours,
     } = req.body;
 
-    if (!projectId || !title) {
+    if (!targetProjectId || !title) {
       return res.status(400).json({
         success: false,
-        error: "projectId and title are required fields",
+        error: "projectId (or serviceProjectId) and title are required fields",
       });
     }
 
-    const project = await ServiceProject.findById(projectId);
+    const project = await ServiceProject.findById(targetProjectId);
     if (!project) {
       return res.status(404).json({
         success: false,
@@ -76,8 +78,12 @@ export const createProjectTask = async (req, res) => {
       });
     }
 
+    const count = await ProjectTask.countDocuments();
+    const taskCode = `TSK-${new Date().getFullYear()}-${String(count + 1).padStart(4, "0")}`;
+
     const task = await ProjectTask.create({
-      projectId,
+      projectId: targetProjectId,
+      taskCode,
       title: title.trim(),
       description: description || "",
       taskType: taskType || "development",
@@ -87,6 +93,7 @@ export const createProjectTask = async (req, res) => {
       createdBy: req.user._id,
       dueDate: dueDate ? new Date(dueDate) : null,
       findingId: findingId || null,
+      estimatedHours: Number(estimatedHours) || 0,
     });
 
     const populated = await ProjectTask.findById(task._id)
@@ -97,7 +104,7 @@ export const createProjectTask = async (req, res) => {
     return res.status(201).json({
       success: true,
       message: "Project task created successfully",
-      data: populated,
+      data: { task: populated },
     });
   } catch (err) {
     console.error("[ProjectTask] Error creating task:", err);

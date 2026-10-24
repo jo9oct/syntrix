@@ -161,6 +161,7 @@ app.use("/api/v1/service-projects", serviceProjectRoutes);
 app.use("/api/v1/project-tasks", projectTaskRoutes);
 
 app.use("/api/v1", adminRoutes);
+app.use("/api/v1/admin", adminRoutes);
 
 // Sentrix health endpoint.
 // The existing server's / root and /api/v1/health remain unchanged.

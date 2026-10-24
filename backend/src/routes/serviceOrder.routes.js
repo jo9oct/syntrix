@@ -8,10 +8,17 @@ import {
   respondOrderInfo,
   assignOrderTeam,
   convertToProject,
+  addOrderComment,
+  getOrderComments,
 } from "../controllers/serviceOrder.controller.js";
+import { getClientPortalStatus, updateClientPortalStatus } from "../controllers/admin.controller.js";
 import { protect, authorize } from "../middleware/auth.js";
 
 const router = Router();
+
+// 0. Client Portal Status check (public so client tabs can query immediately)
+router.get("/portal-status", getClientPortalStatus);
+router.put("/portal-status", protect, authorize("admin"), updateClientPortalStatus);
 
 // Require authentication for all service order operations
 router.use(protect);
@@ -39,6 +46,11 @@ router.post("/:id/assign", authorize("admin"), assignOrderTeam);
 
 // 7. Convert approved order to active project (Admin or assigned specialist)
 router.post("/:id/convert-to-project", authorize("admin", "developer", "security_engineer", "malware_analyst"), convertToProject);
+
+// 8. Order comments / communication thread (Admin, Specialist, and Client User)
+router.route("/:id/comments")
+  .get(getOrderComments)
+  .post(addOrderComment);
 
 export default router;
 
