@@ -91,9 +91,7 @@ const normalizeRequestError = (error, signal) => {
   }
 
   if (
-    ["ECONNREFUSED", "ECONNRESET", "EHOSTUNREACH", "ENETUNREACH"].includes(
-      code,
-    )
+    ["ECONNREFUSED", "ECONNRESET", "EHOSTUNREACH", "ENETUNREACH"].includes(code)
   ) {
     return "CRAWL_CONNECTION_FAILED";
   }
@@ -1231,6 +1229,7 @@ const crawl = async ({
   scope,
   maxPaths = 25,
   maxDepth = 2,
+  concurrency = 10,
   requestsPerSecond = 2,
   headers = {},
   signal,
@@ -1318,339 +1317,345 @@ const crawl = async ({
     }
   }
 
-  try {
-    while (queue.length > 0 && visited.size < maxPaths) {
-      if (signal?.aborted) {
-        break;
+  const processPage = async (current) => {
+    let response = null;
+    let requestError = null;
+
+    try {
+      response = await requestPage(current.url, { headers, signal });
+    } catch (error) {
+      if (signal?.aborted || error?.code === "CRAWL_CANCELLED") {
+        return;
       }
 
-      const current = queue.shift();
+      requestError = normalizeRequestError(error, signal);
+    }
 
-      if (visited.has(current.url) || current.depth > maxDepth) {
-        continue;
-      }
+    let statusCode = Number.isInteger(response?.statusCode)
+      ? response.statusCode
+      : Number.isInteger(response?.status)
+        ? response.status
+        : null;
 
-      assertInScope(current.url, scope);
-      visited.add(current.url);
+    let responseHeaders =
+      response?.headers && typeof response.headers === "object"
+        ? response.headers
+        : {};
 
-      await limiter.acquire();
+    let classification = classifyHttpStatus(statusCode);
 
-      if (signal?.aborted) {
-        break;
-      }
+    const staticHtml = typeof response?.body === "string" ? response.body : "";
 
-      let response = null;
-      let requestError = null;
+    let renderedHtml = "";
+    let dynamicInputs = [];
+    let dynamicForms = [];
+    let dynamicLinks = [];
+    let apiRequests = [];
+    let renderSucceeded = false;
+    let renderedFinalUrl = current.url;
 
+    /*
+     * Authenticated-context fix:
+     * Always try the supplied browser context, even if the normal HTTP
+     * request failed, returned 401/403, or did not return HTML.
+     */
+    const shouldRender =
+      Boolean(browser || browserContext) &&
+      !signal?.aborted &&
+      (Boolean(browserContext) ||
+        (classification.status === "success" &&
+          Boolean(staticHtml) &&
+          isHtmlResponse(responseHeaders, response)));
+
+    if (shouldRender) {
       try {
-        response = await requestPage(current.url, { headers, signal });
-      } catch (error) {
-        if (signal?.aborted || error?.code === "CRAWL_CANCELLED") {
-          break;
-        }
+        const rendered = await renderPage({
+          browser,
+          browserContext,
+          url: current.url,
+          scope,
+          headers,
+          signal,
+          validateSafeUrl,
+        });
 
-        requestError = normalizeRequestError(error, signal);
-      }
+        if (rendered?.html) {
+          renderedHtml = rendered.html;
+          dynamicInputs = rendered.dynamicInputs || [];
+          dynamicForms = rendered.dynamicForms || [];
+          dynamicLinks = rendered.discoveredLinks || [];
+          apiRequests = rendered.apiRequests || [];
+          renderedFinalUrl = rendered.finalUrl || current.url;
+          renderSucceeded = true;
 
-      let statusCode = Number.isInteger(response?.statusCode)
-        ? response.statusCode
-        : Number.isInteger(response?.status)
-          ? response.status
-          : null;
-
-      let responseHeaders =
-        response?.headers && typeof response.headers === "object"
-          ? response.headers
-          : {};
-
-      let classification = classifyHttpStatus(statusCode);
-
-      const staticHtml =
-        typeof response?.body === "string" ? response.body : "";
-
-      let renderedHtml = "";
-      let dynamicInputs = [];
-      let dynamicForms = [];
-      let dynamicLinks = [];
-      let apiRequests = [];
-      let renderSucceeded = false;
-      let renderedFinalUrl = current.url;
-
-      /*
-       * Authenticated-context fix:
-       * Always try the supplied browser context, even if the normal HTTP
-       * request failed, returned 401/403, or did not return HTML.
-       */
-      const shouldRender =
-        Boolean(browser || browserContext) &&
-        !signal?.aborted &&
-        (Boolean(browserContext) ||
-          (classification.status === "success" &&
-            Boolean(staticHtml) &&
-            isHtmlResponse(responseHeaders, response)));
-
-      if (shouldRender) {
-        try {
-          const rendered = await renderPage({
-            browser,
-            browserContext,
-            url: current.url,
-            scope,
-            headers,
-            signal,
-            validateSafeUrl,
-          });
-
-          if (rendered?.html) {
-            renderedHtml = rendered.html;
-            dynamicInputs = rendered.dynamicInputs || [];
-            dynamicForms = rendered.dynamicForms || [];
-            dynamicLinks = rendered.discoveredLinks || [];
-            apiRequests = rendered.apiRequests || [];
-            renderedFinalUrl = rendered.finalUrl || current.url;
-            renderSucceeded = true;
-
-            /*
-             * If the normal HTTP response was unavailable or unsuitable,
-             * classify the actual browser navigation response instead.
-             */
-            if (
-              !response ||
-              classification.status !== "success" ||
-              !isHtmlResponse(responseHeaders, response)
-            ) {
-              if (Number.isInteger(rendered.statusCode)) {
-                statusCode = rendered.statusCode;
-                responseHeaders = rendered.headers || {};
-                classification = classifyHttpStatus(statusCode);
-              } else {
-                // A missing browser response is not proof of success.
-                classification = {
-                  status: "failed",
-                  errorCode: requestError || "CRAWL_INVALID_RESPONSE",
-                };
-              }
+          /*
+           * If the normal HTTP response was unavailable or unsuitable,
+           * classify the actual browser navigation response instead.
+           */
+          if (
+            !response ||
+            classification.status !== "success" ||
+            !isHtmlResponse(responseHeaders, response)
+          ) {
+            if (Number.isInteger(rendered.statusCode)) {
+              statusCode = rendered.statusCode;
+              responseHeaders = rendered.headers || {};
+              classification = classifyHttpStatus(statusCode);
+            } else {
+              // A missing browser response is not proof of success.
+              classification = {
+                status: "failed",
+                errorCode: requestError || "CRAWL_INVALID_RESPONSE",
+              };
             }
           }
-        } catch (error) {
-          if (signal?.aborted || error?.code === "CRAWL_CANCELLED") {
-            break;
-          }
-
-          logCrawlDiagnostic("render.unexpected_failure", {
-            errorCode: normalizeRenderError(error),
-          });
         }
-      }
-
-      if (signal?.aborted) {
-        break;
-      }
-
-      /*
-       * Do not label a 401/403 page as successful simply because Chromium
-       * returned HTML. Only a successful HTTP response permits discovery.
-       */
-      const effectiveHeaders = responseHeaders;
-      const effectiveResponse = {
-        ...(response || {}),
-        headers: effectiveHeaders,
-      };
-
-      const effectiveIsHtml =
-        isHtmlResponse(effectiveHeaders, effectiveResponse) ||
-        (renderSucceeded &&
-          String(getHeader(effectiveHeaders, "content-type"))
-            .toLowerCase()
-            .includes("text/html"));
-
-      const discoveryHtml =
-        classification.status === "success"
-          ? renderedHtml || staticHtml
-          : "";
-
-      const staticAndRenderedLinks = collectStaticAndRenderedLinks({
-        staticHtml: discoveryHtml ? staticHtml : "",
-        renderedHtml: discoveryHtml ? renderedHtml : "",
-        baseUrl: renderedFinalUrl,
-      });
-
-      const canonicalUrl = extractCanonicalUrl(
-        discoveryHtml,
-        renderedFinalUrl,
-      );
-
-      const initialDiscoveredUrls = [
-        ...(canonicalUrl ? [canonicalUrl] : []),
-        ...staticAndRenderedLinks,
-        ...dynamicLinks,
-      ];
-
-      const reportDiscoveredLinks = new Set(
-        initialDiscoveredUrls
-          .map((value) => sanitizeObservedUrl(value, renderedFinalUrl))
-          .filter(Boolean),
-      );
-
-      const page = {
-        url: current.url,
-        depth: current.depth,
-        status: classification.status,
-        statusCode,
-        headers: effectiveHeaders,
-        body: discoveryHtml || null,
-        dynamicInputs:
-          classification.status === "success" ? dynamicInputs : [],
-        dynamicForms:
-          classification.status === "success" ? dynamicForms : [],
-        discoveredLinks: [...reportDiscoveredLinks].slice(
-          0,
-          MAX_DYNAMIC_LINKS,
-        ),
-        apiRequests:
-          classification.status === "success" ? apiRequests : [],
-        openApiEndpoints: [],
-        javascriptEndpoints: [],
-        errorCode: classification.errorCode,
-      };
-
-      results.push(page);
-
-      if (typeof onPage === "function") {
-        await onPage(page);
-      }
-
-      if (signal?.aborted) {
-        break;
-      }
-
-      if (!sitemapDiscoveryAttempted && current.depth === 0 && maxDepth > 0) {
-        sitemapDiscoveryAttempted = true;
-
-        try {
-          await enqueueSitemapUrls({
-            startUrl: firstUrl,
-            scope,
-            headers,
-            signal,
-            queue,
-            queued,
-            visited,
-            maxPaths,
-            requestPage,
-            discoverSitemaps,
-            validateSafeUrl,
-          });
-        } catch {
-          logCrawlDiagnostic("sitemap.discovery_failed", {
-            reason: "SITEMAP_DISCOVERY_ERROR",
-          });
+      } catch (error) {
+        if (signal?.aborted || error?.code === "CRAWL_CANCELLED") {
+          return;
         }
-      }
 
-      if (signal?.aborted) {
-        break;
+        logCrawlDiagnostic("render.unexpected_failure", {
+          errorCode: normalizeRenderError(error),
+        });
       }
+    }
 
-      if (
-        classification.status !== "success" ||
-        current.depth >= maxDepth ||
-        !effectiveIsHtml
-      ) {
-        continue;
-      }
+    if (signal?.aborted) {
+      return;
+    }
 
-      const combinedHtml = [discoveryHtml].filter(Boolean).join("\n");
+    /*
+     * Do not label a 401/403 page as successful simply because Chromium
+     * returned HTML. Only a successful HTTP response permits discovery.
+     */
+    const effectiveHeaders = responseHeaders;
+    const effectiveResponse = {
+      ...(response || {}),
+      headers: effectiveHeaders,
+    };
+
+    const effectiveIsHtml =
+      isHtmlResponse(effectiveHeaders, effectiveResponse) ||
+      (renderSucceeded &&
+        String(getHeader(effectiveHeaders, "content-type"))
+          .toLowerCase()
+          .includes("text/html"));
+
+    const discoveryHtml =
+      classification.status === "success" ? renderedHtml || staticHtml : "";
+
+    const staticAndRenderedLinks = collectStaticAndRenderedLinks({
+      staticHtml: discoveryHtml ? staticHtml : "",
+      renderedHtml: discoveryHtml ? renderedHtml : "",
+      baseUrl: renderedFinalUrl,
+    });
+
+    const canonicalUrl = extractCanonicalUrl(discoveryHtml, renderedFinalUrl);
+
+    const initialDiscoveredUrls = [
+      ...(canonicalUrl ? [canonicalUrl] : []),
+      ...staticAndRenderedLinks,
+      ...dynamicLinks,
+    ];
+
+    const reportDiscoveredLinks = new Set(
+      initialDiscoveredUrls
+        .map((value) => sanitizeObservedUrl(value, renderedFinalUrl))
+        .filter(Boolean),
+    );
+
+    const page = {
+      url: current.url,
+      depth: current.depth,
+      status: classification.status,
+      statusCode,
+      headers: effectiveHeaders,
+      body: discoveryHtml || null,
+      dynamicInputs: classification.status === "success" ? dynamicInputs : [],
+      dynamicForms: classification.status === "success" ? dynamicForms : [],
+      discoveredLinks: [...reportDiscoveredLinks].slice(0, MAX_DYNAMIC_LINKS),
+      apiRequests: classification.status === "success" ? apiRequests : [],
+      openApiEndpoints: [],
+      javascriptEndpoints: [],
+      errorCode: classification.errorCode,
+    };
+
+    results.push(page);
+
+    if (typeof onPage === "function") {
+      await onPage(page);
+    }
+
+    if (signal?.aborted) {
+      return;
+    }
+
+    if (!sitemapDiscoveryAttempted && current.depth === 0 && maxDepth > 0) {
+      sitemapDiscoveryAttempted = true;
 
       try {
-        page.openApiEndpoints = await discoverOpenApiEndpoints({
-          html: combinedHtml,
-          baseUrl: renderedFinalUrl,
+        await enqueueSitemapUrls({
+          startUrl: firstUrl,
           scope,
           headers,
           signal,
-          requestPage,
-          validateSafeUrl,
-          limiter,
-          attemptedSpecifications: attemptedOpenApiSpecifications,
-          reportedEndpoints: reportedOpenApiEndpoints,
-        });
-      } catch (error) {
-        if (signal?.aborted || error?.code === "CRAWL_CANCELLED") {
-          break;
-        }
-
-        logCrawlDiagnostic("openapi.discovery_failed", {
-          reason: "OPENAPI_DISCOVERY_ERROR",
-        });
-      }
-
-      if (signal?.aborted) {
-        break;
-      }
-
-      try {
-        page.javascriptEndpoints = await discoverJavaScriptEndpoints({
-          html: combinedHtml,
-          baseUrl: renderedFinalUrl,
-          scope,
-          headers,
-          signal,
-          requestPage,
-          validateSafeUrl,
-          limiter,
-          requestedScripts,
-          reportedEndpoints: reportedScriptEndpoints,
-        });
-      } catch (error) {
-        if (signal?.aborted || error?.code === "CRAWL_CANCELLED") {
-          break;
-        }
-
-        logCrawlDiagnostic("javascript.discovery_failed", {
-          reason: "JAVASCRIPT_DISCOVERY_ERROR",
-        });
-      }
-
-      if (signal?.aborted) {
-        break;
-      }
-
-      for (const endpoint of page.javascriptEndpoints) {
-        const observed = sanitizeObservedUrl(endpoint, renderedFinalUrl);
-
-        if (observed) {
-          reportDiscoveredLinks.add(observed);
-        }
-      }
-
-      page.discoveredLinks = [...reportDiscoveredLinks].slice(
-        0,
-        MAX_DYNAMIC_LINKS,
-      );
-
-      const allDiscoveredUrls = [
-        ...initialDiscoveredUrls,
-        ...page.javascriptEndpoints,
-      ];
-
-      for (const discoveredUrl of allDiscoveredUrls) {
-        if (signal?.aborted) {
-          break;
-        }
-
-        await enqueueDiscoveredUrl({
-          value: discoveredUrl,
-          depth: current.depth + 1,
-          scope,
           queue,
           queued,
           visited,
           maxPaths,
+          requestPage,
+          discoverSitemaps,
           validateSafeUrl,
+        });
+      } catch {
+        logCrawlDiagnostic("sitemap.discovery_failed", {
+          reason: "SITEMAP_DISCOVERY_ERROR",
         });
       }
     }
+
+    if (signal?.aborted) {
+      return;
+    }
+
+    if (
+      classification.status !== "success" ||
+      current.depth >= maxDepth ||
+      !effectiveIsHtml
+    ) {
+      return;
+    }
+
+    const combinedHtml = [discoveryHtml].filter(Boolean).join("\n");
+
+    try {
+      page.openApiEndpoints = await discoverOpenApiEndpoints({
+        html: combinedHtml,
+        baseUrl: renderedFinalUrl,
+        scope,
+        headers,
+        signal,
+        requestPage,
+        validateSafeUrl,
+        limiter,
+        attemptedSpecifications: attemptedOpenApiSpecifications,
+        reportedEndpoints: reportedOpenApiEndpoints,
+      });
+    } catch (error) {
+      if (signal?.aborted || error?.code === "CRAWL_CANCELLED") {
+        return;
+      }
+
+      logCrawlDiagnostic("openapi.discovery_failed", {
+        reason: "OPENAPI_DISCOVERY_ERROR",
+      });
+    }
+
+    if (signal?.aborted) {
+      return;
+    }
+
+    try {
+      page.javascriptEndpoints = await discoverJavaScriptEndpoints({
+        html: combinedHtml,
+        baseUrl: renderedFinalUrl,
+        scope,
+        headers,
+        signal,
+        requestPage,
+        validateSafeUrl,
+        limiter,
+        requestedScripts,
+        reportedEndpoints: reportedScriptEndpoints,
+      });
+    } catch (error) {
+      if (signal?.aborted || error?.code === "CRAWL_CANCELLED") {
+        return;
+      }
+
+      logCrawlDiagnostic("javascript.discovery_failed", {
+        reason: "JAVASCRIPT_DISCOVERY_ERROR",
+      });
+    }
+
+    if (signal?.aborted) {
+      return;
+    }
+
+    for (const endpoint of page.javascriptEndpoints) {
+      const observed = sanitizeObservedUrl(endpoint, renderedFinalUrl);
+
+      if (observed) {
+        reportDiscoveredLinks.add(observed);
+      }
+    }
+
+    page.discoveredLinks = [...reportDiscoveredLinks].slice(
+      0,
+      MAX_DYNAMIC_LINKS,
+    );
+
+    const allDiscoveredUrls = [
+      ...initialDiscoveredUrls,
+      ...page.javascriptEndpoints,
+    ];
+
+    for (const discoveredUrl of allDiscoveredUrls) {
+      if (signal?.aborted) {
+        break;
+      }
+
+      await enqueueDiscoveredUrl({
+        value: discoveredUrl,
+        depth: current.depth + 1,
+        scope,
+        queue,
+        queued,
+        visited,
+        maxPaths,
+        validateSafeUrl,
+      });
+    }
+  };
+
+  try {
+    const workerCount = Math.min(Math.max(1, concurrency), maxPaths);
+    let activeWorkers = 0;
+
+    const crawlWorker = async () => {
+      while (!signal?.aborted && visited.size < maxPaths) {
+        if (queue.length === 0) {
+          if (activeWorkers === 0) {
+            break;
+          }
+          await new Promise((resolve) => setTimeout(resolve, 20));
+          continue;
+        }
+
+        const current = queue.shift();
+        if (!current) continue;
+
+        if (visited.has(current.url) || current.depth > maxDepth) {
+          continue;
+        }
+
+        assertInScope(current.url, scope);
+        visited.add(current.url);
+
+        activeWorkers += 1;
+        try {
+          await limiter.acquire();
+          if (signal?.aborted) break;
+
+          await processPage(current);
+        } finally {
+          activeWorkers -= 1;
+        }
+      }
+    };
+
+    await Promise.all(Array.from({ length: workerCount }, () => crawlWorker()));
   } finally {
     if (ownsBrowser && browser) {
       await browser.close().catch(() => {});

@@ -26,7 +26,7 @@ const scannerConfig = Object.freeze({
     1_000_000,
   ),
 
-  defaultConcurrency: parsePositiveInteger(process.env.SCAN_CONCURRENCY, 3),
+  defaultConcurrency: parsePositiveInteger(process.env.SCAN_CONCURRENCY, 10),
 
   defaultCrawlPaths: parsePositiveInteger(process.env.MAX_CRAWL_PATHS_FREE, 25),
 

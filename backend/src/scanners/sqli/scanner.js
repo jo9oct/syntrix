@@ -18,6 +18,7 @@ import { testBooleanBased } from "./booleanBased.js";
 import { testTimeBased } from "./timeBased.js";
 import { testUnionBased } from "./unionBased.js";
 import { discoverAllInputs } from "./inputDiscovery.js";
+import { runConcurrent } from "../../utils/concurrency.js";
 
 const MAX_TARGETS = 3;
 const MAX_INPUTS_PER_TARGET = 8;
@@ -379,89 +380,90 @@ const scanner = createSecurityScanner({
           MAX_INPUTS_PER_TARGET,
         );
 
-        for (const inputTarget of boundedInputTargets) {
-          if (context?.signal?.aborted || requestsTested >= MAX_REQUESTS) {
-            break;
-          }
-
-          const {
-            source,
-            parameter,
-            method,
-            originalValue,
-            createRequest: createTestRequest,
-          } = inputTarget;
-
-          const paramKey = `${source}:${parameter}`;
-          testedParameters.add(paramKey);
-          testedInputSources.add(source);
-
-          /*
-           * Determine baseline response for this input target.
-           * For standard GET query/path/header without custom body, reuse initial baseline.
-           * For POST/form/json/cookie, establish target-specific baseline with originalValue.
-           */
-          let baselineResponse = initialBaselineResponse;
-          const isDifferentUrl =
-            Boolean(inputTarget.targetUrl) &&
-            inputTarget.targetUrl !== targetUrl;
-
-          if (
-            isDifferentUrl ||
-            method === "POST" ||
-            source === "json" ||
-            source === "form" ||
-            source === "cookie"
-          ) {
-            const baselineOutcome = await request(
-              createTestRequest(originalValue),
-            );
-
-            if (baselineOutcome.skipped) {
-              break;
-            }
-
-            if (!baselineOutcome.response) {
-              continue;
-            }
-
-            baselineResponse = baselineOutcome.response;
-          }
-
-          if (!baselineResponse) {
-            continue;
-          }
-
-          for (const [technique, testTechnique] of TECHNIQUES) {
+        await runConcurrent(
+          boundedInputTargets,
+          10,
+          async (inputTarget) => {
             if (context?.signal?.aborted || requestsTested >= MAX_REQUESTS) {
-              break;
+              return;
             }
 
-            const result = await testTechnique({
-              targetUrl: inputTarget.targetUrl,
+            const {
+              source,
               parameter,
-              inputSource: source,
-              createTestRequest,
+              method,
               originalValue,
-              baselineResponse,
-              request,
-            });
+              createRequest: createTestRequest,
+            } = inputTarget;
 
-            const metadataKey = getTechniqueMetadataKey(technique);
+            const paramKey = `${source}:${parameter}`;
+            testedParameters.add(paramKey);
+            testedInputSources.add(source);
 
-            if (metadataKey) {
-              techniqueMetadata[metadataKey].tested += result.tested;
-              techniqueMetadata[metadataKey].failures += result.failures;
+            /*
+             * Determine baseline response for this input target.
+             * For standard GET query/path/header without custom body, reuse initial baseline.
+             * For POST/form/json/cookie, establish target-specific baseline with originalValue.
+             */
+            let baselineResponse = initialBaselineResponse;
+            const isDifferentUrl =
+              Boolean(inputTarget.targetUrl) &&
+              inputTarget.targetUrl !== targetUrl;
+
+            if (
+              isDifferentUrl ||
+              method === "POST" ||
+              source === "json" ||
+              source === "form" ||
+              source === "cookie"
+            ) {
+              const baselineOutcome = await request(
+                createTestRequest(originalValue),
+              );
+
+              if (baselineOutcome.skipped || !baselineOutcome.response) {
+                return;
+              }
+
+              baselineResponse = baselineOutcome.response;
             }
 
-            addFinding({
-              targetUrl: inputTarget.targetUrl,
-              inputSource: source,
-              parameter,
-              result,
-            });
-          }
-        }
+            if (!baselineResponse) {
+              return;
+            }
+
+            for (const [technique, testTechnique] of TECHNIQUES) {
+              if (context?.signal?.aborted || requestsTested >= MAX_REQUESTS) {
+                break;
+              }
+
+              const result = await testTechnique({
+                targetUrl: inputTarget.targetUrl,
+                parameter,
+                inputSource: source,
+                createTestRequest,
+                originalValue,
+                baselineResponse,
+                request,
+              });
+
+              const metadataKey = getTechniqueMetadataKey(technique);
+
+              if (metadataKey) {
+                techniqueMetadata[metadataKey].tested += result.tested;
+                techniqueMetadata[metadataKey].failures += result.failures;
+              }
+
+              addFinding({
+                targetUrl: inputTarget.targetUrl,
+                inputSource: source,
+                parameter,
+                result,
+              });
+            }
+          },
+          context?.signal,
+        );
       }
     } catch (error) {
       if (isCancellationError(error, context?.signal)) {

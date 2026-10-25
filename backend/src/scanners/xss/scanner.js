@@ -22,6 +22,7 @@ import { getSafeMarker } from "../shared/payloadManager.js";
 import { assertSafeUrl } from "../../recon/shared/resolver.js";
 import { createFindingFingerprint } from "../../analysis/fingerprint/fingerprint.js";
 import { discoverAllInputs } from "../sqli/inputDiscovery.js";
+import { runConcurrent } from "../../utils/concurrency.js";
 
 import { testReflectedXss } from "./reflected.js";
 import { testDomBasedXss } from "./domBased.js";
@@ -347,74 +348,80 @@ const scanner = createSecurityScanner({
 
         const boundedInputs = discoveredInputs.slice(0, MAX_INPUTS_PER_TARGET);
 
-        for (const inputTarget of boundedInputs) {
-          if (context?.signal?.aborted || requestsTested >= MAX_REQUESTS) break;
+        await runConcurrent(
+          boundedInputs,
+          10,
+          async (inputTarget) => {
+            if (context?.signal?.aborted || requestsTested >= MAX_REQUESTS)
+              return;
 
-          const {
-            parameter,
-            targetUrl: itemTargetUrl,
-            createRequest: createTestRequest,
-            method,
-          } = inputTarget;
-          testedParameters.add(parameter);
+            const {
+              parameter,
+              targetUrl: itemTargetUrl,
+              createRequest: createTestRequest,
+              method,
+            } = inputTarget;
+            testedParameters.add(parameter);
 
-          // 1. Reflected XSS Check
-          const reflectedResult = await testReflectedXss({
-            targetUrl: itemTargetUrl,
-            parameter,
-            createTestRequest,
-            baselineResponse,
-            request,
-            marker,
-          });
-
-          techniqueMetadata.reflected.tested += reflectedResult.tested;
-          techniqueMetadata.reflected.failures += reflectedResult.failures;
-          addFinding({
-            targetUrl: itemTargetUrl,
-            parameter,
-            technique: "reflected",
-            signal: reflectedResult.signal,
-          });
-
-          // 2. DOM-Based XSS Check (Analyze client-side scripts)
-          const domResult = await testDomBasedXss({
-            targetUrl: itemTargetUrl,
-            parameter,
-            baselineResponse,
-            request,
-          });
-
-          techniqueMetadata.domBased.tested += domResult.tested;
-          techniqueMetadata.domBased.failures += domResult.failures;
-          addFinding({
-            targetUrl: itemTargetUrl,
-            parameter,
-            technique: "domBased",
-            signal: domResult.signal,
-          });
-
-          // 3. Stored XSS Check (State-changing form submission & retrieval)
-          if (method === "POST" || inputTarget.source === "form") {
-            const storedResult = await testStoredXss({
+            // 1. Reflected XSS Check
+            const reflectedResult = await testReflectedXss({
               targetUrl: itemTargetUrl,
               parameter,
               createTestRequest,
-              method,
+              baselineResponse,
+              request,
+              marker,
+            });
+
+            techniqueMetadata.reflected.tested += reflectedResult.tested;
+            techniqueMetadata.reflected.failures += reflectedResult.failures;
+            addFinding({
+              targetUrl: itemTargetUrl,
+              parameter,
+              technique: "reflected",
+              signal: reflectedResult.signal,
+            });
+
+            // 2. DOM-Based XSS Check (Analyze client-side scripts)
+            const domResult = await testDomBasedXss({
+              targetUrl: itemTargetUrl,
+              parameter,
               baselineResponse,
               request,
             });
 
-            techniqueMetadata.stored.tested += storedResult.tested;
-            techniqueMetadata.stored.failures += storedResult.failures;
+            techniqueMetadata.domBased.tested += domResult.tested;
+            techniqueMetadata.domBased.failures += domResult.failures;
             addFinding({
               targetUrl: itemTargetUrl,
               parameter,
-              technique: "stored",
-              signal: storedResult.signal,
+              technique: "domBased",
+              signal: domResult.signal,
             });
-          }
-        }
+
+            // 3. Stored XSS Check (State-changing form submission & retrieval)
+            if (method === "POST" || inputTarget.source === "form") {
+              const storedResult = await testStoredXss({
+                targetUrl: itemTargetUrl,
+                parameter,
+                createTestRequest,
+                method,
+                baselineResponse,
+                request,
+              });
+
+              techniqueMetadata.stored.tested += storedResult.tested;
+              techniqueMetadata.stored.failures += storedResult.failures;
+              addFinding({
+                targetUrl: itemTargetUrl,
+                parameter,
+                technique: "stored",
+                signal: storedResult.signal,
+              });
+            }
+          },
+          context?.signal,
+        );
       }
     } catch (error) {
       if (isCancellationError(error, context?.signal)) {

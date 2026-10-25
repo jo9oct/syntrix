@@ -59,7 +59,7 @@ const environmentSchema = Joi.object({
 
   NOTIFICATION_QUEUE_NAME: Joi.string().trim().default("security-notification"),
 
-  SCAN_CONCURRENCY: Joi.number().integer().min(1).max(100).default(3),
+  SCAN_CONCURRENCY: Joi.number().integer().min(1).max(100).default(10),
 
   QUEUE_ATTEMPTS: Joi.number().integer().min(1).max(20).default(3),
 
