@@ -25,7 +25,7 @@ export const AssessmentWizard: React.FC = () => {
   const [companyRules, setCompanyRules] = useState<CompanySecurityRule[]>([]);
 
   // Form State matching API 2
-  const [targetUrl, setTargetUrl] = useState(searchParams.get('targetUrl') || 'https://review-x-u6mr6.vercel.app');
+  const [targetUrl, setTargetUrl] = useState(searchParams.get('targetUrl') || '');
   const [selectedScopeId, setSelectedScopeId] = useState<string>('');
   const [selectedRuleIds, setSelectedRuleIds] = useState<string[]>([]);
   const [selectedReconIds, setSelectedReconIds] = useState<string[]>([]);

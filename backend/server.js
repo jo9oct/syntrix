@@ -5,7 +5,6 @@
 import http from "node:http";
 import express from "express";
 import crypto from "node:crypto";
-import cors from "cors";
 
 import environment from "./src/config/environment.js";
 import { connectDatabase } from "./src/config/database.js";
@@ -13,6 +12,7 @@ import { securityHeaders } from "./src/config/security.js";
 import { createRateLimiter } from "./src/middleware/rateLimit.middleware.js";
 import { notFoundMiddleware } from "./src/middleware/notFound.middleware.js";
 import { errorMiddleware } from "./src/middleware/error.middleware.js";
+import corsMiddleware from "./src/config/cors.js";
 
 //auth
 import authRoutes from "./src/routes/auth.routes.js";
@@ -57,7 +57,7 @@ app.use((request, response, next) => {
 });
 
 // Enable CORS for all API routes
-app.use(cors());
+app.use(corsMiddleware);
 
 // Security headers from the existing Web Security Assessment server.
 app.use((request, response, next) => {
@@ -177,7 +177,7 @@ app.use(errorMiddleware);
 
 // Sentrix Core API.
 // Mount only at /api to avoid collisions with the existing /api/v1 routes.
-app.use("/api", cors(), sentrixRoutes);
+app.use("/api", corsMiddleware, sentrixRoutes);
 
 // Keep the existing error handling and not-found middleware.
 app.use(notFoundMiddleware);
