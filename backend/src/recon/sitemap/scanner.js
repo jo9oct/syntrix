@@ -128,6 +128,8 @@ const scanner = createReconScanner({
         const response = await get(sitemapUrl, {
           signal: context?.signal,
           scope: context?.scope,
+          timeout: 3000,
+          timeoutMs: 3000,
           headers: {
             Accept: "application/xml, text/xml;q=0.9, */*;q=0.1",
           },

@@ -8,7 +8,7 @@ import {
 } from "./subdomainValidation.js";
 
 const CRT_SH_URL = "https://crt.sh/";
-const REQUEST_TIMEOUT_MS = 15_000;
+const REQUEST_TIMEOUT_MS = 3500;
 const MAX_RESPONSE_BYTES = 2 * 1024 * 1024;
 const DEFAULT_MAX_CANDIDATES = 500;
 

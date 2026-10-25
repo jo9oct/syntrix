@@ -204,6 +204,8 @@ const scanner = createReconScanner({
       response = await get(robotsUrl, {
         signal: context?.signal,
         scope: context?.scope,
+        timeout: 3000,
+        timeoutMs: 3000,
         headers: {
           Accept: "text/plain, */*;q=0.1",
         },

@@ -118,6 +118,7 @@ export const getAuthToken = (): string | null => {
     try {
       const parsed = JSON.parse(authCookie);
       if (parsed?.state?.token) {
+        setCookie(AUTH_COOKIE_NAME, parsed.state.token);
         return parsed.state.token;
       }
     } catch {
@@ -125,7 +126,12 @@ export const getAuthToken = (): string | null => {
     }
   }
 
-  // 3. Fallback to localStorage (for migration without losing active session)
+  // 3. In-memory fallback
+  if (typeof window !== "undefined" && (window as any).__SENTRIX_AUTH_TOKEN__) {
+    return (window as any).__SENTRIX_AUTH_TOKEN__;
+  }
+
+  // 4. Fallback to localStorage (for migration without losing active session)
   if (typeof window !== "undefined" && window.localStorage) {
     try {
       const legacy = window.localStorage.getItem("sentrix-auth");

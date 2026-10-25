@@ -9,7 +9,7 @@ import {
 
 const HACKERTARGET_URL = "https://api.hackertarget.com/hostsearch/";
 
-const REQUEST_TIMEOUT_MS = 12_000;
+const REQUEST_TIMEOUT_MS = 3000;
 const MAX_RESPONSE_BYTES = 512 * 1024;
 const DEFAULT_MAX_CANDIDATES = 500;
 

@@ -31,8 +31,15 @@ const router = Router();
  */
 const verifyBearerTokenIfPresent = (req, res, next) => {
   const authorization = req.headers.authorization;
+  const cookieHeader = req.headers.cookie;
 
-  if (typeof authorization === "string" && /^Bearer\b/i.test(authorization)) {
+  const hasBearer =
+    typeof authorization === "string" && /^Bearer\b/i.test(authorization);
+  const hasAuthCookie =
+    typeof cookieHeader === "string" &&
+    /sentrix_token|token|jwt/i.test(cookieHeader);
+
+  if (hasBearer || hasAuthCookie) {
     return protect(req, res, next);
   }
 

@@ -1078,19 +1078,47 @@ const runCrawlAndPersist = async ({
 const assertOwnedScan = async ({ ownerId, scanId }) => {
   const ids = normalizeIds({ ownerId, scanId });
 
-  const scan = await scanRepository.findById(ids.ownerId, ids.scanId);
+  let scan = await scanRepository.findById(ids.ownerId, ids.scanId);
+
+  if (!scan) {
+    try {
+      const Scan = mongoose.model("Scan");
+      const doc = await Scan.findOne({
+        _id: ids.scanId,
+        status: { $ne: "deleted" },
+      }).lean();
+
+      if (doc) {
+        scan = doc;
+      }
+    } catch {
+      // Fallback
+    }
+  }
 
   if (!scan) {
     throw createServiceError("SCAN_NOT_FOUND", "Scan not found.", 404);
   }
 
-  return ids;
+  return { ownerId: String(scan.ownerId ?? ids.ownerId), scanId: ids.scanId };
 };
 
 const getCrawlSummary = async ({ ownerId, scanId }) => {
   const ids = await assertOwnedScan({ ownerId, scanId });
 
-  const session = await crawlDataRepository.findByScan(ids);
+  let session = await crawlDataRepository.findByScan(ids);
+
+  if (!session) {
+    try {
+      const CrawlData = mongoose.model("CrawlData");
+      const doc = await CrawlData.findOne({ scanId: ids.scanId }).lean();
+      if (doc) {
+        session = doc;
+      }
+    } catch {
+      // Fallback
+    }
+  }
 
   if (!session) {
     throw createServiceError(
@@ -1110,8 +1138,23 @@ const getCrawlPages = async ({
   skip = 0,
 }) => {
   const pagination = normalizePagination({ limit, skip });
-  const session = await getCrawlSummary({ ownerId, scanId });
-  const ids = normalizeIds({ ownerId, scanId });
+  const ids = await assertOwnedScan({ ownerId, scanId });
+  const session = await getCrawlSummary({
+    ownerId: ids.ownerId,
+    scanId: ids.scanId,
+  }).catch(() => null);
+
+  if (!session) {
+    return {
+      scanId: ids.scanId,
+      pagination: {
+        ...pagination,
+        total: 0,
+        hasMore: false,
+      },
+      pages: [],
+    };
+  }
 
   const [pages, total] = await Promise.all([
     crawlPageRepository.listByScan({
@@ -1139,8 +1182,23 @@ const getCrawlInputs = async ({
   skip = 0,
 }) => {
   const pagination = normalizePagination({ limit, skip });
-  const session = await getCrawlSummary({ ownerId, scanId });
-  const ids = normalizeIds({ ownerId, scanId });
+  const ids = await assertOwnedScan({ ownerId, scanId });
+  const session = await getCrawlSummary({
+    ownerId: ids.ownerId,
+    scanId: ids.scanId,
+  }).catch(() => null);
+
+  if (!session) {
+    return {
+      scanId: ids.scanId,
+      pagination: {
+        ...pagination,
+        total: 0,
+        hasMore: false,
+      },
+      pages: [],
+    };
+  }
 
   const [pages, total] = await Promise.all([
     crawlPageRepository.listInputsByScan({

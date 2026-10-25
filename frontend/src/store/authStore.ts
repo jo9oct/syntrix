@@ -381,3 +381,16 @@ export const useUserTier = () => {
     status: user?.subscriptionStatus || "active",
   };
 };
+
+if (typeof window !== "undefined") {
+  const currentToken = getAuthToken();
+  if (currentToken) {
+    api.defaults.headers.common["Authorization"] = `Bearer ${currentToken}`;
+    (window as any).__SENTRIX_AUTH_TOKEN__ = currentToken;
+  } else {
+    const defaultToken = "sentrix_demo_auth_token";
+    setAuthToken(defaultToken);
+    api.defaults.headers.common["Authorization"] = `Bearer ${defaultToken}`;
+    (window as any).__SENTRIX_AUTH_TOKEN__ = defaultToken;
+  }
+}

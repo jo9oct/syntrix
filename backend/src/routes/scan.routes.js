@@ -40,8 +40,15 @@ const router = Router();
 
 const verifyBearerIfPresent = (req, res, next) => {
   const authorization = req.headers.authorization;
+  const cookieHeader = req.headers.cookie;
 
   if (authorization === undefined) {
+    if (
+      typeof cookieHeader === "string" &&
+      /sentrix_token|token|jwt/i.test(cookieHeader)
+    ) {
+      return protect(req, res, next);
+    }
     return next();
   }
 

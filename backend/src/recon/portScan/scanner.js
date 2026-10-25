@@ -10,7 +10,7 @@ const DEFAULT_PORTS = Object.freeze([
   3389, 5432, 5900, 6379, 8080, 8443,
 ]);
 
-const DEFAULT_TIMEOUT_MS = 3000;
+const DEFAULT_TIMEOUT_MS = 1200;
 const MIN_TIMEOUT_MS = 100;
 const MAX_TIMEOUT_MS = 30000;
 const MAX_PORTS = 1024;
@@ -250,6 +250,12 @@ const probePort = async ({ hostname, port, timeout, scope, signal }) => {
         /not authorized|not authorised/i.test(String(error?.message ?? ""))
       ) {
         throw error;
+      }
+
+      // If the TCP connection timed out or was refused, the port is unresponsive
+      // or closed; do not waste time retrying another HTTP protocol on the same dead port.
+      if (reason === "timeout" || reason === "connection_refused") {
+        break;
       }
     }
   }

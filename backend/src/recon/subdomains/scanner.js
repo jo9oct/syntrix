@@ -53,9 +53,9 @@ const DEFAULT_OPTIONS = Object.freeze({
   wordlist: true,
   certificateTransparency: true,
   publicSources: true,
-  recursive: true,
-  maxCandidates: 500,
-  maxDepth: 2,
+  recursive: false,
+  maxCandidates: 100,
+  maxDepth: 1,
 });
 
 const normalizeOptions = (options = {}) => {
@@ -499,33 +499,33 @@ const scanner = createReconScanner({
       }
     };
 
-    await runSource("wordlist", options.wordlist, () =>
-      discoverWordlist({
-        hostname,
-        labels,
-        signal: context?.signal,
-        maxCandidates: options.maxCandidates,
-      }),
-    );
-
-    await runSource(
-      "certificate-transparency",
-      options.certificateTransparency,
-      () =>
-        discoverCertificateTransparency({
+    await Promise.allSettled([
+      runSource("wordlist", options.wordlist, () =>
+        discoverWordlist({
+          hostname,
+          labels,
+          signal: context?.signal,
+          maxCandidates: options.maxCandidates,
+        }),
+      ),
+      runSource(
+        "certificate-transparency",
+        options.certificateTransparency,
+        () =>
+          discoverCertificateTransparency({
+            hostname,
+            signal: context?.signal,
+            maxCandidates: options.maxCandidates,
+          }),
+      ),
+      runSource("public-sources", options.publicSources, () =>
+        discoverPublicSources({
           hostname,
           signal: context?.signal,
           maxCandidates: options.maxCandidates,
         }),
-    );
-
-    await runSource("public-sources", options.publicSources, () =>
-      discoverPublicSources({
-        hostname,
-        signal: context?.signal,
-        maxCandidates: options.maxCandidates,
-      }),
-    );
+      ),
+    ]);
 
     candidatesAvailable = discoveredByHostname.size;
 
