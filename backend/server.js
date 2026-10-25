@@ -165,7 +165,7 @@ app.use("/api/v1/admin", adminRoutes);
 
 // Sentrix health endpoint.
 // The existing server's / root and /api/v1/health remain unchanged.
-app.get("/api/health", (request, response) => {
+app.get("/api/v1/health", (request, response) => {
   response.status(200).json({
     status: "ok",
     service: "sentrix-api",
@@ -177,7 +177,7 @@ app.use(errorMiddleware);
 
 // Sentrix Core API.
 // Mount only at /api to avoid collisions with the existing /api/v1 routes.
-app.use("/api", corsMiddleware, sentrixRoutes);
+app.use("/api/v1", corsMiddleware, sentrixRoutes);
 
 // Keep the existing error handling and not-found middleware.
 app.use(notFoundMiddleware);
