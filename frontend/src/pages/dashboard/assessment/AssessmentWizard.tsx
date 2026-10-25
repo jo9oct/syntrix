@@ -29,7 +29,7 @@ export const AssessmentWizard: React.FC = () => {
   const [selectedScopeId, setSelectedScopeId] = useState<string>('');
   const [selectedRuleIds, setSelectedRuleIds] = useState<string[]>([]);
   const [selectedReconIds, setSelectedReconIds] = useState<string[]>([]);
-  const [selectedSecurityIds, setSelectedSecurityIds] = useState<string[]>(['securityHeaders', 'xss']);
+  const [selectedSecurityIds, setSelectedSecurityIds] = useState<string[]>([]);
   const [scannerCategoryTab, setScannerCategoryTab] = useState<'recon' | 'security'>('security');
   const [scannerSearch, setScannerSearch] = useState('');
 
@@ -79,30 +79,24 @@ export const AssessmentWizard: React.FC = () => {
         const scanRes = await api.get('/scanners');
         if (scanRes.data?.data) {
           setScannersData(scanRes.data.data);
-          // Set initial default selections respecting the user's tier
-          if (isFree) {
-            setSelectedSecurityIds(['securityHeaders']);
-            setSelectedReconIds([]);
-          } else {
-            setSelectedSecurityIds(['securityHeaders', 'xss', 'sqli', 'cors']);
-            setSelectedReconIds(['ssl', 'technology', 'webServer']);
-          }
+          // Do not select any scanners by default; user chooses manually
+          setSelectedSecurityIds([]);
+          setSelectedReconIds([]);
         }
 
         // API 29: Get All Security Scopes
         const scopesRes = await api.get('/scopes');
         if (scopesRes.data?.data?.scopes) {
           setScopes(scopesRes.data.data.scopes);
-          if (scopesRes.data.data.scopes.length > 0) {
-            setSelectedScopeId(scopesRes.data.data.scopes[0]._id);
-          }
+          // Do not select any scope by default; user chooses manually
         }
 
         // API 13: Get All Company Security Rules
         const rulesRes = await api.get('/company-rules');
         if (rulesRes.data?.data?.rules) {
           setCompanyRules(rulesRes.data.data.rules);
-          setSelectedRuleIds(rulesRes.data.data.rules.filter((r: CompanySecurityRule) => r.enabled).map((r: CompanySecurityRule) => r._id));
+          // Do not pre-check company rules by default
+          setSelectedRuleIds([]);
         }
 
         // Pre-fill input fields from existing scan when Retest is requested

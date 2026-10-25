@@ -42,14 +42,14 @@ export const CompanyRules: React.FC = () => {
   const [detailRule, setDetailRule] = useState<CompanySecurityRule | null>(null);
   const [detailLoading, setDetailLoading] = useState(false);
 
-  // Form State (Defaulting to the user specified input format)
-  const [name, setName] = useState('Require HSTS Header-1');
+  // Form State
+  const [name, setName] = useState('');
   const [category, setCategory] = useState('security-headers');
-  const [description, setDescription] = useState('Production applications must include the Strict-Transport-Security header.');
+  const [description, setDescription] = useState('');
   const [severity, setSeverity] = useState<'critical' | 'high' | 'medium' | 'low' | 'info'>('high');
-  const [headerName, setHeaderName] = useState('strict-transport-security');
+  const [headerName, setHeaderName] = useState('');
   const [operator, setOperator] = useState<CompanySecurityRuleDefinition['operator']>('exists');
-  const [value, setValue] = useState('true');
+  const [value, setValue] = useState('');
   const [enabled, setEnabled] = useState(true);
   const [submitting, setSubmitting] = useState(false);
   const [formError, setFormError] = useState<string | null>(null);
@@ -85,13 +85,13 @@ export const CompanyRules: React.FC = () => {
   const openCreateModal = () => {
     setEditingRule(null);
     setFormError(null);
-    setName('Require HSTS Header-1');
+    setName('');
     setCategory('security-headers');
-    setDescription('Production applications must include the Strict-Transport-Security header.');
+    setDescription('');
     setSeverity('high');
-    setHeaderName('strict-transport-security');
+    setHeaderName('');
     setOperator('exists');
-    setValue('true');
+    setValue('');
     setEnabled(true);
     setIsModalOpen(true);
   };

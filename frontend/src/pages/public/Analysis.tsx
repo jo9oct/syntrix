@@ -7,14 +7,9 @@ import { Link } from 'react-router-dom';
 import { PublicHeader } from '../../components/layout/PublicHeader';
 
 export const Analysis: React.FC = () => {
-  const [targetUrl, setTargetUrl] = useState('https://demo.sentrix.local');
+  const [targetUrl, setTargetUrl] = useState('');
   const [scanMode, setScanMode] = useState<'specific' | 'full'>('specific');
-  const [selectedTests, setSelectedTests] = useState<string[]>([
-    'Authentication',
-    'SQL Injection',
-    'XSS Testing',
-    'Security Headers'
-  ]);
+  const [selectedTests, setSelectedTests] = useState<string[]>([]);
   const [isScanning, setIsScanning] = useState(false);
   const [scanProgress, setScanProgress] = useState(0);
   const [scanResults, setScanResults] = useState<any[] | null>(null);

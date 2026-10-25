@@ -78,9 +78,9 @@ export const Billing: React.FC = () => {
   const [selectedPlanForCheckout, setSelectedPlanForCheckout] = useState<PlanInfo | null>(null);
 
   // Chapa modal form state
-  const [customerName, setCustomerName] = useState(user?.name || 'Jane Smith');
-  const [customerEmail, setCustomerEmail] = useState(user?.email || 'jane@sentrix.local');
-  const [customerPhone, setCustomerPhone] = useState('0911234567');
+  const [customerName, setCustomerName] = useState(user?.name || '');
+  const [customerEmail, setCustomerEmail] = useState(user?.email || '');
+  const [customerPhone, setCustomerPhone] = useState('');
   const [paymentMethod, setPaymentMethod] = useState<'telebirr' | 'cbebirr' | 'card' | 'bank'>('telebirr');
   const [isProcessing, setIsProcessing] = useState(false);
   const [verificationSuccess, setVerificationSuccess] = useState<any | null>(null);
@@ -88,28 +88,28 @@ export const Billing: React.FC = () => {
 
   // Distinct channel-specific states
   // 1. Telebirr
-  const [telebirrPhone, setTelebirrPhone] = useState('0911234567');
-  const [telebirrName, setTelebirrName] = useState(user?.name || 'Jane Smith');
-  const [telebirrUssdPrompt, setTelebirrUssdPrompt] = useState(true);
+  const [telebirrPhone, setTelebirrPhone] = useState('');
+  const [telebirrName, setTelebirrName] = useState(user?.name || '');
+  const [telebirrUssdPrompt, setTelebirrUssdPrompt] = useState(false);
 
   // 2. CBEBirr
-  const [cbePhone, setCbePhone] = useState('0922334455');
-  const [cbeAccount, setCbeAccount] = useState('1000284719283');
-  const [cbeHolderName, setCbeHolderName] = useState(user?.name || 'Jane Smith');
-  const [cbeDistrict, setCbeDistrict] = useState('Addis Ababa Central');
+  const [cbePhone, setCbePhone] = useState('');
+  const [cbeAccount, setCbeAccount] = useState('');
+  const [cbeHolderName, setCbeHolderName] = useState(user?.name || '');
+  const [cbeDistrict, setCbeDistrict] = useState('');
 
   // 3. Credit / Debit Card
-  const [cardHolder, setCardHolder] = useState(user?.name || 'Jane Smith');
+  const [cardHolder, setCardHolder] = useState(user?.name || '');
   const [cardNumber, setCardNumber] = useState('');
   const [cardExpiry, setCardExpiry] = useState('');
   const [cardCvv, setCardCvv] = useState('');
-  const [cardPostal, setCardPostal] = useState('1000');
+  const [cardPostal, setCardPostal] = useState('');
 
   // 4. Bank Transfer / Slip
   const [selectedBank, setSelectedBank] = useState('Commercial Bank of Ethiopia (CBE)');
-  const [bankSenderName, setBankSenderName] = useState(user?.name || 'Jane Smith');
-  const [bankRefCode, setBankRefCode] = useState('FT2684910283');
-  const [bankTransferDate, setBankTransferDate] = useState(new Date().toISOString().split('T')[0]);
+  const [bankSenderName, setBankSenderName] = useState(user?.name || '');
+  const [bankRefCode, setBankRefCode] = useState('');
+  const [bankTransferDate, setBankTransferDate] = useState('');
 
   // Transaction history interface & state
   interface TransactionRecord {

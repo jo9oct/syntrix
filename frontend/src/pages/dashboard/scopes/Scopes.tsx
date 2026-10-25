@@ -19,11 +19,9 @@ export const Scopes: React.FC = () => {
   const [loadingDetail, setLoadingDetail] = useState(false);
 
   // Form state
-  // Default create values matching the user's requested specification:
-  // name: "My Website-3", hostnames: ["review-x-u6mr6.vercel.app"], ports: [443], includeSubdomains: false
-  const [name, setName] = useState('My Website-3');
-  const [hostnamesInput, setHostnamesInput] = useState('review-x-u6mr6.vercel.app');
-  const [portsInput, setPortsInput] = useState('443');
+  const [name, setName] = useState('');
+  const [hostnamesInput, setHostnamesInput] = useState('');
+  const [portsInput, setPortsInput] = useState('');
   const [includeSubdomains, setIncludeSubdomains] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [formError, setFormError] = useState<string | null>(null);
@@ -49,9 +47,9 @@ export const Scopes: React.FC = () => {
 
   const openCreateModal = () => {
     setEditingScope(null);
-    setName('My Website-3');
-    setHostnamesInput('review-x-u6mr6.vercel.app');
-    setPortsInput('443');
+    setName('');
+    setHostnamesInput('');
+    setPortsInput('');
     setIncludeSubdomains(false);
     setFormError(null);
     setIsModalOpen(true);
