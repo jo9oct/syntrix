@@ -154,16 +154,9 @@ interface AuthState {
 export const useAuthStore = create<AuthState>()(
   persist(
     (set) => ({
-      user: {
-        id: "usr_sec",
-        name: "Jane Smith",
-        email: "jane@sentrix.local",
-        role: "security_engineer",
-        subscriptionTier: "free",
-        subscriptionStatus: "active",
-      },
-      token: "sentrix_demo_auth_token",
-      isAuthenticated: true,
+      user: null,
+      token: null,
+      isAuthenticated: false,
       isLoading: false,
       error: null,
 
@@ -332,7 +325,10 @@ export const useAuthStore = create<AuthState>()(
         removeAuthToken();
         api.post("/auth/logout").catch(() => {});
         delete api.defaults.headers.common["Authorization"];
-        set({ user: null, token: null, isAuthenticated: false });
+        if (typeof window !== "undefined") {
+          delete (window as any).__SENTRIX_AUTH_TOKEN__;
+        }
+        set({ user: null, token: null, isAuthenticated: false, error: null });
       },
 
       clearError: () => set({ error: null }),
@@ -388,9 +384,7 @@ if (typeof window !== "undefined") {
     api.defaults.headers.common["Authorization"] = `Bearer ${currentToken}`;
     (window as any).__SENTRIX_AUTH_TOKEN__ = currentToken;
   } else {
-    const defaultToken = "sentrix_demo_auth_token";
-    setAuthToken(defaultToken);
-    api.defaults.headers.common["Authorization"] = `Bearer ${defaultToken}`;
-    (window as any).__SENTRIX_AUTH_TOKEN__ = defaultToken;
+    delete api.defaults.headers.common["Authorization"];
+    delete (window as any).__SENTRIX_AUTH_TOKEN__;
   }
 }

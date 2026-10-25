@@ -110,7 +110,13 @@ export const removeCookie = (name: string): void => {
 export const getAuthToken = (): string | null => {
   // 1. Direct dedicated auth cookie
   const directToken = getCookie(AUTH_COOKIE_NAME);
-  if (directToken) return directToken;
+  if (directToken) {
+    if (directToken === "sentrix_demo_auth_token") {
+      removeCookie(AUTH_COOKIE_NAME);
+    } else {
+      return directToken;
+    }
+  }
 
   // 2. Zustand auth cookie payload
   const authCookie = getCookie("sentrix-auth");
@@ -118,8 +124,12 @@ export const getAuthToken = (): string | null => {
     try {
       const parsed = JSON.parse(authCookie);
       if (parsed?.state?.token) {
-        setCookie(AUTH_COOKIE_NAME, parsed.state.token);
-        return parsed.state.token;
+        if (parsed.state.token === "sentrix_demo_auth_token") {
+          removeCookie("sentrix-auth");
+        } else if (parsed?.state?.isAuthenticated) {
+          setCookie(AUTH_COOKIE_NAME, parsed.state.token);
+          return parsed.state.token;
+        }
       }
     } catch {
       // Ignore parse failure
@@ -127,7 +137,11 @@ export const getAuthToken = (): string | null => {
   }
 
   // 3. In-memory fallback
-  if (typeof window !== "undefined" && (window as any).__SENTRIX_AUTH_TOKEN__) {
+  if (
+    typeof window !== "undefined" &&
+    (window as any).__SENTRIX_AUTH_TOKEN__ &&
+    (window as any).__SENTRIX_AUTH_TOKEN__ !== "sentrix_demo_auth_token"
+  ) {
     return (window as any).__SENTRIX_AUTH_TOKEN__;
   }
 
@@ -137,13 +151,19 @@ export const getAuthToken = (): string | null => {
       const legacy = window.localStorage.getItem("sentrix-auth");
       if (legacy) {
         const parsed = JSON.parse(legacy);
-        if (parsed?.state?.token) {
+        if (
+          parsed?.state?.isAuthenticated &&
+          parsed?.state?.token &&
+          parsed.state.token !== "sentrix_demo_auth_token"
+        ) {
           const legacyToken = parsed.state.token;
           // Migrate immediately to secure cookie
           setCookie(AUTH_COOKIE_NAME, legacyToken);
           setCookie("sentrix-auth", legacy);
           window.localStorage.removeItem("sentrix-auth");
           return legacyToken;
+        } else {
+          window.localStorage.removeItem("sentrix-auth");
         }
       }
     } catch {
@@ -180,6 +200,17 @@ export const cookieStorage: StateStorage = {
     // Check cookie first
     const fromCookie = getCookie(name);
     if (fromCookie) {
+      if (name === "sentrix-auth") {
+        try {
+          const parsed = JSON.parse(fromCookie);
+          if (parsed?.state?.token === "sentrix_demo_auth_token") {
+            removeCookie(name);
+            return null;
+          }
+        } catch {
+          // Ignore
+        }
+      }
       return fromCookie;
     }
 
@@ -188,6 +219,20 @@ export const cookieStorage: StateStorage = {
       try {
         const fromLocal = window.localStorage.getItem(name);
         if (fromLocal) {
+          if (name === "sentrix-auth") {
+            try {
+              const parsed = JSON.parse(fromLocal);
+              if (
+                !parsed?.state?.isAuthenticated ||
+                parsed?.state?.token === "sentrix_demo_auth_token"
+              ) {
+                window.localStorage.removeItem(name);
+                return null;
+              }
+            } catch {
+              // Ignore
+            }
+          }
           setCookie(name, fromLocal, DEFAULT_EXPIRY_DAYS);
           window.localStorage.removeItem(name);
           return fromLocal;
