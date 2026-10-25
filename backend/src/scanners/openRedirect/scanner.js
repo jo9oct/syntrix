@@ -13,6 +13,7 @@ import {
 import { getParameters, setParameter } from "../shared/parameterTester.js";
 import { getPayloads } from "../shared/payloadManager.js";
 import { assertSafeUrl } from "../../recon/shared/resolver.js";
+import { runConcurrent } from "../../utils/concurrency.js";
 
 const MAX_TESTED_PARAMETERS = 5;
 
@@ -38,66 +39,77 @@ const scanner = createSecurityScanner({
     const findings = [];
     const evidence = [];
 
-    for (const parameter of parameters) {
-      if (context?.signal?.aborted) {
-        break;
-      }
+    await runConcurrent(
+      parameters,
+      10,
+      async (parameter) => {
+        if (context?.signal?.aborted) {
+          return;
+        }
 
-      const testUrl = setParameter(targetUrl, parameter, payload);
+        const testUrl = setParameter(targetUrl, parameter, payload);
 
-      await assertSafeUrl(testUrl);
+        await assertSafeUrl(testUrl);
 
-      const response = await get(testUrl, {
-        signal: context?.signal,
-        headers: requestHeaders,
-        maxRedirects: 0,
-        validateStatus: () => true,
-        ...authenticatedRequestOptions,
-      });
+        const response = await get(testUrl, {
+          signal: context?.signal,
+          headers: requestHeaders,
+          maxRedirects: 0,
+          validateStatus: () => true,
+          ...authenticatedRequestOptions,
+        });
 
-      const location = response.headers?.location;
+        const location = response.headers?.location;
 
-      if (typeof location === "string" && location.startsWith(payload)) {
-        findings.push(
-          normalizeFinding({
-            scannerId: "security.open-redirect",
-            title: "Potential Open Redirect",
-            description: `The parameter "${parameter}" influenced a redirect toward the controlled external test domain.`,
-            severity: "medium",
-            confidence: calculateConfidence({
-              confirmed: false,
-            }),
-            remediation:
-              "Use allowlisted redirect destinations or server-side route identifiers. Validate redirect destinations after resolving relative URLs.",
-            category: "open-redirect",
-            metadata: {
-              parameter,
-              redirectLocationRedacted: true,
-            },
-          }),
-        );
-
-        evidence.push(
-          createSecurityEvidence({
-            request: {
-              method: "GET",
-              url: testUrl,
-              headers: {
-                ...requestHeaders,
+        if (typeof location === "string" && location.startsWith(payload)) {
+          findings.push(
+            normalizeFinding({
+              scannerId: "security.open-redirect",
+              title: "Potential Open Redirect",
+              description: `The parameter "${parameter}" influenced a redirect toward the controlled external test domain.`,
+              severity: "medium",
+              confidence: calculateConfidence({
+                confirmed: false,
+              }),
+              remediation:
+                "Use allowlisted redirect destinations or server-side route identifiers. Validate redirect destinations after resolving relative URLs.",
+              category: "open-redirect",
+              metadata: {
+                parameter,
+                redirectLocationRedacted: true,
               },
-            },
-            response: {
-              status: response.status,
-              statusText: response.statusText,
-              headers: response.headers,
-            },
-            metadata: {
-              redirectLocationRedacted: true,
-            },
-          }),
-        );
-      }
-    }
+            }),
+          );
+
+          evidence.push(
+            createSecurityEvidence({
+              request: {
+                method: "GET",
+                url: testUrl,
+                headers: {
+                  ...requestHeaders,
+                },
+              },
+              response: {
+                status: response.status,
+                statusText: response.statusText,
+                headers: response.headers,
+              },
+              parameter,
+              payload,
+              confidence: "medium",
+              description: `The parameter "${parameter}" influenced a redirect toward the controlled external test domain.`,
+              metadata: {
+                parameter,
+                payload,
+                redirectLocationRedacted: true,
+              },
+            }),
+          );
+        }
+      },
+      context?.signal,
+    );
 
     return {
       data: {

@@ -13,6 +13,7 @@ import {
 import { getParameters, setParameter } from "../shared/parameterTester.js";
 import { getPayloads } from "../shared/payloadManager.js";
 import { assertSafeUrl } from "../../recon/shared/resolver.js";
+import { runConcurrent } from "../../utils/concurrency.js";
 
 const MAX_PARAMETERS = 5;
 
@@ -39,84 +40,93 @@ const scanner = createSecurityScanner({
     const evidence = [];
     let requestsTested = 0;
 
-    for (const parameter of parameters) {
-      if (context?.signal?.aborted) {
-        break;
-      }
+    await runConcurrent(
+      parameters,
+      10,
+      async (parameter) => {
+        if (context?.signal?.aborted) {
+          return;
+        }
 
-      const testUrl = setParameter(targetUrl, parameter, payload);
+        const testUrl = setParameter(targetUrl, parameter, payload);
 
-      await assertSafeUrl(testUrl);
+        await assertSafeUrl(testUrl);
 
-      const response = await get(testUrl, {
-        signal: context?.signal,
-        headers: requestHeaders,
-        maxRedirects: 0,
-        validateStatus: () => true,
-        ...authenticatedRequestOptions,
-      });
+        const response = await get(testUrl, {
+          signal: context?.signal,
+          headers: requestHeaders,
+          maxRedirects: 0,
+          validateStatus: () => true,
+          ...authenticatedRequestOptions,
+        });
 
-      requestsTested += 1;
+        requestsTested += 1;
 
-      const body = typeof response.data === "string" ? response.data : "";
+        const body = typeof response.data === "string" ? response.data : "";
 
-      const reflectedTestDomain = /example\.invalid/i.test(body);
+        const reflectedTestDomain = /example\.invalid/i.test(body);
 
-      const gatewayError = response.status === 502 || response.status === 504;
+        const gatewayError = response.status === 502 || response.status === 504;
 
-      if (!reflectedTestDomain && !gatewayError) {
-        continue;
-      }
+        if (!reflectedTestDomain && !gatewayError) {
+          return;
+        }
 
-      const findingKey = `security.ssrf:url-retrieval-surface:${parameter}`;
+        const findingKey = `security.ssrf:url-retrieval-surface:${parameter}`;
 
-      findings.push(
-        normalizeFinding({
-          scannerId: "security.ssrf",
-          title: "Potential Server-Side URL Retrieval Surface",
-          description: `The parameter "${parameter}" produced behavior that may be consistent with server-side URL processing. A reflected marker or gateway error alone does not confirm SSRF.`,
-          severity: "high",
-          confidence: calculateConfidence({
-            confirmed: false,
+        findings.push(
+          normalizeFinding({
+            scannerId: "security.ssrf",
+            title: "Potential Server-Side URL Retrieval Surface",
+            description: `The parameter "${parameter}" produced behavior that may be consistent with server-side URL processing. A reflected marker or gateway error alone does not confirm SSRF.`,
+            severity: "high",
+            confidence: calculateConfidence({
+              confirmed: false,
+            }),
+            remediation:
+              "Use strict URL allowlists, validate destination addresses after DNS resolution, block private and reserved network ranges, and revalidate every redirect destination.",
+            category: "ssrf",
+            metadata: {
+              parameter,
+              status: response.status,
+              signal: reflectedTestDomain
+                ? "test-domain-marker"
+                : "gateway-error",
+              responseBodyRedacted: true,
+            },
           }),
-          remediation:
-            "Use strict URL allowlists, validate destination addresses after DNS resolution, block private and reserved network ranges, and revalidate every redirect destination.",
-          category: "ssrf",
-          metadata: {
-            parameter,
-            status: response.status,
-            signal: reflectedTestDomain
-              ? "test-domain-marker"
-              : "gateway-error",
-            responseBodyRedacted: true,
-          },
-        }),
-      );
+        );
 
-      evidence.push(
-        createSecurityEvidence({
-          request: {
-            method: "GET",
-            url: testUrl,
-            headers: requestHeaders,
-          },
-          response: {
-            status: response.status,
-            statusText: response.statusText,
-            headers: response.headers,
-            contentType: response.headers?.["content-type"],
-          },
-          description:
-            "Potential URL-processing behavior observed. Raw response body omitted from stored evidence.",
-          metadata: {
+        evidence.push(
+          createSecurityEvidence({
+            request: {
+              method: "GET",
+              url: testUrl,
+              headers: requestHeaders,
+            },
+            response: {
+              status: response.status,
+              statusText: response.statusText,
+              headers: response.headers,
+              contentType: response.headers?.["content-type"],
+            },
             parameter,
-            responseBodyRedacted: true,
-          },
-          findingKey,
-          type: "http_exchange",
-        }),
-      );
-    }
+            payload,
+            confidence: "medium",
+            description:
+              "Potential URL-processing behavior observed. Raw response body omitted from stored evidence.",
+            metadata: {
+              parameter,
+              payload,
+              responseBodyRedacted: true,
+            },
+            findingKey,
+            type: "http_exchange",
+          }),
+        );
+      },
+      context?.signal,
+    );
 
     return {
       data: {

@@ -13,6 +13,7 @@ import {
 import { getParameters, setParameter } from "../shared/parameterTester.js";
 import { getSafeMarker } from "../shared/payloadManager.js";
 import { assertSafeUrl } from "../../recon/shared/resolver.js";
+import { runConcurrent } from "../../utils/concurrency.js";
 
 const MAX_PARAMETERS = 5;
 
@@ -38,67 +39,72 @@ const scanner = createSecurityScanner({
 
     const authenticatedRequestOptions = getAuthenticatedRequestOptions(context);
 
-    for (const parameter of testedParameters) {
-      if (context?.signal?.aborted) {
-        break;
-      }
+    await runConcurrent(
+      testedParameters,
+      10,
+      async (parameter) => {
+        if (context?.signal?.aborted) {
+          return;
+        }
 
-      const testUrl = setParameter(targetUrl, parameter, marker);
+        const testUrl = setParameter(targetUrl, parameter, marker);
 
-      await assertSafeUrl(testUrl);
+        await assertSafeUrl(testUrl);
 
-      const response = await get(testUrl, {
-        signal: context?.signal,
-        headers: requestHeaders,
-        ...authenticatedRequestOptions,
-      });
+        const response = await get(testUrl, {
+          signal: context?.signal,
+          headers: requestHeaders,
+          ...authenticatedRequestOptions,
+        });
 
-      const body = typeof response.data === "string" ? response.data : "";
+        const body = typeof response.data === "string" ? response.data : "";
 
-      if (!body.includes(marker)) {
-        continue;
-      }
+        if (!body.includes(marker)) {
+          return;
+        }
 
-      findings.push(
-        normalizeFinding({
-          scannerId: "security.command-injection",
-          title: "Potential Command Processing Input Surface",
-          description: `A controlled marker was reflected in the response for parameter "${parameter}". Reflection alone does not confirm operating-system command execution or command injection.`,
-          severity: "medium",
-          confidence: calculateConfidence({
-            confirmed: false,
+        findings.push(
+          normalizeFinding({
+            scannerId: "security.command-injection",
+            title: "Potential Command Processing Input Surface",
+            description: `A controlled marker was reflected in the response for parameter "${parameter}". Reflection alone does not confirm operating-system command execution or command injection.`,
+            severity: "medium",
+            confidence: calculateConfidence({
+              confirmed: false,
+            }),
+            remediation:
+              "Avoid shell interpretation of user input. Use safe process APIs, strict input validation, and allowlisted values where appropriate.",
+            category: "command-injection",
+            metadata: {
+              parameter,
+              detection: "reflected-marker",
+            },
           }),
-          remediation:
-            "Avoid shell interpretation of user input. Use safe process APIs, strict input validation, and allowlisted values where appropriate.",
-          category: "command-injection",
-          metadata: {
-            parameter,
-            detection: "reflected-marker",
-          },
-        }),
-      );
+        );
 
-      evidence.push(
-        createSecurityEvidence({
-          request: {
-            method: "GET",
-            url: testUrl,
-            headers: requestHeaders,
-          },
-          response: {
-            status: response.status,
-            statusText: response.statusText,
-            headers: response.headers,
-            body,
-          },
-          parameter,
-          payload: marker,
-          metadata: {
-            marker: "[REDACTED]",
-          },
-        }),
-      );
-    }
+        evidence.push(
+          createSecurityEvidence({
+            request: {
+              method: "GET",
+              url: testUrl,
+              headers: requestHeaders,
+            },
+            response: {
+              status: response.status,
+              statusText: response.statusText,
+              headers: response.headers,
+              body,
+            },
+            parameter,
+            payload: marker,
+            metadata: {
+              marker: "[REDACTED]",
+            },
+          }),
+        );
+      },
+      context?.signal,
+    );
 
     return {
       data: {

@@ -1,4 +1,3 @@
-
 /* STATUS: UPDATED */
 
 import { randomBytes } from "node:crypto";
@@ -9,26 +8,19 @@ import {
   getTargetHostname,
 } from "../shared/reconContract.js";
 
-import {
-  resolveAndValidateHostname,
-} from "../shared/resolver.js";
+import { resolveAndValidateHostname } from "../shared/resolver.js";
 
 import { createFingerprint } from "../shared/fingerprint.js";
 
 import { discoverWordlist } from "./wordlistDiscovery.js";
-import {
-  discoverCertificateTransparency,
-} from "./certificateTransparency.js";
-import {
-  discoverPublicSources,
-} from "./publicSourceDiscovery.js";
-import {
-  discoverRecursively,
-} from "./recursiveDiscovery.js";
+import { discoverCertificateTransparency } from "./certificateTransparency.js";
+import { discoverPublicSources } from "./publicSourceDiscovery.js";
+import { discoverRecursively } from "./recursiveDiscovery.js";
 import {
   normalizeHostname,
   validateAndDeduplicateCandidates,
 } from "./subdomainValidation.js";
+import { runConcurrent } from "../../utils/concurrency.js";
 
 const COMMON_SUBDOMAINS = Object.freeze([
   "www",
@@ -88,32 +80,19 @@ const normalizeOptions = (options = {}) => {
   };
 
   return {
-    wordlist: enabled(
-      source.wordlist,
-      DEFAULT_OPTIONS.wordlist,
-    ),
+    wordlist: enabled(source.wordlist, DEFAULT_OPTIONS.wordlist),
     certificateTransparency: enabled(
       source.certificateTransparency,
       DEFAULT_OPTIONS.certificateTransparency,
     ),
-    publicSources: enabled(
-      source.publicSources,
-      DEFAULT_OPTIONS.publicSources,
-    ),
-    recursive: enabled(
-      source.recursive,
-      DEFAULT_OPTIONS.recursive,
-    ),
+    publicSources: enabled(source.publicSources, DEFAULT_OPTIONS.publicSources),
+    recursive: enabled(source.recursive, DEFAULT_OPTIONS.recursive),
     maxCandidates: boundedInteger(
       source.maxCandidates,
       DEFAULT_OPTIONS.maxCandidates,
       MAX_CANDIDATES,
     ),
-    maxDepth: boundedInteger(
-      source.maxDepth,
-      DEFAULT_OPTIONS.maxDepth,
-      3,
-    ),
+    maxDepth: boundedInteger(source.maxDepth, DEFAULT_OPTIONS.maxDepth, 3),
   };
 };
 
@@ -170,10 +149,7 @@ const normalizeAddresses = (addresses) => {
   const result = new Set();
 
   for (const entry of source) {
-    const address =
-      typeof entry === "string"
-        ? entry
-        : entry?.address;
+    const address = typeof entry === "string" ? entry : entry?.address;
 
     if (typeof address === "string" && isIP(address) !== 0) {
       result.add(address);
@@ -293,15 +269,12 @@ const scanner = createReconScanner({
     "Discovers subdomain candidates using bounded wordlists, Certificate Transparency, supported public sources, and optional recursive discovery. Discovery never expands active scan scope.",
 
   async run(context) {
-    const hostname = normalizeHostname(
-      getTargetHostname(context),
-    );
+    const hostname = normalizeHostname(getTargetHostname(context));
 
     const rawOptions = context?.options?.subdomains ?? {};
     const options = normalizeOptions(rawOptions);
 
-    const configuredLabels =
-      rawOptions.labels ?? rawOptions.candidates;
+    const configuredLabels = rawOptions.labels ?? rawOptions.candidates;
 
     const labels = normalizeLabels(configuredLabels);
 
@@ -328,10 +301,7 @@ const scanner = createReconScanner({
       }
 
       for (const item of items) {
-        const candidate =
-          typeof item === "string"
-            ? item
-            : item?.hostname;
+        const candidate = typeof item === "string" ? item : item?.hostname;
 
         if (typeof candidate !== "string") {
           continue;
@@ -345,10 +315,7 @@ const scanner = createReconScanner({
           continue;
         }
 
-        if (
-          normalized === hostname ||
-          !normalized.endsWith(`.${hostname}`)
-        ) {
+        if (normalized === hostname || !normalized.endsWith(`.${hostname}`)) {
           continue;
         }
 
@@ -368,59 +335,59 @@ const scanner = createReconScanner({
     };
 
     const validateCandidates = async (sourceName) => {
-      const candidates = [...discoveredByHostname.values()];
+      const candidates = [...discoveredByHostname.values()].filter(
+        (item) => item.addresses.length === 0,
+      );
 
-      for (const item of candidates) {
-        if (context?.signal?.aborted) {
-          break;
-        }
+      const remainingSlots = Math.max(
+        0,
+        options.maxCandidates - candidatesTested,
+      );
+      const candidatesToTest = candidates.slice(0, remainingSlots);
 
-        if (item.addresses.length > 0) {
-          continue;
-        }
-
-        if (candidatesTested >= options.maxCandidates) {
-          break;
-        }
-
-        candidatesTested += 1;
-
-        try {
-          const addresses = await resolveCandidate(item.hostname);
-
+      await runConcurrent(
+        candidatesToTest,
+        10,
+        async (item) => {
           if (context?.signal?.aborted) {
-            break;
+            return;
           }
 
-          if (addresses.length === 0) {
-            continue;
+          candidatesTested += 1;
+
+          try {
+            const addresses = await resolveCandidate(item.hostname);
+
+            if (context?.signal?.aborted || addresses.length === 0) {
+              return;
+            }
+
+            const matchesWildcard =
+              wildcardDetected && sameAddresses(addresses, wildcardAddresses);
+
+            if (matchesWildcard) {
+              wildcardMatches += 1;
+              item.wildcardSuspected = true;
+              return;
+            }
+
+            item.addresses = addresses;
+          } catch (error) {
+            if (context?.signal?.aborted) {
+              return;
+            }
+
+            if (isExpectedDnsFailure(error)) {
+              addFailure(error);
+              return;
+            }
+
+            // Do not silently ignore resolver or SSRF policy failures.
+            throw error;
           }
-
-          const matchesWildcard =
-            wildcardDetected &&
-            sameAddresses(addresses, wildcardAddresses);
-
-          if (matchesWildcard) {
-            wildcardMatches += 1;
-            item.wildcardSuspected = true;
-            continue;
-          }
-
-          item.addresses = addresses;
-        } catch (error) {
-          if (context?.signal?.aborted) {
-            break;
-          }
-
-          if (isExpectedDnsFailure(error)) {
-            addFailure(error);
-            continue;
-          }
-
-          // Do not silently ignore resolver or SSRF policy failures.
-          throw error;
-        }
-      }
+        },
+        context?.signal,
+      );
 
       sourceStatuses[sourceName] ??= "completed";
     };
@@ -450,9 +417,7 @@ const scanner = createReconScanner({
       if (wildcardHostname.length <= MAX_HOSTNAME_LENGTH) {
         wildcardAddresses = await resolveCandidate(wildcardHostname);
         wildcardDetected = wildcardAddresses.length > 0;
-        wildcardCheckStatus = wildcardDetected
-          ? "detected"
-          : "not_detected";
+        wildcardCheckStatus = wildcardDetected ? "detected" : "not_detected";
       } else {
         wildcardCheckStatus = "skipped_hostname_length";
       }
@@ -482,7 +447,7 @@ const scanner = createReconScanner({
 
         const candidates = Array.isArray(result)
           ? result
-          : result?.candidates ?? [];
+          : (result?.candidates ?? []);
 
         recordCandidates(candidates, name);
         sourceCounts[name] = candidates.length;
@@ -559,9 +524,7 @@ const scanner = createReconScanner({
         }
       }
     } else {
-      sourceStatuses.recursive = options.recursive
-        ? "cancelled"
-        : "disabled";
+      sourceStatuses.recursive = options.recursive ? "cancelled" : "disabled";
     }
 
     const discovered = [...discoveredByHostname.values()]
@@ -572,9 +535,7 @@ const scanner = createReconScanner({
         sources: item.sources,
         wildcardSuspected: item.wildcardSuspected,
       }))
-      .sort((left, right) =>
-        left.hostname.localeCompare(right.hostname),
-      );
+      .sort((left, right) => left.hostname.localeCompare(right.hostname));
 
     return makeResult({
       hostname,

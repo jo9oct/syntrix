@@ -13,6 +13,7 @@ import {
 import { getParameters, setParameter } from "../shared/parameterTester.js";
 import { getPayloads } from "../shared/payloadManager.js";
 import { assertSafeUrl } from "../../recon/shared/resolver.js";
+import { runConcurrent } from "../../utils/concurrency.js";
 
 const MAX_TESTED_PARAMETERS = 5;
 const MAX_PAYLOADS_PER_PARAMETER = 2;
@@ -49,86 +50,93 @@ const scanner = createSecurityScanner({
     const evidence = [];
     let requestsTested = 0;
 
-    for (const parameter of parameters) {
-      for (const payload of payloads) {
-        if (context?.signal?.aborted) {
+    await runConcurrent(
+      parameters,
+      10,
+      async (parameter) => {
+        for (const payload of payloads) {
+          if (context?.signal?.aborted) {
+            break;
+          }
+
+          const testUrl = setParameter(
+            targetUrl,
+            parameter,
+            `${payload}etc/passwd`,
+          );
+
+          await assertSafeUrl(testUrl);
+
+          const response = await get(testUrl, {
+            signal: context?.signal,
+            headers: requestHeaders,
+            ...authenticatedRequestOptions,
+          });
+
+          requestsTested += 1;
+
+          const body = typeof response.data === "string" ? response.data : "";
+
+          const disclosureDetected = FILE_DISCLOSURE_PATTERNS.some((pattern) =>
+            pattern.test(body),
+          );
+
+          if (!disclosureDetected) {
+            continue;
+          }
+
+          findings.push(
+            normalizeFinding({
+              scannerId: "security.path-traversal",
+              title: "Potential Path Traversal File Disclosure",
+              description: `A response contained a signature consistent with local file disclosure after controlled traversal input in "${parameter}". Verify that the response originated from the requested resource and contains actual file content.`,
+              severity: "high",
+              confidence: calculateConfidence({
+                confirmed: false,
+              }),
+              remediation:
+                "Canonicalize paths, restrict file access to approved directories, and reject traversal sequences.",
+              category: "path-traversal",
+              metadata: {
+                parameter,
+                responseBodyRedacted: true,
+              },
+            }),
+          );
+
+          evidence.push(
+            createSecurityEvidence({
+              request: {
+                method: "GET",
+                url: testUrl,
+                headers: {
+                  ...requestHeaders,
+                },
+              },
+              response: {
+                status: response.status,
+                statusText: response.statusText,
+                headers: response.headers,
+                contentType: response.headers?.["content-type"],
+              },
+              parameter,
+              payload: `${payload}etc/passwd`,
+              confidence: "medium",
+              description: `A response contained a signature consistent with local file disclosure after controlled traversal input in "${parameter}".`,
+              metadata: {
+                parameter,
+                payload: `${payload}etc/passwd`,
+                disclosureSignatureDetected: true,
+                responseBodyRedacted: true,
+              },
+            }),
+          );
+
           break;
         }
-
-        const testUrl = setParameter(
-          targetUrl,
-          parameter,
-          `${payload}etc/passwd`,
-        );
-
-        await assertSafeUrl(testUrl);
-
-        const response = await get(testUrl, {
-          signal: context?.signal,
-          headers: requestHeaders,
-          ...authenticatedRequestOptions,
-        });
-
-        requestsTested += 1;
-
-        const body = typeof response.data === "string" ? response.data : "";
-
-        const disclosureDetected = FILE_DISCLOSURE_PATTERNS.some((pattern) =>
-          pattern.test(body),
-        );
-
-        if (!disclosureDetected) {
-          continue;
-        }
-
-        findings.push(
-          normalizeFinding({
-            scannerId: "security.path-traversal",
-            title: "Potential Path Traversal File Disclosure",
-            description: `A response contained a signature consistent with local file disclosure after controlled traversal input in "${parameter}". Verify that the response originated from the requested resource and contains actual file content.`,
-            severity: "high",
-            confidence: calculateConfidence({
-              confirmed: false,
-            }),
-            remediation:
-              "Canonicalize paths, restrict file access to approved directories, and reject traversal sequences.",
-            category: "path-traversal",
-            metadata: {
-              parameter,
-              responseBodyRedacted: true,
-            },
-          }),
-        );
-
-        evidence.push(
-          createSecurityEvidence({
-            request: {
-              method: "GET",
-              url: testUrl,
-              headers: {
-                ...requestHeaders,
-              },
-            },
-            response: {
-              status: response.status,
-              statusText: response.statusText,
-              headers: response.headers,
-              contentType: response.headers?.["content-type"],
-            },
-            metadata: {
-              disclosureSignatureDetected: true,
-              responseBodyRedacted: true,
-            },
-          }),
-        );
-
-        break;
-      }
-
-      if (context?.signal?.aborted) {
-        break;
-      }
-    }
+      },
+      context?.signal,
+    );
 
     return {
       data: {

@@ -1,12 +1,12 @@
-
 /* STATUS: UPDATED */
 
 import { executeRequest } from "../../core/httpClient.js";
 import { createServiceFingerprint } from "../shared/fingerprint.js";
+import { runConcurrent } from "../../utils/concurrency.js";
 
 const DEFAULT_PORTS = Object.freeze([
-  21, 22, 23, 25, 53, 80, 110, 143, 443, 445, 587, 993, 995,
-  1433, 1521, 3306, 3389, 5432, 5900, 6379, 8080, 8443,
+  21, 22, 23, 25, 53, 80, 110, 143, 443, 445, 587, 993, 995, 1433, 1521, 3306,
+  3389, 5432, 5900, 6379, 8080, 8443,
 ]);
 
 const DEFAULT_TIMEOUT_MS = 3000;
@@ -20,36 +20,23 @@ const HTTP_FIRST_PORTS = new Set([80, 8080, 8000, 8008, 8888]);
 
 const normalizePorts = (ports) => {
   const source =
-    Array.isArray(ports) && ports.length > 0
-      ? ports
-      : DEFAULT_PORTS;
+    Array.isArray(ports) && ports.length > 0 ? ports : DEFAULT_PORTS;
 
   const normalized = [
     ...new Set(
       source
         .map((port) => {
-          if (
-            typeof port !== "number" &&
-            typeof port !== "string"
-          ) {
+          if (typeof port !== "number" && typeof port !== "string") {
             return NaN;
           }
 
-          if (
-            typeof port === "string" &&
-            !/^\d+$/.test(port.trim())
-          ) {
+          if (typeof port === "string" && !/^\d+$/.test(port.trim())) {
             return NaN;
           }
 
           return Number(port);
         })
-        .filter(
-          (port) =>
-            Number.isInteger(port) &&
-            port >= 1 &&
-            port <= 65535,
-        ),
+        .filter((port) => Number.isInteger(port) && port >= 1 && port <= 65535),
     ),
   ];
 
@@ -86,15 +73,11 @@ const validateTargetUrl = (value) => {
   }
 
   if (!["http:", "https:"].includes(targetUrl.protocol)) {
-    throw new Error(
-      "Port scan target must use HTTP or HTTPS.",
-    );
+    throw new Error("Port scan target must use HTTP or HTTPS.");
   }
 
   if (targetUrl.username || targetUrl.password) {
-    throw new Error(
-      "Target URLs must not contain embedded credentials.",
-    );
+    throw new Error("Target URLs must not contain embedded credentials.");
   }
 
   if (!targetUrl.hostname) {
@@ -132,10 +115,7 @@ const classifyProbeError = (error) => {
   const code = String(error?.code ?? "").toUpperCase();
   const name = String(error?.name ?? "");
 
-  if (
-    code === "ECONNREFUSED" ||
-    code === "ERR_CONNECTION_REFUSED"
-  ) {
+  if (code === "ECONNREFUSED" || code === "ERR_CONNECTION_REFUSED") {
     return "connection_refused";
   }
 
@@ -147,25 +127,15 @@ const classifyProbeError = (error) => {
     return "timeout";
   }
 
-  if (
-    code === "ENOTFOUND" ||
-    code === "EAI_AGAIN"
-  ) {
+  if (code === "ENOTFOUND" || code === "EAI_AGAIN") {
     return "dns_error";
   }
 
-  if (
-    code.includes("CERT") ||
-    code.includes("TLS") ||
-    code.includes("SSL")
-  ) {
+  if (code.includes("CERT") || code.includes("TLS") || code.includes("SSL")) {
     return "tls_error";
   }
 
-  if (
-    name === "AbortError" ||
-    code === "ABORT_ERR"
-  ) {
+  if (name === "AbortError" || code === "ABORT_ERR") {
     return "aborted";
   }
 
@@ -177,13 +147,7 @@ const isAbortError = (error, signal) =>
   error?.name === "AbortError" ||
   error?.code === "ABORT_ERR";
 
-const probePort = async ({
-  hostname,
-  port,
-  timeout,
-  scope,
-  signal,
-}) => {
+const probePort = async ({ hostname, port, timeout, scope, signal }) => {
   const attempts = [];
 
   for (const protocol of getProtocolsForPort(port)) {
@@ -276,10 +240,7 @@ const probePort = async ({
   const state = outcomes.includes("timeout")
     ? "unresponsive_or_filtered"
     : outcomes.length > 0 &&
-        outcomes.every(
-          (outcome) =>
-            outcome === "connection_refused",
-        )
+        outcomes.every((outcome) => outcome === "connection_refused")
       ? "connection_refused"
       : "unresponsive_or_not_http";
 
@@ -300,40 +261,34 @@ const scan = async (context) => {
   const hostname = targetUrl.hostname;
 
   const configuredPorts =
-    context.options?.portScan?.ports ??
-    context.options?.ports;
+    context.options?.portScan?.ports ?? context.options?.ports;
 
   const ports = normalizePorts(configuredPorts);
 
-  const timeout = normalizeTimeout(
-    context.options?.portScan?.timeoutMs,
-  );
+  const timeout = normalizeTimeout(context.options?.portScan?.timeoutMs);
 
-  const results = [];
+  const results = (
+    await runConcurrent(
+      ports,
+      10,
+      async (port) => {
+        if (context.signal?.aborted) {
+          return { port, state: "cancelled", attempts: [] };
+        }
 
-  for (const port of ports) {
-    if (context.signal?.aborted) {
-      break;
-    }
+        return await probePort({
+          hostname,
+          port,
+          timeout,
+          scope: context.scope,
+          signal: context.signal,
+        });
+      },
+      context.signal,
+    )
+  ).filter(Boolean);
 
-    const result = await probePort({
-      hostname,
-      port,
-      timeout,
-      scope: context.scope,
-      signal: context.signal,
-    });
-
-    results.push(result);
-
-    if (result.state === "cancelled") {
-      break;
-    }
-  }
-
-  const openPorts = results.filter(
-    (result) => result.state === "open",
-  );
+  const openPorts = results.filter((result) => result.state === "open");
 
   const fingerprints = openPorts.map((result) =>
     createServiceFingerprint({
@@ -356,8 +311,7 @@ const scan = async (context) => {
     severity: "info",
     confidence: "medium",
     status: "detected",
-    description:
-      `The target returned an HTTP response on port ${result.port} using ${result.protocol}. This confirms an HTTP-responsive service, not necessarily the underlying service identity.`,
+    description: `The target returned an HTTP response on port ${result.port} using ${result.protocol}. This confirms an HTTP-responsive service, not necessarily the underlying service identity.`,
     evidence: {
       port: result.port,
       protocol: result.protocol,
@@ -426,8 +380,7 @@ const run = scan;
 const scanner = {
   id: "portScan",
   name: "Port Scan",
-  description:
-    "Identifies HTTP-responsive ports on an authorized target host.",
+  description: "Identifies HTTP-responsive ports on an authorized target host.",
   run,
 };
 
