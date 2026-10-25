@@ -31,6 +31,7 @@ COPY package.json package-lock.json ./
 
 COPY server.js ./server.js
 COPY worker.js ./worker.js
+COPY start.js ./start.js
 COPY src ./src
 
 USER node
@@ -39,4 +40,4 @@ EXPOSE 3001
 
 ENTRYPOINT ["dumb-init", "--"]
 
-CMD ["node", "server.js"]
+CMD ["node", "start.js"]
