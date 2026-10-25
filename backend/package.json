@@ -6,7 +6,8 @@
   "type": "module",
   "main": "server.js",
   "scripts": {
-    "start": "node server.js",
+    "start": "node start.js",
+    "start:api": "node server.js",
     "start:worker": "node worker.js",
     "dev": "nodemon server.js",
     "dev:worker": "node --watch worker.js",
