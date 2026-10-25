@@ -4,10 +4,7 @@
  */
 
 import { setParameter } from "../shared/parameterTester.js";
-import {
-  isSuccessfulResponse,
-  summarizeResponse,
-} from "./helpers.js";
+import { isSuccessfulResponse, summarizeResponse } from "./helpers.js";
 
 const TIME_DELAY_SECONDS = 3;
 const MIN_TIME_DIFFERENCE_MS = 2500;
@@ -21,8 +18,7 @@ const TIME_PAYLOADS = [
   },
   {
     name: "postgresql",
-    payload:
-      `' AND (SELECT 1 FROM pg_sleep(${TIME_DELAY_SECONDS})) IS NULL AND '1'='1`,
+    payload: `' AND (SELECT 1 FROM pg_sleep(${TIME_DELAY_SECONDS})) IS NULL AND '1'='1`,
   },
   {
     name: "mssql",
@@ -37,9 +33,7 @@ const getDuration = (response) => {
 
   const { durationMs } = summarizeResponse(response);
 
-  return Number.isFinite(durationMs) && durationMs >= 0
-    ? durationMs
-    : null;
+  return Number.isFinite(durationMs) && durationMs >= 0 ? durationMs : null;
 };
 
 const getMedian = (values) => {
@@ -60,6 +54,8 @@ const getMedian = (values) => {
 const testTimeBased = async ({
   targetUrl,
   parameter,
+  createTestRequest,
+  originalValue,
   baselineResponse,
   request,
 }) => {
@@ -73,22 +69,24 @@ const testTimeBased = async ({
 
   const initialDuration = getDuration(baselineResponse);
 
-  if (
-    initialDuration === null ||
-    typeof request !== "function"
-  ) {
+  if (initialDuration === null || typeof request !== "function") {
     result.skipped = true;
     return result;
   }
 
-  const originalValue =
-    new URL(targetUrl).searchParams.get(parameter) ?? "";
+  const defaultOriginal = (() => {
+    try {
+      return new URL(targetUrl).searchParams.get(parameter) ?? "";
+    } catch {
+      return "";
+    }
+  })();
+  const effectiveOriginal = originalValue ?? defaultOriginal;
 
-  const baselineUrl = setParameter(
-    targetUrl,
-    parameter,
-    originalValue,
-  );
+  const baselineTarget =
+    typeof createTestRequest === "function"
+      ? createTestRequest(effectiveOriginal)
+      : setParameter(targetUrl, parameter, effectiveOriginal);
 
   const baselineDurations = [initialDuration];
 
@@ -102,7 +100,7 @@ const testTimeBased = async ({
     attempts < BASELINE_SAMPLE_COUNT - 1;
     attempts += 1
   ) {
-    const outcome = await request(baselineUrl);
+    const outcome = await request(baselineTarget);
 
     if (outcome?.skipped) {
       result.skipped = true;
@@ -134,8 +132,7 @@ const testTimeBased = async ({
   }
 
   const baselineSpreadMs =
-    Math.max(...baselineDurations) -
-    Math.min(...baselineDurations);
+    Math.max(...baselineDurations) - Math.min(...baselineDurations);
 
   if (baselineSpreadMs > MAX_BASELINE_SPREAD_MS) {
     result.skipped = true;
@@ -144,13 +141,11 @@ const testTimeBased = async ({
 
   const baselineMedianMs = getMedian(baselineDurations);
 
-  const absoluteDeviations = baselineDurations.map(
-    (duration) => Math.abs(duration - baselineMedianMs),
+  const absoluteDeviations = baselineDurations.map((duration) =>
+    Math.abs(duration - baselineMedianMs),
   );
 
-  const medianAbsoluteDeviationMs = getMedian(
-    absoluteDeviations,
-  );
+  const medianAbsoluteDeviationMs = getMedian(absoluteDeviations);
 
   const requiredDifferenceMs = Math.max(
     MIN_TIME_DIFFERENCE_MS,
@@ -158,13 +153,12 @@ const testTimeBased = async ({
   );
 
   for (const testCase of TIME_PAYLOADS) {
-    const testUrl = setParameter(
-      targetUrl,
-      parameter,
-      testCase.payload,
-    );
+    const testTarget =
+      typeof createTestRequest === "function"
+        ? createTestRequest(testCase.payload)
+        : setParameter(targetUrl, parameter, testCase.payload);
 
-    const firstOutcome = await request(testUrl);
+    const firstOutcome = await request(testTarget);
 
     if (firstOutcome?.skipped) {
       result.skipped = true;
@@ -184,8 +178,7 @@ const testTimeBased = async ({
       continue;
     }
 
-    const firstDifferenceMs =
-      firstDuration - baselineMedianMs;
+    const firstDifferenceMs = firstDuration - baselineMedianMs;
 
     if (firstDifferenceMs < requiredDifferenceMs) {
       continue;
@@ -194,7 +187,7 @@ const testTimeBased = async ({
     /*
      * Confirm a potential timing signal with a second request.
      */
-    const confirmationOutcome = await request(testUrl);
+    const confirmationOutcome = await request(testTarget);
 
     if (confirmationOutcome?.skipped) {
       result.skipped = true;
@@ -208,27 +201,31 @@ const testTimeBased = async ({
       continue;
     }
 
-    const confirmationDuration = getDuration(
-      confirmationOutcome.response,
-    );
+    const confirmationDuration = getDuration(confirmationOutcome.response);
 
     if (confirmationDuration === null) {
       continue;
     }
 
-    const confirmationDifferenceMs =
-      confirmationDuration - baselineMedianMs;
+    const confirmationDifferenceMs = confirmationDuration - baselineMedianMs;
 
     if (confirmationDifferenceMs < requiredDifferenceMs) {
       continue;
     }
 
+    const testUrl =
+      typeof testTarget === "string" ? testTarget : testTarget.url;
+    const requestDefinition =
+      typeof testTarget === "string"
+        ? { method: "GET", url: testTarget }
+        : testTarget;
+
     result.signal = {
       response: confirmationOutcome.response,
       testUrl,
+      request: requestDefinition,
       confidence: "low",
-      description:
-        `The ${testCase.name} timing probe was substantially slower than the median of three baseline samples, and the delay was reproduced by a second probe. Timing behavior alone does not confirm SQL injection; network latency and application behavior remain possible explanations.`,
+      description: `The ${testCase.name} timing probe was substantially slower than the median of three baseline samples, and the delay was reproduced by a second probe. Timing behavior alone does not confirm SQL injection; network latency and application behavior remain possible explanations.`,
       evidence: {
         baselineDurationsMs: [...baselineDurations],
         baselineMedianMs,

@@ -1,4 +1,3 @@
-
 /*
  * STATUS: UPDATED
  * File: src/scanners/sqli/errorBased.js
@@ -6,19 +5,16 @@
 
 import { getPayloads } from "../shared/payloadManager.js";
 import { setParameter } from "../shared/parameterTester.js";
-import {
-  getSqlErrorSignature,
-  identifyDatabaseFamily,
-} from "./helpers.js";
+import { getSqlErrorSignature, identifyDatabaseFamily } from "./helpers.js";
 
 const MAX_ERROR_PROBES = 2;
 
-const getResponseBody = (response) =>
-  response?.data ?? response?.body ?? "";
+const getResponseBody = (response) => response?.data ?? response?.body ?? "";
 
 const testErrorBased = async ({
   targetUrl,
   parameter,
+  createTestRequest,
   baselineResponse,
   request,
 }) => {
@@ -40,8 +36,12 @@ const testErrorBased = async ({
   const payloads = getPayloads("sqli").slice(0, MAX_ERROR_PROBES);
 
   for (const payload of payloads) {
-    const testUrl = setParameter(targetUrl, parameter, payload);
-    const outcome = await request(testUrl);
+    const testTarget =
+      typeof createTestRequest === "function"
+        ? createTestRequest(payload)
+        : setParameter(targetUrl, parameter, payload);
+
+    const outcome = await request(testTarget);
 
     if (outcome?.skipped) {
       result.skipped = true;
@@ -69,11 +69,19 @@ const testErrorBased = async ({
     }
 
     const databaseFamily = identifyDatabaseFamily(responseBody);
+    const testUrl =
+      typeof testTarget === "string" ? testTarget : testTarget.url;
+    const requestDefinition =
+      typeof testTarget === "string"
+        ? { method: "GET", url: testTarget }
+        : testTarget;
 
     result.signal = {
       response: outcome.response,
       testUrl,
+      request: requestDefinition,
       confidence: "low",
+      payload,
       description:
         "A recognized SQL-related error signature appeared after controlled parameter input and differed from the baseline. This may indicate SQL error disclosure or SQL injection; further verification is required.",
       ...(databaseFamily ? { databaseFamily } : {}),

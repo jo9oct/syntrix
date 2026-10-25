@@ -1,4 +1,3 @@
-
 /*
  * STATUS: CREATED
  * File: test/scanners/sqli/booleanBased.test.js
@@ -65,9 +64,7 @@ test("flags a clear baseline-relative Boolean difference", async () => {
 });
 
 test("stops when a request is skipped", async () => {
-  const { request, requestedUrls } = makeRequest([
-    { skipped: true },
-  ]);
+  const { request, requestedUrls } = makeRequest([{ skipped: true }]);
 
   const result = await runScanner(request);
 
@@ -75,7 +72,6 @@ test("stops when a request is skipped", async () => {
   assert.equal(result.tested, 0);
   assert.equal(requestedUrls.length, 1);
 });
-
 
 test("counts failed requests without reporting a finding", async () => {
   const { request, requestedUrls } = makeRequest([
@@ -92,7 +88,6 @@ test("counts failed requests without reporting a finding", async () => {
   assert.equal(result.failures, requestedUrls.length);
   assert.ok(result.failures > 0);
 });
-
 
 test("records status and body-length evidence", async () => {
   const trueBody = baselineResponse.data;
@@ -111,4 +106,38 @@ test("records status and body-length evidence", async () => {
   assert.equal(result.signal.evidence.falseConditionStatus, 200);
   assert.ok(result.signal.evidence.trueConditionBodyLength > 0);
   assert.ok(result.signal.evidence.falseConditionBodyLength > 0);
+});
+
+test("detects boolean-based SQL injection using OR condition and comment (' OR 1=1-- vs ' OR 1=2--)", async () => {
+  const allProductsBody = `<html><body>${"Product item ".repeat(25)}</body></html>`;
+  const noProductsBody = "<html><body>No products found</body></html>";
+
+  const request = async (url) => {
+    const urlStr = typeof url === "string" ? url : url.url;
+    if (urlStr.includes("1=1") || urlStr.includes("1%3D1")) {
+      return {
+        response: {
+          status: 200,
+          data: allProductsBody,
+        },
+      };
+    }
+
+    return {
+      response: {
+        status: 200,
+        data: noProductsBody,
+      },
+    };
+  };
+
+  const result = await runScanner(request);
+
+  assert.ok(result.signal);
+  assert.equal(result.signal.evidence.truePayload, "' OR 1=1--");
+  assert.equal(result.signal.evidence.falsePayload, "' OR 1=2--");
+  assert.ok(
+    result.signal.evidence.trueConditionBodyLength >
+      result.signal.evidence.falseConditionBodyLength,
+  );
 });

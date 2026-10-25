@@ -1,4 +1,3 @@
-
 /*
  * STATUS: UPDATED
  * File: src/scanners/sqli/helpers.js
@@ -47,10 +46,7 @@ const DATABASE_FINGERPRINTS = [
   },
   {
     family: "oracle",
-    patterns: [
-      /ora-\d{5}/i,
-      /oracle error/i,
-    ],
+    patterns: [/ora-\d{5}/i, /oracle error/i],
   },
   {
     family: "mssql",
@@ -63,10 +59,7 @@ const DATABASE_FINGERPRINTS = [
   },
   {
     family: "sqlite",
-    patterns: [
-      /sqlite(?:3)?::exception/i,
-      /sqlite error/i,
-    ],
+    patterns: [/sqlite(?:3)?::exception/i, /sqlite error/i],
   },
 ];
 
@@ -101,8 +94,7 @@ const normalizeDynamicContent = (value) =>
     .replace(/\s+/g, " ")
     .trim();
 
-const normalizeComparableBody = (value) =>
-  normalizeDynamicContent(value);
+const normalizeComparableBody = (value) => normalizeDynamicContent(value);
 
 const getSqlErrorSignature = (value) => {
   const body = normalizeBody(value);
@@ -111,9 +103,7 @@ const getSqlErrorSignature = (value) => {
     return null;
   }
 
-  const index = SQL_ERROR_PATTERNS.findIndex((pattern) =>
-    pattern.test(body),
-  );
+  const index = SQL_ERROR_PATTERNS.findIndex((pattern) => pattern.test(body));
 
   return index < 0 ? null : index;
 };
@@ -138,12 +128,9 @@ const identifyDatabaseFamily = (value) => {
 
 const summarizeResponse = (response) => ({
   status: response?.status ?? response?.statusCode ?? null,
-  body: normalizeComparableBody(
-    response?.data ?? response?.body,
-  ),
+  body: normalizeComparableBody(response?.data ?? response?.body),
   durationMs:
-    Number.isFinite(response?.durationMs) &&
-    response.durationMs >= 0
+    Number.isFinite(response?.durationMs) && response.durationMs >= 0
       ? response.durationMs
       : null,
 });
@@ -195,10 +182,8 @@ const isMeaningfulBooleanDifference = (
     return false;
   }
 
-  const trueMatchesBaseline =
-    trueResult.body === baseline.body;
-  const falseMatchesBaseline =
-    falseResult.body === baseline.body;
+  const trueMatchesBaseline = trueResult.body === baseline.body;
+  const falseMatchesBaseline = falseResult.body === baseline.body;
 
   if (trueMatchesBaseline !== falseMatchesBaseline) {
     return true;
@@ -220,7 +205,7 @@ const isMeaningfulBooleanDifference = (
 
   return (
     lengthDifference >= 100 &&
-    lengthDifference / maxLength >= 0.2
+    (lengthDifference / maxLength >= 0.1 || lengthDifference >= 200)
   );
 };
 

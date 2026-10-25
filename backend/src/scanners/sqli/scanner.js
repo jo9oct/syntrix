@@ -3,7 +3,7 @@
  * File: src/scanners/sqli/scanner.js
  */
 
-import { get } from "../../request/request.js";
+import { request as httpRequest } from "../../request/request.js";
 import { getAuthenticatedRequestOptions } from "../../request/authenticatedRequestOptions.js";
 import { createSecurityEvidence } from "../shared/evidenceBuilder.js";
 import { normalizeFinding } from "../shared/findingNormalizer.js";
@@ -11,16 +11,16 @@ import {
   createSecurityScanner,
   getTargetUrl,
 } from "../shared/scannerContract.js";
-import { getParameters, setParameter } from "../shared/parameterTester.js";
 import { assertSafeUrl } from "../../recon/shared/resolver.js";
 
 import { testErrorBased } from "./errorBased.js";
 import { testBooleanBased } from "./booleanBased.js";
 import { testTimeBased } from "./timeBased.js";
 import { testUnionBased } from "./unionBased.js";
+import { discoverAllInputs } from "./inputDiscovery.js";
 
 const MAX_TARGETS = 3;
-const MAX_PARAMETERS_PER_TARGET = 3;
+const MAX_INPUTS_PER_TARGET = 8;
 const MAX_REQUESTS = 120;
 const REQUEST_TIMEOUT_MS = 8000;
 
@@ -34,6 +34,7 @@ const TECHNIQUES = [
 const createEmptyResult = (cancelled = false) => ({
   data: {
     testedParameters: [],
+    testedInputSources: [],
     errorSignatureDetected: false,
     booleanDifferentialDetected: false,
     timeDifferentialDetected: false,
@@ -46,6 +47,7 @@ const createEmptyResult = (cancelled = false) => ({
   metadata: {
     cancelled,
     parametersTested: 0,
+    inputSourcesTested: [],
     requestsTested: 0,
     requestFailures: 0,
     targetsTested: 0,
@@ -67,9 +69,7 @@ const isCancellationError = (error, signal) =>
 const normalizeTargets = (context, rootUrl) => {
   const candidates = [
     rootUrl,
-    ...(Array.isArray(context?.discoveredUrls)
-      ? context.discoveredUrls
-      : []),
+    ...(Array.isArray(context?.discoveredUrls) ? context.discoveredUrls : []),
   ];
 
   const result = [];
@@ -163,7 +163,7 @@ const scanner = createSecurityScanner({
   id: "security.sqli",
   name: "SQL Injection Detection",
   description:
-    "Performs bounded error-based, Boolean-based, time-based, and UNION-based SQL injection checks against URL query parameters.",
+    "Performs bounded error-based, Boolean-based, time-based, and UNION-based SQL injection checks across URL queries, HTML forms, JSON bodies, cookies, path parameters, and HTTP headers.",
 
   async run(context) {
     const rootUrl = getTargetUrl(context);
@@ -175,12 +175,12 @@ const scanner = createSecurityScanner({
 
     const targets = normalizeTargets(context, rootUrl);
     const requestHeaders = context?.session?.getHeaders?.() ?? {};
-    const authenticatedRequestOptions =
-      getAuthenticatedRequestOptions(context);
+    const authenticatedRequestOptions = getAuthenticatedRequestOptions(context);
 
     const findings = [];
     const evidence = [];
     const testedParameters = new Set();
+    const testedInputSources = new Set();
     const findingKeys = new Set();
 
     const techniqueMetadata = {
@@ -194,7 +194,7 @@ const scanner = createSecurityScanner({
     let requestFailures = 0;
     let cancelled = false;
 
-    const request = async (url) => {
+    const request = async (target) => {
       if (context?.signal?.aborted) {
         const error = new Error("SQL injection scan was cancelled.");
         error.name = "AbortError";
@@ -206,15 +206,31 @@ const scanner = createSecurityScanner({
         return { skipped: true };
       }
 
-      await assertSafeUrl(url);
+      const isString = typeof target === "string";
+      const targetUrl = isString ? target : target.url;
+      const targetMethod = isString
+        ? "GET"
+        : (target.method || "GET").toUpperCase();
+      const targetHeaders = isString ? {} : target.headers || {};
+      const targetBody = isString ? undefined : target.body;
+
+      await assertSafeUrl(targetUrl);
 
       requestsTested += 1;
 
       try {
-        const response = await get(url, {
+        const client = context?.requestClient ?? httpRequest;
+        const response = await client({
+          url: targetUrl,
+          method: targetMethod,
+          body: targetBody,
+          data: targetBody,
           signal: context?.signal,
           timeoutMs: REQUEST_TIMEOUT_MS,
-          headers: requestHeaders,
+          headers: {
+            ...requestHeaders,
+            ...targetHeaders,
+          },
           ...authenticatedRequestOptions,
         });
 
@@ -229,7 +245,12 @@ const scanner = createSecurityScanner({
       }
     };
 
-    const addFinding = ({ targetUrl, parameter, result }) => {
+    const addFinding = ({
+      targetUrl,
+      inputSource = "query",
+      parameter,
+      result,
+    }) => {
       if (!result?.signal) {
         return;
       }
@@ -237,6 +258,7 @@ const scanner = createSecurityScanner({
       const technique = result.technique;
       const key = [
         technique,
+        inputSource,
         new URL(targetUrl).origin,
         new URL(targetUrl).pathname,
         parameter,
@@ -250,58 +272,76 @@ const scanner = createSecurityScanner({
 
       const details = getFindingDetails(technique);
       const signal = result.signal;
+      const sourceLabel = inputSource.toUpperCase();
+      const severity = signal.confidence === "high" ? "high" : details.severity;
+      const title =
+        signal.confidence === "high"
+          ? `${details.title.replace("Potential ", "")} with Data Reflection via ${sourceLabel} (${parameter})`
+          : `${details.title} via ${sourceLabel} (${parameter})`;
 
       const finding = normalizeFinding({
         scannerId: "security.sqli",
-        title: details.title,
-        description: signal.description,
-        severity: details.severity,
+        title,
+        description: `[${sourceLabel} input: "${parameter}"] ${signal.description}`,
+        severity,
         confidence: signal.confidence || "low",
         category: "sqli",
         remediation: details.remediation,
         metadata: {
           parameter,
+          inputSource,
           technique,
           responseBodyRedacted: true,
-          requiresManualVerification: true,
+          requiresManualVerification: signal.confidence !== "high",
         },
       });
 
       findings.push(finding);
 
-      evidence.push(
-        createSecurityEvidence({
-          request: {
-            method: "GET",
-            url: signal.testUrl,
-            headers: requestHeaders,
-          },
-          response: {
-            status:
-              signal.response?.status ??
-              signal.response?.statusCode ??
-              null,
-            statusText: signal.response?.statusText ?? null,
-            headers: signal.response?.headers ?? {},
-            contentType:
-              signal.response?.headers?.["content-type"] ??
-              signal.response?.contentType ??
-              null,
-          },
+      const securityEvidence = createSecurityEvidence({
+        request: {
+          method: signal.request?.method || "GET",
+          url: signal.testUrl || targetUrl,
+          headers: signal.request?.headers || requestHeaders,
+          body: signal.request?.body || undefined,
+        },
+        response: {
+          status:
+            signal.response?.status ?? signal.response?.statusCode ?? null,
+          statusText: signal.response?.statusText ?? null,
+          headers: signal.response?.headers ?? {},
+          contentType:
+            signal.response?.headers?.["content-type"] ??
+            signal.response?.contentType ??
+            null,
+        },
+        parameter,
+        inputSource,
+        payload:
+          signal.payload ??
+          signal.evidence?.payload ??
+          signal.evidence?.truePayload ??
+          true,
+        description: signal.description,
+        confidence: finding.confidence,
+        findingKey: key,
+        type: "http_exchange",
+        metadata: {
           parameter,
-          payload: true,
-          description: signal.description,
-          confidence: finding.confidence,
-          findingKey: key,
-          type: "http_exchange",
-          metadata: {
-            parameter,
-            technique,
-            requiresManualVerification: true,
-            responseBodyRedacted: true,
-          },
-        }),
-      );
+          inputSource,
+          technique,
+          payload:
+            signal.payload ??
+            signal.evidence?.payload ??
+            signal.evidence?.truePayload,
+          requiresManualVerification: true,
+          responseBodyRedacted: true,
+        },
+      });
+
+      securityEvidence.inputSource = inputSource;
+      securityEvidence.parameter = parameter;
+      evidence.push(securityEvidence);
 
       const metadataKey = getTechniqueMetadataKey(technique);
 
@@ -312,69 +352,111 @@ const scanner = createSecurityScanner({
 
     try {
       for (const targetUrl of targets) {
-        if (
-          context?.signal?.aborted ||
-          requestsTested >= MAX_REQUESTS
-        ) {
+        if (context?.signal?.aborted || requestsTested >= MAX_REQUESTS) {
           break;
         }
 
         await assertSafeUrl(targetUrl);
 
-        const parameters = getParameters(targetUrl).slice(
+        // Initial baseline request for this target to support input discovery
+        const initialBaselineOutcome = await request(targetUrl);
+
+        if (initialBaselineOutcome.skipped) {
+          break;
+        }
+
+        const initialBaselineResponse = initialBaselineOutcome.response;
+
+        // Discover input targets across all 6 input sources
+        const discoveredInputTargets = discoverAllInputs({
+          targetUrl,
+          baselineResponse: initialBaselineResponse,
+          requestHeaders,
+        });
+
+        const boundedInputTargets = discoveredInputTargets.slice(
           0,
-          MAX_PARAMETERS_PER_TARGET,
+          MAX_INPUTS_PER_TARGET,
         );
 
-        for (const parameter of parameters) {
-          if (
-            context?.signal?.aborted ||
-            requestsTested >= MAX_REQUESTS
-          ) {
+        for (const inputTarget of boundedInputTargets) {
+          if (context?.signal?.aborted || requestsTested >= MAX_REQUESTS) {
             break;
           }
 
-          testedParameters.add(parameter);
+          const {
+            source,
+            parameter,
+            method,
+            originalValue,
+            createRequest: createTestRequest,
+          } = inputTarget;
+
+          const paramKey = `${source}:${parameter}`;
+          testedParameters.add(paramKey);
+          testedInputSources.add(source);
 
           /*
-           * A baseline request is shared by error-based, Boolean-based,
-           * and timing checks for this parameter.
+           * Determine baseline response for this input target.
+           * For standard GET query/path/header without custom body, reuse initial baseline.
+           * For POST/form/json/cookie, establish target-specific baseline with originalValue.
            */
-          const baselineUrl = setParameter(targetUrl, parameter,
-            new URL(targetUrl).searchParams.get(parameter) ?? "");
+          let baselineResponse = initialBaselineResponse;
+          const isDifferentUrl =
+            Boolean(inputTarget.targetUrl) &&
+            inputTarget.targetUrl !== targetUrl;
 
-          const baselineOutcome = await request(baselineUrl);
+          if (
+            isDifferentUrl ||
+            method === "POST" ||
+            source === "json" ||
+            source === "form" ||
+            source === "cookie"
+          ) {
+            const baselineOutcome = await request(
+              createTestRequest(originalValue),
+            );
 
-          if (baselineOutcome.skipped) {
-            break;
+            if (baselineOutcome.skipped) {
+              break;
+            }
+
+            if (!baselineOutcome.response) {
+              continue;
+            }
+
+            baselineResponse = baselineOutcome.response;
           }
 
-          if (!baselineOutcome.response) {
+          if (!baselineResponse) {
             continue;
           }
 
           for (const [technique, testTechnique] of TECHNIQUES) {
-            if (
-              context?.signal?.aborted ||
-              requestsTested >= MAX_REQUESTS
-            ) {
+            if (context?.signal?.aborted || requestsTested >= MAX_REQUESTS) {
               break;
             }
 
             const result = await testTechnique({
-              targetUrl,
+              targetUrl: inputTarget.targetUrl,
               parameter,
-              baselineResponse: baselineOutcome.response,
+              inputSource: source,
+              createTestRequest,
+              originalValue,
+              baselineResponse,
               request,
             });
 
             const metadataKey = getTechniqueMetadataKey(technique);
 
-            techniqueMetadata[metadataKey].tested += result.tested;
-            techniqueMetadata[metadataKey].failures += result.failures;
+            if (metadataKey) {
+              techniqueMetadata[metadataKey].tested += result.tested;
+              techniqueMetadata[metadataKey].failures += result.failures;
+            }
 
             addFinding({
-              targetUrl,
+              targetUrl: inputTarget.targetUrl,
+              inputSource: source,
               parameter,
               result,
             });
@@ -394,6 +476,7 @@ const scanner = createSecurityScanner({
     return {
       data: {
         testedParameters: [...testedParameters],
+        testedInputSources: [...testedInputSources],
         errorSignatureDetected: techniqueMetadata.errorBased.detected,
         booleanDifferentialDetected: techniqueMetadata.booleanBased.detected,
         timeDifferentialDetected: techniqueMetadata.timeBased.detected,
@@ -406,6 +489,7 @@ const scanner = createSecurityScanner({
       metadata: {
         cancelled,
         parametersTested: testedParameters.size,
+        inputSourcesTested: [...testedInputSources],
         requestsTested,
         requestFailures,
         targetsTested: targets.length,

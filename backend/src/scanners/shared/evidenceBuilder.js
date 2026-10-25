@@ -139,7 +139,6 @@ const sanitizeMetadata = (metadata = {}) => {
 
     if (
       normalizedKey.includes("url") ||
-      normalizedKey.includes("payload") ||
       normalizedKey.includes("password") ||
       normalizedKey.includes("secret") ||
       normalizedKey.includes("token") ||
@@ -195,15 +194,34 @@ const createSecurityEvidence = ({
 
   const statusCode = sanitizedResponse?.statusCode ?? null;
 
+  // Resolve actual testing payload without redaction
+  const resolvedPayload =
+    typeof payload === "string" && payload.trim()
+      ? payload
+      : typeof metadata?.payload === "string" && metadata.payload.trim()
+        ? metadata.payload
+        : typeof metadata?.marker === "string" &&
+            metadata.marker !== "[REDACTED]"
+          ? metadata.marker
+          : payload && payload !== true
+            ? String(payload)
+            : null;
+
+  const detailItems = [];
+  if (parameter) {
+    detailItems.push(`Parameter: ${parameter}`);
+  }
+  if (resolvedPayload) {
+    detailItems.push(`Payload: ${resolvedPayload}`);
+  }
+  if (confidence) {
+    detailItems.push(`Confidence: ${confidence}`);
+  }
+
+  const detailsLine = detailItems.length > 0 ? detailItems.join("  •  ") : null;
+
   const summary =
-    [
-      description,
-      parameter ? `Parameter: ${parameter}` : null,
-      payload ? "Payload: [REDACTED]" : null,
-      confidence ? `Confidence: ${confidence}` : null,
-    ]
-      .filter(Boolean)
-      .join("\n") || null;
+    [description, detailsLine].filter(Boolean).join("\n\n") || null;
 
   return {
     type,
@@ -227,6 +245,9 @@ const createSecurityEvidence = ({
     bodyExcerpt: "[REDACTED]",
 
     summary,
+    payload: resolvedPayload,
+    parameter,
+    confidence,
 
     sensitiveDataRedacted: true,
 
@@ -234,7 +255,7 @@ const createSecurityEvidence = ({
       ...sanitizeMetadata(metadata),
 
       ...(parameter ? { parameter } : {}),
-      ...(payload ? { payload: REDACTED } : {}),
+      ...(resolvedPayload ? { payload: resolvedPayload } : {}),
       ...(confidence ? { confidence } : {}),
       ...(description ? { description } : {}),
     },
