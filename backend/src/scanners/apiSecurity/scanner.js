@@ -1,121 +1,74 @@
 // STATUS: UPDATED
 // File: src/scanners/apiSecurity/scanner.js
 
-import { get } from "../../request/request.js";
-import { getAuthenticatedRequestOptions } from "../../request/authenticatedRequestOptions.js";
-import { createSecurityEvidence } from "../shared/evidenceBuilder.js";
-import { calculateConfidence } from "../shared/confidence.js";
-import { normalizeFinding } from "../shared/findingNormalizer.js";
 import {
   createSecurityScanner,
   getTargetUrl,
 } from "../shared/scannerContract.js";
 import { assertSafeUrl } from "../../recon/shared/resolver.js";
-
-const API_PATHS = [
-  "/api",
-  "/api/v1",
-  "/api/v1/health",
-  "/openapi.json",
-  "/swagger.json",
-];
+import { checkApiEndpoints } from "./endpointChecks.js";
+import { checkApiAuthorization } from "./authChecks.js";
+import { checkApiInputValidation } from "./inputValidation.js";
+import { checkApiConfiguration } from "./configChecks.js";
 
 const scanner = createSecurityScanner({
   id: "security.api-security",
   name: "API Security",
   description:
-    "Performs bounded discovery of common API documentation and endpoint surfaces.",
+    "Performs bounded API assessment across endpoints, authorization, input validation, and configuration checks.",
 
   async run(context) {
     const targetUrl = getTargetUrl(context);
 
     await assertSafeUrl(targetUrl);
 
-    const baseUrl = new URL(targetUrl);
-    const findings = [];
-    const evidence = [];
-    const results = [];
-
     const requestHeaders = context?.session?.getHeaders?.() ?? {};
 
-    const authenticatedRequestOptions = getAuthenticatedRequestOptions(context);
+    // 1. Endpoint checks (documentation and endpoint discovery)
+    const endpointResult = await checkApiEndpoints({
+      targetUrl,
+      context,
+      requestHeaders,
+    });
 
-    for (const pathname of API_PATHS) {
-      if (context?.signal?.aborted) {
-        break;
-      }
-
-      const candidate = new URL(pathname, baseUrl.origin).toString();
-
-      await assertSafeUrl(candidate);
-
-      const response = await get(candidate, {
-        signal: context?.signal,
-        headers: requestHeaders,
-        maxRedirects: 0,
-        validateStatus: () => true,
-        ...authenticatedRequestOptions,
+    // 2. Authorization checks
+    let authResult = { findings: [], evidence: [] };
+    if (!context?.signal?.aborted) {
+      authResult = await checkApiAuthorization({
+        targetUrl,
+        context,
       });
-
-      results.push({
-        path: pathname,
-        status: response.status,
-      });
-
-      const contentType = String(
-        response.headers?.["content-type"] ?? "",
-      ).toLowerCase();
-
-      const successful = response.status >= 200 && response.status < 300;
-
-      const isDocumentationPath =
-        pathname === "/openapi.json" || pathname === "/swagger.json";
-
-      const isDocumentationContent = /json|openapi|swagger/i.test(contentType);
-
-      const isDocumentation =
-        successful && isDocumentationPath && isDocumentationContent;
-
-      if (isDocumentation) {
-        findings.push(
-          normalizeFinding({
-            scannerId: "security.api-security",
-            title: "Public API Documentation Exposure",
-            description: `An API documentation or schema resource was accessible at "${pathname}". This does not establish whether the resource was intended to be public.`,
-            severity: "low",
-            confidence: calculateConfidence({
-              confirmed: false,
-            }),
-            remediation:
-              "Review whether API documentation is intended to be publicly accessible. Restrict it if it exposes information that should only be available to authorized users.",
-            category: "api-security",
-            metadata: {
-              path: pathname,
-              contentType,
-            },
-          }),
-        );
-      }
-
-      evidence.push(
-        createSecurityEvidence({
-          request: {
-            method: "GET",
-            url: candidate,
-            headers: requestHeaders,
-          },
-          response: {
-            status: response.status,
-            statusText: response.statusText,
-            headers: response.headers,
-          },
-        }),
-      );
     }
+
+    // 3. Input validation checks
+    let inputResult = { findings: [], evidence: [] };
+    if (!context?.signal?.aborted) {
+      inputResult = await checkApiInputValidation({
+        targetUrl,
+        context,
+        requestHeaders,
+      });
+    }
+
+    // 4. Configuration checks
+    const configResult = checkApiConfiguration(requestHeaders);
+
+    const findings = [
+      ...endpointResult.findings,
+      ...authResult.findings,
+      ...inputResult.findings,
+      ...configResult.findings,
+    ];
+
+    const evidence = [
+      ...endpointResult.evidence,
+      ...authResult.evidence,
+      ...inputResult.evidence,
+    ];
 
     return {
       data: {
-        endpoints: results,
+        endpoints: endpointResult.results,
       },
       findings,
       evidence,
@@ -123,7 +76,7 @@ const scanner = createSecurityScanner({
       verificationRecords: [],
       metadata: {
         cancelled: context?.signal?.aborted === true,
-        endpointsTested: results.length,
+        endpointsTested: endpointResult.results.length,
       },
     };
   },

@@ -68,14 +68,8 @@ test("reports a low-confidence signal only after a repeatable delay", async () =
 
   assert.ok(result.signal);
   assert.equal(result.signal.confidence, "low");
-  assert.equal(
-    result.signal.evidence.confirmationRepeated,
-    true,
-  );
-  assert.deepEqual(
-    result.signal.evidence.baselineDurationsMs,
-    [150, 150, 160],
-  );
+  assert.equal(result.signal.evidence.confirmationRepeated, true);
+  assert.deepEqual(result.signal.evidence.baselineDurationsMs, [150, 150, 160]);
   assert.ok(
     result.signal.evidence.timeDifferenceMs >=
       result.signal.evidence.requiredDifferenceMs,
@@ -128,10 +122,7 @@ test("skips when repeated baseline requests fail", async () => {
 });
 
 test("skips when baseline timing is unstable", async () => {
-  const { request } = makeRequest([
-    response(100),
-    response(3000),
-  ]);
+  const { request } = makeRequest([response(100), response(3000)]);
 
   const result = await runScanner(request);
 
@@ -157,9 +148,7 @@ test("counts failed probe requests without reporting a finding", async () => {
 });
 
 test("stops when a baseline request is skipped", async () => {
-  const { request, requestedUrls } = makeRequest([
-    { skipped: true },
-  ]);
+  const { request, requestedUrls } = makeRequest([{ skipped: true }]);
 
   const result = await runScanner(request);
 

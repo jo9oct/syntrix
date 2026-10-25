@@ -1,4 +1,3 @@
-
 /* STATUS: CREATED */
 
 import {
@@ -131,14 +130,9 @@ const discoverWordlist = async ({
   }
 
   const configuredLabels =
-    labels === undefined || labels === null
-      ? DEFAULT_WORDLIST
-      : labels;
+    labels === undefined || labels === null ? DEFAULT_WORDLIST : labels;
 
-  const normalizedLabels = normalizeLabels(
-    configuredLabels,
-    limit,
-  );
+  const normalizedLabels = normalizeLabels(configuredLabels, limit);
 
   const candidates = [];
 
@@ -166,7 +160,4 @@ const discoverWordlist = async ({
   });
 };
 
-export {
-  DEFAULT_WORDLIST,
-  discoverWordlist,
-};
+export { DEFAULT_WORDLIST, discoverWordlist };

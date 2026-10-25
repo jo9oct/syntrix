@@ -4,34 +4,20 @@
 import { get } from "../../request/request.js";
 import { getAuthenticatedRequestOptions } from "../../request/authenticatedRequestOptions.js";
 import { createSecurityEvidence } from "../shared/evidenceBuilder.js";
-import { calculateConfidence } from "../shared/confidence.js";
-import { normalizeFinding } from "../shared/findingNormalizer.js";
 import {
   createSecurityScanner,
   getTargetUrl,
 } from "../shared/scannerContract.js";
 import { assertSafeUrl } from "../../recon/shared/resolver.js";
-
-const getForms = (body) => {
-  if (typeof body !== "string") {
-    return [];
-  }
-
-  return [...body.matchAll(/<form\b[\s\S]*?<\/form>/gi)]
-    .map((match) => match[0])
-    .slice(0, 20);
-};
-
-const hasCsrfToken = (form) =>
-  /csrf|xsrf|authenticity|requesttoken/i.test(form);
-
-const hasStateChangingMethod = (form) =>
-  /\bmethod\s*=\s*["']?(post|put|patch|delete)/i.test(form);
+import { getForms, validateFormTokens } from "./tokenValidation.js";
+import { evaluateCookieSameSite } from "./cookieProtections.js";
+import { evaluateRequestValidation } from "./requestValidation.js";
 
 const scanner = createSecurityScanner({
   id: "security.csrf",
   name: "CSRF Protection",
-  description: "Performs a passive assessment of form-based CSRF protections.",
+  description:
+    "Performs passive and structural assessment of form tokens, cookie protections, and request validation.",
 
   async run(context) {
     const targetUrl = getTargetUrl(context);
@@ -39,7 +25,6 @@ const scanner = createSecurityScanner({
     await assertSafeUrl(targetUrl);
 
     const requestHeaders = context?.session?.getHeaders?.() ?? {};
-
     const authenticatedRequestOptions = getAuthenticatedRequestOptions(context);
 
     const response = await get(targetUrl, {
@@ -50,41 +35,26 @@ const scanner = createSecurityScanner({
 
     const forms = getForms(response.data);
 
-    const stateChangingForms = forms.filter(hasStateChangingMethod);
+    // 1. Token validation
+    const tokenResult = validateFormTokens(forms);
 
-    const unprotectedForms = stateChangingForms.filter(
-      (form) => !hasCsrfToken(form),
-    );
+    // 2. Cookie protections
+    const cookieResult = evaluateCookieSameSite(response.headers);
 
-    const findings = [];
+    // 3. Request validation
+    const reqResult = evaluateRequestValidation(forms);
 
-    if (unprotectedForms.length > 0) {
-      findings.push(
-        normalizeFinding({
-          scannerId: "security.csrf",
-          title: "Potential Missing CSRF Protection",
-          description:
-            "A state-changing form was identified without an apparent CSRF token.",
-          severity: "medium",
-          confidence: calculateConfidence({
-            confirmed: true,
-          }),
-          remediation:
-            "Use framework-provided CSRF protection or an equivalent anti-CSRF mechanism for state-changing requests.",
-          category: "csrf",
-          metadata: {
-            stateChangingForms: stateChangingForms.length,
-            unprotectedForms: unprotectedForms.length,
-          },
-        }),
-      );
-    }
+    const findings = [
+      ...tokenResult.findings,
+      ...cookieResult.findings,
+      ...reqResult.findings,
+    ];
 
     return {
       data: {
         forms: forms.length,
-        stateChangingForms: stateChangingForms.length,
-        unprotectedForms: unprotectedForms.length,
+        stateChangingForms: tokenResult.stateChangingForms.length,
+        unprotectedForms: tokenResult.unprotectedForms.length,
       },
 
       findings,

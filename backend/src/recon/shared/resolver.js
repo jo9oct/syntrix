@@ -1,13 +1,9 @@
-
- // STATUS: UPDATED
+// STATUS: UPDATED
 
 import dns from "node:dns/promises";
 import net from "node:net";
 
-import {
-  blockedHostnames,
-  privateIpv4Ranges,
-} from "../../config/security.js";
+import { blockedHostnames, privateIpv4Ranges } from "../../config/security.js";
 
 import { SsrfProtectionError } from "../../utils/errors.js";
 
@@ -145,10 +141,7 @@ const isIpv4MappedIpv6 = (address) => {
 const getMappedIpv4 = (address) => {
   const normalized = normalizeIpv6(address);
 
-  if (
-    !normalized ||
-    !normalized.startsWith("00000000000000000000ffff")
-  ) {
+  if (!normalized || !normalized.startsWith("00000000000000000000ffff")) {
     return null;
   }
 
@@ -287,20 +280,14 @@ const resolveHostname = async (hostname) => {
     });
   } catch {
     // Do not expose underlying DNS errors to callers.
-    throw new SsrfProtectionError(
-      "Hostname could not be resolved safely.",
-    );
+    throw new SsrfProtectionError("Hostname could not be resolved safely.");
   }
 
-    if (!Array.isArray(records) || records.length === 0) {
-    throw new SsrfProtectionError(
-      "Hostname did not resolve to an address.",
-    );
+  if (!Array.isArray(records) || records.length === 0) {
+    throw new SsrfProtectionError("Hostname did not resolve to an address.");
   }
 
-  const addresses = [
-    ...new Set(records.map((record) => record.address)),
-  ];
+  const addresses = [...new Set(records.map((record) => record.address))];
 
   // Fail closed if even one returned address is prohibited.
   for (const address of addresses) {
@@ -364,9 +351,7 @@ const assertSafeUrl = async (value) => {
   }
 
   if (!["http:", "https:"].includes(parsedUrl.protocol)) {
-    throw new SsrfProtectionError(
-      "Only HTTP and HTTPS URLs are permitted.",
-    );
+    throw new SsrfProtectionError("Only HTTP and HTTPS URLs are permitted.");
   }
 
   if (parsedUrl.username || parsedUrl.password) {

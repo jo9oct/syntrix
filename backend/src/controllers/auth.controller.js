@@ -1,4 +1,3 @@
-
 /*
  * STATUS: UPDATED
  * File: src/controllers/auth.controller.js
@@ -35,11 +34,23 @@ const normalizeOrganizationName = (value) => {
   return normalized;
 };
 
-const escapeRegex = (value) =>
-  value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+const escapeRegex = (value) => value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+
+const setAuthCookie = (res, token) => {
+  const isProduction = process.env.NODE_ENV === "production";
+  res.cookie("sentrix_token", token, {
+    httpOnly: false,
+    secure: isProduction,
+    sameSite: "lax",
+    maxAge: 7 * 24 * 60 * 60 * 1000,
+    path: "/",
+  });
+};
 
 const createAuthResponse = (user, statusCode, res) => {
   const token = signToken(String(user._id));
+
+  setAuthCookie(res, token);
 
   return res.status(statusCode).json({
     success: true,
@@ -88,8 +99,13 @@ export const register = async (req, res) => {
       "client_owner",
       "client_member",
     ];
-    const normalizedRole = typeof role === "string" ? role.trim().toLowerCase().replace(/\s+/g, "_") : null;
-    const requestedRole = validRoles.includes(normalizedRole) ? normalizedRole : null;
+    const normalizedRole =
+      typeof role === "string"
+        ? role.trim().toLowerCase().replace(/\s+/g, "_")
+        : null;
+    const requestedRole = validRoles.includes(normalizedRole)
+      ? normalizedRole
+      : null;
 
     const existingUser = await User.findOne({
       email: normalizedEmail,
@@ -272,6 +288,8 @@ export const login = async (req, res) => {
 
     const token = signToken(String(user._id));
 
+    setAuthCookie(res, token);
+
     return res.status(200).json({
       success: true,
       data: {
@@ -293,6 +311,20 @@ export const login = async (req, res) => {
       error: "Login failed",
     });
   }
+};
+
+export const logout = async (req, res) => {
+  const isProduction = process.env.NODE_ENV === "production";
+  res.clearCookie("sentrix_token", {
+    path: "/",
+    secure: isProduction,
+    sameSite: "lax",
+  });
+
+  return res.status(200).json({
+    success: true,
+    message: "Logged out successfully",
+  });
 };
 
 export const getMe = async (req, res) => {

@@ -445,33 +445,7 @@ export const ScanProgress: React.FC = () => {
                 <RotateCcw size={14} className={retesting ? 'animate-spin' : ''} />
                 {retesting ? 'Launching Retest...' : 'Retest Assessment'}
               </button>
-            ) : isCompleted ? (
-              <>
-                <button
-                  disabled={retesting}
-                  onClick={handleRetest}
-                  className="px-4 py-2 rounded-xl bg-white/5 hover:bg-white/10 text-white border border-white/10 text-xs font-semibold flex items-center gap-1.5 transition-colors disabled:opacity-50"
-                  title="Retest Target using existing parameters (no input needed)"
-                >
-                  <RotateCcw size={14} className={retesting ? 'animate-spin text-brand-cyan' : 'text-brand-cyan'} />
-                  {retesting ? 'Launching...' : 'Retest Target'}
-                </button>
-
-                <button
-                  onClick={() => setIsReportModalOpen(true)}
-                  className="px-4 py-2 rounded-xl bg-white/5 hover:bg-white/10 text-white border border-white/10 text-xs font-semibold flex items-center gap-1.5 transition-colors"
-                >
-                  <FileText size={14} className="text-brand-cyan" /> Generate Report
-                </button>
-
-                <button
-                  onClick={() => navigate(`/dashboard/assessment/${id}/results`)}
-                  className="btn-primary text-xs px-5 py-2.5 rounded-xl font-bold flex items-center gap-2 shadow-lg shadow-brand-cyan/20"
-                >
-                  View Findings & Evidence <ArrowRight size={14} />
-                </button>
-              </>
-            ) : (
+            ) : isCompleted ? null : (
               <>
                 {/* During pending or running: report and view findings are strictly disabled/unclickable */}
                 <button

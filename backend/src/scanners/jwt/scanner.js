@@ -11,15 +11,18 @@ import {
   getTargetUrl,
 } from "../shared/scannerContract.js";
 import { assertSafeUrl } from "../../recon/shared/resolver.js";
+import { evaluateJwtSignature } from "./signatureChecks.js";
+import { evaluateJwtAlgorithm } from "./algorithmChecks.js";
+import { evaluateJwtClaims } from "./claimsValidation.js";
 
 const JWT_PATTERN =
-  /\beyJ[A-Za-z0-9_-]{5,}\.[A-Za-z0-9_-]{5,}\.[A-Za-z0-9_-]{5,}\b/g;
+  /\beyJ[A-Za-z0-9_-]{5,}\.[A-Za-z0-9_-]{5,}\.[A-Za-z0-9_-]*\b/g;
 
 const scanner = createSecurityScanner({
   id: "security.jwt",
   name: "JWT Security",
   description:
-    "Detects JWT-like strings exposed in response content or headers without storing token values.",
+    "Detects and evaluates JWT security including signature, algorithm, claims, and validation checks without storing raw token values.",
 
   async run(context) {
     const targetUrl = getTargetUrl(context);
@@ -27,7 +30,6 @@ const scanner = createSecurityScanner({
     await assertSafeUrl(targetUrl);
 
     const requestHeaders = context?.session?.getHeaders?.() ?? {};
-
     const authenticatedRequestOptions = getAuthenticatedRequestOptions(context);
 
     const response = await get(targetUrl, {
@@ -52,6 +54,7 @@ const scanner = createSecurityScanner({
     const findings = [];
 
     if (uniqueMatches.length > 0) {
+      // Base token exposure finding
       findings.push(
         normalizeFinding({
           scannerId: "security.jwt",
@@ -71,6 +74,19 @@ const scanner = createSecurityScanner({
           },
         }),
       );
+
+      // Inspect signature, algorithm, and claims for each detected token
+      for (const token of uniqueMatches) {
+        const sigRes = evaluateJwtSignature(token);
+        const algRes = evaluateJwtAlgorithm(token);
+        const claimsRes = evaluateJwtClaims(token);
+
+        findings.push(
+          ...sigRes.findings,
+          ...algRes.findings,
+          ...claimsRes.findings,
+        );
+      }
     }
 
     return {

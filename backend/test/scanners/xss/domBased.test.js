@@ -78,4 +78,3 @@ test("testDomBasedXss handles document.write sinks from location.hash", async ()
   assert.equal(result.signal.source, "location.hash");
   assert.equal(result.signal.sink, "document.write");
 });
-

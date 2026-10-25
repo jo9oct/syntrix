@@ -1,13 +1,9 @@
-
 /* STATUS: UPDATED */
 
 import { get } from "../../request/request.js";
 
 import { createExchangeEvidence } from "../shared/evidence.js";
-import {
-  createReconScanner,
-  getTargetUrl,
-} from "../shared/reconContract.js";
+import { createReconScanner, getTargetUrl } from "../shared/reconContract.js";
 import { assertSafeUrl } from "../shared/resolver.js";
 
 const MAX_ROBOTS_BYTES = 1024 * 1024;
@@ -76,10 +72,7 @@ const parseRobots = (body) => {
       continue;
     }
 
-    const directive = line
-      .slice(0, separator)
-      .trim()
-      .toLowerCase();
+    const directive = line.slice(0, separator).trim().toLowerCase();
 
     const value = line
       .slice(separator + 1)
@@ -126,9 +119,7 @@ const parseRobots = (body) => {
       continue;
     }
 
-    const agents = currentAgents.length
-      ? currentAgents
-      : ["*"];
+    const agents = currentAgents.length ? currentAgents : ["*"];
 
     for (const userAgent of agents) {
       const entry = {
@@ -208,17 +199,49 @@ const scanner = createReconScanner({
 
     // robots.txt is public. Do not forward authenticated session
     // cookies or authorization headers unnecessarily.
-    const response = await get(robotsUrl, {
-      signal: context?.signal,
-      scope: context?.scope,
-      headers: {
-        Accept: "text/plain, */*;q=0.1",
-      },
-      maxRedirects: 0,
-      maxContentLength: MAX_ROBOTS_BYTES,
-      maxBodyLength: MAX_ROBOTS_BYTES,
-      responseType: "text",
-    });
+    let response;
+    try {
+      response = await get(robotsUrl, {
+        signal: context?.signal,
+        scope: context?.scope,
+        headers: {
+          Accept: "text/plain, */*;q=0.1",
+        },
+        maxRedirects: 0,
+        maxContentLength: MAX_ROBOTS_BYTES,
+        maxBodyLength: MAX_ROBOTS_BYTES,
+        responseType: "text",
+      });
+    } catch (error) {
+      if (context?.signal?.aborted) {
+        return cancelledResult(robotsUrl);
+      }
+
+      return {
+        data: {
+          url: robotsUrl,
+          status: null,
+          ...createEmptyResult(),
+        },
+        evidence: [],
+        fingerprints: [],
+        verificationRecords: [],
+        metadata: {
+          successfulResponse: false,
+          robotsFound: false,
+          bodyBytes: 0,
+          userAgentCount: 0,
+          disallowedCount: 0,
+          allowedCount: 0,
+          sitemapCount: 0,
+          directivesParsed: 0,
+          truncated: false,
+          malformed: false,
+          cancelled: false,
+          error: error?.message ?? "Failed to fetch robots.txt",
+        },
+      };
+    }
 
     if (context?.signal?.aborted) {
       return cancelledResult(robotsUrl);
@@ -227,30 +250,33 @@ const scanner = createReconScanner({
     const status = Number(response?.status);
 
     if (!Number.isInteger(status) || status < 100 || status > 599) {
-      throw new Error(
-        "Robots reconnaissance received an invalid HTTP status.",
-      );
+      return {
+        data: {
+          url: robotsUrl,
+          status: null,
+          ...createEmptyResult(),
+        },
+        evidence: [],
+        fingerprints: [],
+        verificationRecords: [],
+        metadata: {
+          successfulResponse: false,
+          robotsFound: false,
+          cancelled: false,
+        },
+      };
     }
 
     const successfulResponse = status >= 200 && status < 300;
 
-    const body = successfulResponse
-      ? getResponseBody(response.data)
-      : null;
+    const body = successfulResponse ? getResponseBody(response.data) : null;
 
-    const bodySize = body === null
-      ? 0
-      : Buffer.byteLength(body, "utf8");
+    const bodySize = body === null ? 0 : Buffer.byteLength(body, "utf8");
 
-    if (bodySize > MAX_ROBOTS_BYTES) {
-      throw new Error(
-        "The robots.txt response exceeds the permitted size.",
-      );
-    }
-
-    const parsed = successfulResponse
-      ? parseRobots(body)
-      : createEmptyResult();
+    const parsed =
+      successfulResponse && bodySize <= MAX_ROBOTS_BYTES
+        ? parseRobots(body)
+        : createEmptyResult();
 
     const contentType =
       response?.headers?.["content-type"] ??
@@ -299,8 +325,7 @@ const scanner = createReconScanner({
         truncated: parsed.truncated ?? false,
         malformed: parsed.malformed ?? false,
         cancelled: false,
-        note:
-          "Robots directives guide crawler behavior; they do not authorize access or prove a vulnerability.",
+        note: "Robots directives guide crawler behavior; they do not authorize access or prove a vulnerability.",
       },
     };
   },

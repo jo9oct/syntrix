@@ -4,48 +4,17 @@
 import { get } from "../../request/request.js";
 import { getAuthenticatedRequestOptions } from "../../request/authenticatedRequestOptions.js";
 import { createSecurityEvidence } from "../shared/evidenceBuilder.js";
-import { calculateConfidence } from "../shared/confidence.js";
-import { normalizeFinding } from "../shared/findingNormalizer.js";
 import {
   createSecurityScanner,
   getTargetUrl,
 } from "../shared/scannerContract.js";
 import { assertSafeUrl } from "../../recon/shared/resolver.js";
-
-const REQUIRED_HEADERS = [
-  {
-    name: "strict-transport-security",
-    title: "Missing Strict-Transport-Security Header",
-    severity: "medium",
-    remediation: "Configure Strict-Transport-Security for HTTPS deployments.",
-  },
-  {
-    name: "content-security-policy",
-    title: "Missing Content-Security-Policy Header",
-    severity: "medium",
-    remediation: "Define an appropriate Content-Security-Policy.",
-  },
-  {
-    name: "x-content-type-options",
-    title: "Missing X-Content-Type-Options Header",
-    severity: "low",
-    remediation: "Set X-Content-Type-Options to nosniff.",
-  },
-  {
-    name: "referrer-policy",
-    title: "Missing Referrer-Policy Header",
-    severity: "low",
-    remediation: "Configure an appropriate Referrer-Policy.",
-  },
-];
-
-const normalizeHeaders = (headers) =>
-  Object.fromEntries(
-    Object.entries(headers ?? {}).map(([key, value]) => [
-      key.toLowerCase(),
-      value,
-    ]),
-  );
+import {
+  REQUIRED_HEADERS,
+  normalizeHeaders,
+  checkRequiredHeaders,
+} from "./headerChecks.js";
+import { validateHeaderConfigurations } from "./configValidation.js";
 
 const createCancelledResult = (headers = {}, status = null) => ({
   data: {
@@ -66,7 +35,8 @@ const createCancelledResult = (headers = {}, status = null) => ({
 const scanner = createSecurityScanner({
   id: "security.security-headers",
   name: "Security Headers",
-  description: "Checks common HTTP security response headers.",
+  description:
+    "Checks common HTTP security response headers and configuration directives.",
 
   async run(context) {
     const targetUrl = getTargetUrl(context);
@@ -78,7 +48,6 @@ const scanner = createSecurityScanner({
     }
 
     const requestHeaders = context?.session?.getHeaders?.() ?? {};
-
     const authenticatedRequestOptions = getAuthenticatedRequestOptions(context);
 
     const response = await get(targetUrl, {
@@ -144,93 +113,38 @@ const scanner = createSecurityScanner({
       };
     }
 
-    const hasHeader = (name) => {
-      const value = headers[name];
+    // 1. Missing header checks
+    const headerCheckResults = checkRequiredHeaders({
+      headers,
+      targetUrl,
+      requestHeaders,
+      status,
+      response,
+    });
 
-      if (value == null) {
-        return false;
-      }
+    // 2. Configuration validation
+    const configCheckResults = validateHeaderConfigurations({
+      headers,
+      targetUrl,
+      requestHeaders,
+      status,
+      response,
+    });
 
-      if (typeof value === "string") {
-        return value.trim().length > 0;
-      }
-
-      if (Array.isArray(value)) {
-        return value.some(
-          (entry) => entry != null && String(entry).trim().length > 0,
-        );
-      }
-
-      return Boolean(value);
-    };
-
-    const present = REQUIRED_HEADERS.filter((item) => hasHeader(item.name)).map(
-      (item) => item.name,
-    );
-
-    const missing = REQUIRED_HEADERS.filter(
-      (item) => !hasHeader(item.name),
-    ).map((item) => item.name);
-
-    const findings = [];
-    const evidence = [];
-
-    for (const required of REQUIRED_HEADERS) {
-      if (hasHeader(required.name)) {
-        continue;
-      }
-
-      const title = required.title;
-      const description = `The response does not expose the ${required.name} security header.`;
-      const findingKey = `security.security-headers:${title}`;
-
-      findings.push(
-        normalizeFinding({
-          scannerId: "security.security-headers",
-          title,
-          description,
-          severity: required.severity,
-          confidence: calculateConfidence({
-            confirmed: true,
-          }),
-          remediation: required.remediation,
-          category: "security-headers",
-          metadata: {
-            header: required.name,
-            responseStatus: status,
-          },
-        }),
-      );
-
-      evidence.push(
-        createSecurityEvidence({
-          request: {
-            method: "GET",
-            url: targetUrl,
-            headers: requestHeaders,
-          },
-          response: {
-            status: response.status,
-            statusText: response.statusText,
-            headers: response.headers,
-            contentType: response.headers?.["content-type"],
-          },
-          description,
-          metadata: {
-            header: required.name,
-            responseStatus: status,
-          },
-          findingKey,
-          type: "http_exchange",
-        }),
-      );
-    }
+    const findings = [
+      ...headerCheckResults.findings,
+      ...configCheckResults.findings,
+    ];
+    const evidence = [
+      ...headerCheckResults.evidence,
+      ...configCheckResults.evidence,
+    ];
 
     return {
       data: {
         headers,
-        present,
-        missing,
+        present: headerCheckResults.present,
+        missing: headerCheckResults.missing,
         status,
       },
       findings,
@@ -239,8 +153,8 @@ const scanner = createSecurityScanner({
       verificationRecords: [],
       metadata: {
         requiredHeaderCount: REQUIRED_HEADERS.length,
-        presentHeaderCount: present.length,
-        missingHeaderCount: missing.length,
+        presentHeaderCount: headerCheckResults.present.length,
+        missingHeaderCount: headerCheckResults.missing.length,
         cancelled: false,
         inconclusive: false,
       },

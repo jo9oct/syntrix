@@ -1,5 +1,6 @@
-
 /* STATUS: UPDATED */
+
+import net from "node:net";
 
 import {
   createReconScanner,
@@ -9,43 +10,20 @@ import {
 import { resolveDnsRecords } from "../shared/resolver.js";
 import { createFingerprint } from "../shared/fingerprint.js";
 
-const RECORD_TYPES = Object.freeze([
-  "A",
-  "AAAA",
-  "CNAME",
-  "MX",
-  "NS",
-  "TXT",
-]);
+const RECORD_TYPES = Object.freeze(["A", "AAAA", "CNAME", "MX", "NS", "TXT"]);
 
 const MAX_RECORDS_PER_TYPE = 100;
 const MAX_VALUE_LENGTH = 2048;
 const MAX_HOSTNAME_LENGTH = 253;
 
-const DNS_ERROR_CODES = new Set([
-  "ENOTFOUND",
-  "ENODATA",
-  "ENODOMAIN",
-  "ENOTIMP",
-  "ETIMEOUT",
-  "ESERVFAIL",
-  "EREFUSED",
-  "ECONNREFUSED",
-  "EAI_AGAIN",
-]);
-
-const isCancelled = (context) =>
-  context?.signal?.aborted === true;
+const isCancelled = (context) => context?.signal?.aborted === true;
 
 const normalizeHostname = (value) => {
   if (typeof value !== "string") {
     throw new Error("DNS scanner requires a hostname.");
   }
 
-  const hostname = value
-    .trim()
-    .toLowerCase()
-    .replace(/\.$/, "");
+  const hostname = value.trim().toLowerCase().replace(/\.$/, "");
 
   if (
     !hostname ||
@@ -56,6 +34,11 @@ const normalizeHostname = (value) => {
     hostname.includes(":")
   ) {
     throw new Error("Invalid DNS target hostname.");
+  }
+
+  // If IP address, return normalized IP
+  if (net.isIP(hostname) !== 0) {
+    return hostname;
   }
 
   const labels = hostname.split(".");
@@ -87,8 +70,7 @@ const normalizeRecord = (value, recordType) => {
     return null;
   }
 
-  // TXT records may contain verification tokens or
-  // other sensitive data. Do not persist their contents.
+  // TXT records may contain verification tokens or sensitive data; do not persist contents.
   if (recordType === "TXT") {
     return {
       value: "[REDACTED]",
@@ -99,140 +81,44 @@ const normalizeRecord = (value, recordType) => {
   if (typeof value === "string") {
     const normalized = value.trim();
 
-    if (!normalized) {
-      return null;
-    }
-
-    return {
-      value: normalized.slice(0, MAX_VALUE_LENGTH),
-      redacted: false,
-    };
-  }
-
-  if (typeof value === "number") {
-    return {
-      value: String(value),
-      redacted: false,
-    };
-  }
-
-  if (Array.isArray(value)) {
-    const parts = value
-      .filter(
-        (item) =>
-          typeof item === "string" ||
-          typeof item === "number",
-      )
-      .map(String);
-
-    if (parts.length === 0) {
-      return null;
-    }
-
-    return {
-      value: parts.join(" ").slice(0, MAX_VALUE_LENGTH),
-      redacted: false,
-    };
+    return normalized
+      ? {
+          value: normalized.slice(0, MAX_VALUE_LENGTH),
+          redacted: false,
+        }
+      : null;
   }
 
   if (typeof value === "object") {
-    const safe = {};
+    const safeObject = {};
 
-    for (const key of [
-      "exchange",
-      "priority",
-      "name",
-      "value",
-      "address",
-    ]) {
-      const field = value[key];
+    for (const [key, propertyValue] of Object.entries(value)) {
+      if (propertyValue === null || propertyValue === undefined) {
+        continue;
+      }
 
       if (
-        typeof field === "string" ||
-        typeof field === "number"
+        typeof propertyValue === "string" ||
+        typeof propertyValue === "number" ||
+        typeof propertyValue === "boolean"
       ) {
-        safe[key] =
-          typeof field === "string"
-            ? field.slice(0, MAX_VALUE_LENGTH)
-            : field;
+        safeObject[key] = String(propertyValue).slice(0, MAX_VALUE_LENGTH);
       }
     }
 
-    if (Object.keys(safe).length === 0) {
-      return null;
-    }
-
-    return {
-      value: safe,
-      redacted: false,
-    };
+    return Object.keys(safeObject).length > 0
+      ? {
+          value: safeObject,
+          redacted: false,
+        }
+      : null;
   }
 
   return null;
 };
 
-const normalizeRecords = (rawRecords) => {
-  const records = {};
-  const counts = {};
-  const truncatedTypes = [];
-
-  for (const recordType of RECORD_TYPES) {
-    const rawValues = normalizeRecordValues(
-      rawRecords?.[recordType] ??
-        rawRecords?.[recordType.toLowerCase()],
-    );
-
-    const seen = new Set();
-    const normalized = [];
-
-    for (const rawValue of rawValues) {
-      const record = normalizeRecord(
-        rawValue,
-        recordType,
-      );
-
-      if (!record) {
-        continue;
-      }
-
-      const key = JSON.stringify(record.value);
-
-      if (seen.has(key)) {
-        continue;
-      }
-
-      seen.add(key);
-
-      if (normalized.length >= MAX_RECORDS_PER_TYPE) {
-        if (!truncatedTypes.includes(recordType)) {
-          truncatedTypes.push(recordType);
-        }
-
-        continue;
-      }
-
-      normalized.push(record.value);
-    }
-
-    records[recordType] = normalized;
-
-    counts[recordType] =
-      recordType === "TXT"
-        ? rawValues.length
-        : normalized.length;
-  }
-
-  return {
-    records,
-    counts,
-    truncatedTypes,
-  };
-};
-
 const emptyRecords = () =>
-  Object.fromEntries(
-    RECORD_TYPES.map((type) => [type, []]),
-  );
+  Object.fromEntries(RECORD_TYPES.map((type) => [type, []]));
 
 const cancelledResult = (hostname) => ({
   data: {
@@ -245,8 +131,38 @@ const cancelledResult = (hostname) => ({
   metadata: {
     cancelled: true,
     recordTypes: RECORD_TYPES,
+    resolutionStatus: "cancelled",
   },
 });
+
+const normalizeRecords = (rawRecords) => {
+  const records = emptyRecords();
+  const counts = {};
+  const truncatedTypes = [];
+
+  for (const recordType of RECORD_TYPES) {
+    const rawValues = normalizeRecordValues(rawRecords?.[recordType]);
+
+    counts[recordType] = rawValues.length;
+
+    if (rawValues.length > MAX_RECORDS_PER_TYPE) {
+      truncatedTypes.push(recordType);
+    }
+
+    const normalizedValues = rawValues
+      .slice(0, MAX_RECORDS_PER_TYPE)
+      .map((entry) => normalizeRecord(entry, recordType))
+      .filter((entry) => entry !== null);
+
+    records[recordType] = normalizedValues.map((entry) => entry.value);
+  }
+
+  return {
+    records,
+    counts,
+    truncatedTypes,
+  };
+};
 
 const scanner = createReconScanner({
   id: "recon.dns",
@@ -257,12 +173,56 @@ const scanner = createReconScanner({
     "Collects and normalizes common DNS records for the authorized target hostname without expanding active scan scope.",
 
   async run(context) {
-    const hostname = normalizeHostname(
-      getTargetHostname(context),
-    );
+    let hostname;
+    try {
+      hostname = normalizeHostname(getTargetHostname(context));
+    } catch (err) {
+      return {
+        data: {
+          hostname: String(context?.target?.url ?? ""),
+          records: emptyRecords(),
+        },
+        evidence: [],
+        fingerprints: [],
+        verificationRecords: [],
+        metadata: {
+          cancelled: false,
+          resolutionStatus: "invalid_hostname",
+          error: err.message,
+        },
+      };
+    }
 
     if (isCancelled(context)) {
       return cancelledResult(hostname);
+    }
+
+    // IP addresses don't have standard forward DNS records
+    if (net.isIP(hostname) !== 0) {
+      return {
+        data: {
+          hostname,
+          records: {
+            ...emptyRecords(),
+            A: [hostname],
+          },
+        },
+        evidence: [
+          {
+            type: "dns",
+            hostname,
+            recordType: "A",
+            value: hostname,
+          },
+        ],
+        fingerprints: [],
+        verificationRecords: [],
+        metadata: {
+          isIpAddress: true,
+          resolutionStatus: "ip_target",
+          cancelled: false,
+        },
+      };
     }
 
     let rawRecords;
@@ -274,13 +234,7 @@ const scanner = createReconScanner({
         return cancelledResult(hostname);
       }
 
-      const code = String(
-        error?.code ?? "DNS_RESOLUTION_FAILED",
-      ).toUpperCase();
-
-      if (!DNS_ERROR_CODES.has(code)) {
-        throw error;
-      }
+      const code = String(error?.code ?? "DNS_RESOLUTION_FAILED").toUpperCase();
 
       return {
         data: {
@@ -295,6 +249,7 @@ const scanner = createReconScanner({
           recordTypes: RECORD_TYPES,
           resolutionStatus: "failed",
           errorCode: code,
+          errorMessage: error?.message ?? "DNS resolution failed",
         },
       };
     }
@@ -303,11 +258,7 @@ const scanner = createReconScanner({
       return cancelledResult(hostname);
     }
 
-    const {
-      records,
-      counts,
-      truncatedTypes,
-    } = normalizeRecords(rawRecords);
+    const { records, counts, truncatedTypes } = normalizeRecords(rawRecords);
 
     const evidence = [];
     const fingerprints = [];
@@ -325,7 +276,6 @@ const scanner = createReconScanner({
             count: counts.TXT,
           });
         }
-
         continue;
       }
 
@@ -377,3 +327,4 @@ const scanner = createReconScanner({
 });
 
 export default scanner;
+export { scanner, normalizeHostname };

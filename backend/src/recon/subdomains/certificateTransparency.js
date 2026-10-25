@@ -1,4 +1,3 @@
-
 /* STATUS: CREATED */
 
 import axios from "axios";
@@ -104,6 +103,4 @@ const discoverCertificateTransparency = async ({
   );
 };
 
-export {
-  discoverCertificateTransparency,
-};
+export { discoverCertificateTransparency };

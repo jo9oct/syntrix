@@ -179,6 +179,7 @@ const isExpectedDnsFailure = (error) =>
     "EAI_AGAIN",
     "EREFUSED",
     "ECONNREFUSED",
+    "SSRF_TARGET_BLOCKED",
   ].includes(getErrorCode(error));
 
 const resolveCandidate = async (hostname) => {
@@ -269,7 +270,45 @@ const scanner = createReconScanner({
     "Discovers subdomain candidates using bounded wordlists, Certificate Transparency, supported public sources, and optional recursive discovery. Discovery never expands active scan scope.",
 
   async run(context) {
-    const hostname = normalizeHostname(getTargetHostname(context));
+    const rawHostname = getTargetHostname(context);
+
+    if (isIP(rawHostname) !== 0) {
+      return {
+        data: {
+          hostname: rawHostname,
+          subdomains: [],
+          totalDiscovered: 0,
+        },
+        evidence: [],
+        fingerprints: [],
+        metadata: {
+          isIpAddress: true,
+          discoveryStatus: "skipped_ip_target",
+          subdomainCount: 0,
+          cancelled: false,
+        },
+      };
+    }
+
+    let hostname;
+    try {
+      hostname = normalizeHostname(rawHostname);
+    } catch (err) {
+      return {
+        data: {
+          hostname: rawHostname,
+          subdomains: [],
+          totalDiscovered: 0,
+        },
+        evidence: [],
+        fingerprints: [],
+        metadata: {
+          discoveryStatus: "invalid_hostname",
+          error: err.message,
+          cancelled: false,
+        },
+      };
+    }
 
     const rawOptions = context?.options?.subdomains ?? {};
     const options = normalizeOptions(rawOptions);
@@ -377,13 +416,7 @@ const scanner = createReconScanner({
               return;
             }
 
-            if (isExpectedDnsFailure(error)) {
-              addFailure(error);
-              return;
-            }
-
-            // Do not silently ignore resolver or SSRF policy failures.
-            throw error;
+            addFailure(error);
           }
         },
         context?.signal,
@@ -427,7 +460,8 @@ const scanner = createReconScanner({
       } else if (isExpectedDnsFailure(error)) {
         wildcardCheckStatus = "not_detected";
       } else {
-        throw error;
+        wildcardCheckStatus = "not_detected";
+        addFailure(error);
       }
     }
 

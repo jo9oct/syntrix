@@ -1,4 +1,3 @@
-
 /* STATUS: CREATED */
 
 import { isIP } from "node:net";
@@ -61,10 +60,7 @@ const isWithinDiscoveryRoot = (candidate, root) =>
 
 const validateAndDeduplicateCandidates = (
   candidates,
-  {
-    rootHostname,
-    maxCandidates = DEFAULT_MAX_CANDIDATES,
-  } = {},
+  { rootHostname, maxCandidates = DEFAULT_MAX_CANDIDATES } = {},
 ) => {
   if (!Array.isArray(candidates)) {
     throw new Error("Subdomain candidates must be an array.");
@@ -84,10 +80,7 @@ const validateAndDeduplicateCandidates = (
       break;
     }
 
-    const rawHostname =
-      typeof entry === "string"
-        ? entry
-        : entry?.hostname;
+    const rawHostname = typeof entry === "string" ? entry : entry?.hostname;
 
     if (typeof rawHostname !== "string") {
       continue;

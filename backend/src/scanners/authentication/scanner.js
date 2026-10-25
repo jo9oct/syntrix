@@ -4,13 +4,14 @@
 import puppeteer from "puppeteer-core";
 
 import { createSecurityEvidence } from "../shared/evidenceBuilder.js";
-import { calculateConfidence } from "../shared/confidence.js";
-import { normalizeFinding } from "../shared/findingNormalizer.js";
 import {
   createSecurityScanner,
   getTargetUrl,
 } from "../shared/scannerContract.js";
 import { assertSafeUrl } from "../../recon/shared/resolver.js";
+import { safeUrl, classifyAuthUrl, discoverAuthLinks } from "./loginChecks.js";
+import { evaluateFormCredentialHandling } from "./credentialHandling.js";
+import { evaluateUncontainedPasswordInputs } from "./bypassChecks.js";
 
 const SCANNER_ID = "security.authentication";
 
@@ -18,12 +19,6 @@ const MAX_AUTH_PAGES = 6;
 const NAVIGATION_TIMEOUT_MS = 15000;
 const PAGE_RENDER_TIMEOUT_MS = 3000;
 const MAX_FINDINGS = 50;
-
-const LOGIN_PATTERN =
-  /(?:login|log-in|signin|sign-in|authenticate|auth)(?:\/|$|[?#])/i;
-
-const REGISTER_PATTERN =
-  /(?:register|sign-up|signup|create-account|registration)(?:\/|$|[?#])/i;
 
 const createCancellationError = () => {
   const error = new Error("Authentication scan cancelled.");
@@ -39,57 +34,6 @@ const throwIfCancelled = (signal) => {
 
 const getChromiumExecutablePath = () =>
   process.env.PUPPETEER_EXECUTABLE_PATH || "/usr/bin/chromium";
-
-function safeUrl(rawUrl, baseUrl) {
-  try {
-    const parsed = new URL(rawUrl, baseUrl);
-
-    if (
-      !["http:", "https:"].includes(parsed.protocol) ||
-      parsed.username ||
-      parsed.password
-    ) {
-      return null;
-    }
-
-    return parsed;
-  } catch {
-    return null;
-  }
-}
-
-function classifyAuthUrl(rawUrl) {
-  try {
-    const url = new URL(rawUrl);
-    const candidate = `${url.pathname} ${url.search}`;
-
-    if (REGISTER_PATTERN.test(candidate)) {
-      return "registration";
-    }
-
-    if (LOGIN_PATTERN.test(candidate)) {
-      return "login";
-    }
-
-    return null;
-  } catch {
-    return null;
-  }
-}
-
-function makeFinding({ title, description, severity, remediation }) {
-  return normalizeFinding({
-    scannerId: SCANNER_ID,
-    title,
-    description,
-    severity,
-    confidence: calculateConfidence({
-      confirmed: false,
-    }),
-    remediation,
-    category: "authentication",
-  });
-}
 
 function addFinding(findings, finding) {
   if (findings.length >= MAX_FINDINGS) {
@@ -362,126 +306,30 @@ const scanner = createSecurityScanner({
           // Evidence failures must not stop the scan.
         }
 
-        for (const link of rendered.links) {
-          if (visited.size + pending.size >= MAX_AUTH_PAGES) {
-            break;
-          }
+        // 1. Discover auth links on rendered page
+        discoverAuthLinks({
+          links: rendered.links,
+          targetOrigin: target.origin,
+          targetHref: target.href,
+          visited,
+          pending,
+          maxPages: MAX_AUTH_PAGES,
+        });
 
-          const linkUrl = safeUrl(link.url, target.href);
-
-          if (
-            !linkUrl ||
-            linkUrl.origin !== target.origin ||
-            visited.has(linkUrl.href) ||
-            pending.has(linkUrl.href)
-          ) {
-            continue;
-          }
-
-          const linkType = classifyAuthUrl(linkUrl.href);
-          const labelType = classifyAuthUrl(
-            `https://local.invalid/${link.text}`,
-          );
-
-          const authType = linkType || labelType;
-
-          if (authType) {
-            pending.set(linkUrl.href, authType);
-          }
-        }
-
+        // 2. Evaluate credential handling on rendered forms
         for (const form of rendered.forms) {
-          if (form.passwordInputs.length === 0) {
-            continue;
-          }
-
-          const formAction = form.action
-            ? safeUrl(form.action, parsedPageUrl.href)
-            : null;
-
-          const transportIsInsecure =
-            parsedPageUrl.protocol !== "https:" ||
-            !formAction ||
-            formAction.protocol !== "https:";
-
-          if (transportIsInsecure) {
-            addFinding(
-              findings,
-              makeFinding({
-                title: "Password Form Uses Insecure HTTP",
-                description:
-                  "A rendered password form is served over HTTP, has an invalid action, or submits over HTTP. Verify the form's intended destination; the scanner did not submit it.",
-                severity: "high",
-                remediation:
-                  "Serve authentication pages exclusively over HTTPS and ensure password forms submit only to trusted HTTPS endpoints. Configure HSTS where appropriate.",
-              }),
-            );
-          }
-
-          if (form.method === "get") {
-            addFinding(
-              findings,
-              makeFinding({
-                title: "Password Form Uses GET Method",
-                description:
-                  "A rendered password form uses GET, which may expose submitted values in URLs, browser history, or logs. The scanner did not submit the form.",
-                severity: "high",
-                remediation:
-                  "Use POST for password forms and protect authentication traffic with HTTPS.",
-              }),
-            );
-          }
-
-          if (!formAction) {
-            addFinding(
-              findings,
-              makeFinding({
-                title: "Password Form Has an Invalid Action",
-                description:
-                  "A rendered password form has an invalid or unresolved action URL. Review the form configuration.",
-                severity: "medium",
-                remediation:
-                  "Configure a valid, explicitly trusted HTTPS authentication destination.",
-              }),
-            );
-          }
-
-          for (const input of form.passwordInputs) {
-            if (input.autocomplete) {
-              continue;
-            }
-
-            addFinding(
-              findings,
-              makeFinding({
-                title: "Password Field Missing Autocomplete Guidance",
-                description:
-                  "A rendered password field does not declare an autocomplete value. This is a configuration observation, not proof of an authentication bypass.",
-                severity: "info",
-                remediation:
-                  'Set autocomplete="current-password" for login fields or autocomplete="new-password" for password-creation fields.',
-              }),
-            );
-          }
+          evaluateFormCredentialHandling({
+            form,
+            parsedPageUrl,
+            addFinding: (f) => addFinding(findings, f),
+          });
         }
 
-        for (const input of rendered.uncontainedPasswordInputs) {
-          if (input.autocomplete) {
-            continue;
-          }
-
-          addFinding(
-            findings,
-            makeFinding({
-              title: "Password Field Missing Autocomplete Guidance",
-              description:
-                "A rendered password field outside a native form does not declare an autocomplete value. This is a configuration observation, not proof of an authentication bypass.",
-              severity: "info",
-              remediation:
-                'Set autocomplete="current-password" for login fields or autocomplete="new-password" for password-creation fields.',
-            }),
-          );
-        }
+        // 3. Evaluate uncontained password inputs / bypass indicators
+        evaluateUncontainedPasswordInputs({
+          uncontainedInputs: rendered.uncontainedPasswordInputs,
+          addFinding: (f) => addFinding(findings, f),
+        });
       }
     } finally {
       if (browser) {

@@ -1,4 +1,3 @@
-
 /* STATUS: CREATED */
 
 import axios from "axios";
@@ -8,8 +7,7 @@ import {
   validateAndDeduplicateCandidates,
 } from "./subdomainValidation.js";
 
-const HACKERTARGET_URL =
-  "https://api.hackertarget.com/hostsearch/";
+const HACKERTARGET_URL = "https://api.hackertarget.com/hostsearch/";
 
 const REQUEST_TIMEOUT_MS = 12_000;
 const MAX_RESPONSE_BYTES = 512 * 1024;
@@ -38,11 +36,7 @@ const parseHostSearchResponse = (responseText) => {
     return [];
   }
 
-  if (
-    /^(error|invalid|api count limit|no records found)/i.test(
-      trimmed,
-    )
-  ) {
+  if (/^(error|invalid|api count limit|no records found)/i.test(trimmed)) {
     throw new Error(
       "The public hostname source returned an error or no usable data.",
     );
@@ -115,6 +109,4 @@ const discoverPublicSources = async ({
   });
 };
 
-export {
-  discoverPublicSources,
-};
+export { discoverPublicSources };

@@ -1,6 +1,7 @@
 /* STATUS: UPDATED */
 
 import { executeRequest } from "../../core/httpClient.js";
+import { isInScope } from "../../core/scope.js";
 import { createServiceFingerprint } from "../shared/fingerprint.js";
 import { runConcurrent } from "../../utils/concurrency.js";
 
@@ -114,6 +115,7 @@ const getPortUrl = (protocol, hostname, port) => {
 const classifyProbeError = (error) => {
   const code = String(error?.code ?? "").toUpperCase();
   const name = String(error?.name ?? "");
+  const message = String(error?.message ?? "").toLowerCase();
 
   if (code === "ECONNREFUSED" || code === "ERR_CONNECTION_REFUSED") {
     return "connection_refused";
@@ -122,9 +124,20 @@ const classifyProbeError = (error) => {
   if (
     code.includes("TIMEOUT") ||
     code === "ETIMEDOUT" ||
-    name === "TimeoutError"
+    code === "ECONNABORTED" ||
+    name === "TimeoutError" ||
+    message.includes("timeout")
   ) {
     return "timeout";
+  }
+
+  if (
+    code === "ECONNRESET" ||
+    code === "EPIPE" ||
+    code === "ERR_CONNECTION_RESET" ||
+    message.includes("hang up")
+  ) {
+    return "connection_reset";
   }
 
   if (code === "ENOTFOUND" || code === "EAI_AGAIN") {
@@ -135,7 +148,15 @@ const classifyProbeError = (error) => {
     return "tls_error";
   }
 
-  if (name === "AbortError" || code === "ABORT_ERR") {
+  if (code.startsWith("HPE_") || code === "ERR_BAD_RESPONSE") {
+    return "protocol_error";
+  }
+
+  if (
+    name === "AbortError" ||
+    code === "ABORT_ERR" ||
+    code === "ERR_CANCELED"
+  ) {
     return "aborted";
   }
 
@@ -145,7 +166,8 @@ const classifyProbeError = (error) => {
 const isAbortError = (error, signal) =>
   signal?.aborted === true ||
   error?.name === "AbortError" ||
-  error?.code === "ABORT_ERR";
+  error?.code === "ABORT_ERR" ||
+  error?.code === "ERR_CANCELED";
 
 const probePort = async ({ hostname, port, timeout, scope, signal }) => {
   const attempts = [];
@@ -222,13 +244,10 @@ const probePort = async ({ hostname, port, timeout, scope, signal }) => {
         outcome: reason,
       });
 
-      // Scope and authorization errors must not be disguised
-      // as ordinary connection failures.
+      // Authorization errors must not be disguised as ordinary connection failures
       if (
         reason === "request_error" &&
-        /scope|out.of.scope|not authorized|not authorised/i.test(
-          String(error?.message ?? ""),
-        )
+        /not authorized|not authorised/i.test(String(error?.message ?? ""))
       ) {
         throw error;
       }
@@ -253,12 +272,21 @@ const probePort = async ({ hostname, port, timeout, scope, signal }) => {
 };
 
 const scan = async (context) => {
-  if (!context?.target?.url) {
+  const rawUrl = context?.target?.url ?? context?.targetUrl;
+
+  if (!rawUrl) {
     throw new Error("Port scan requires a target URL.");
   }
 
-  const targetUrl = validateTargetUrl(context.target.url);
+  const targetUrl = validateTargetUrl(rawUrl);
   const hostname = targetUrl.hostname;
+
+  // Validate that the target host/URL itself is permitted by context.scope if provided
+  if (context?.scope && !isInScope(targetUrl.href, context.scope)) {
+    throw new Error(
+      `Target URL is outside the permitted scan scope: ${targetUrl.href}`,
+    );
+  }
 
   const configuredPorts =
     context.options?.portScan?.ports ?? context.options?.ports;
@@ -266,6 +294,22 @@ const scan = async (context) => {
   const ports = normalizePorts(configuredPorts);
 
   const timeout = normalizeTimeout(context.options?.portScan?.timeoutMs);
+
+  // Construct dedicated portScope for the authorized target host covering the ports being probed
+  const portScope = {
+    targetUrl: targetUrl.href,
+    targetOrigin: targetUrl.origin,
+    origin: targetUrl.origin,
+    mode: "saved-hostnames",
+    hostnames:
+      context?.scope?.mode === "saved-hostnames" &&
+      Array.isArray(context.scope.hostnames) &&
+      context.scope.hostnames.length > 0
+        ? context.scope.hostnames
+        : [hostname],
+    ports: Array.from(new Set([...ports, 80, 443])),
+    includeSubdomains: context?.scope?.includeSubdomains === true,
+  };
 
   const results = (
     await runConcurrent(
@@ -280,7 +324,7 @@ const scan = async (context) => {
           hostname,
           port,
           timeout,
-          scope: context.scope,
+          scope: portScope,
           signal: context.signal,
         });
       },
@@ -392,3 +436,5 @@ export {
   DEFAULT_PORTS,
   normalizePorts,
 };
+
+export default scanner;

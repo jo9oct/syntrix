@@ -1,5 +1,6 @@
-import React, { Component, type ErrorInfo, type ReactNode } from 'react';
-import { ShieldAlert, RotateCcw, Home } from 'lucide-react';
+import React, { Component, type ErrorInfo, type ReactNode } from "react";
+import { ShieldAlert, RotateCcw, Home } from "lucide-react";
+import { cookieStorage } from "../lib/cookieStorage";
 
 interface Props {
   children: ReactNode;
@@ -21,12 +22,14 @@ export class ErrorBoundary extends Component<Props, State> {
   }
 
   public componentDidCatch(error: Error, errorInfo: ErrorInfo) {
-    console.error('ErrorBoundary caught an error:', error, errorInfo);
+    console.error("ErrorBoundary caught an error:", error, errorInfo);
   }
 
   public handleReset = () => {
-    localStorage.removeItem('sentrix-auth');
-    window.location.href = '/';
+    cookieStorage.removeItem('sentrix-auth');
+    cookieStorage.removeItem("sentrix-auth");
+    localStorage.removeItem("sentrix-auth");
+    window.location.href = "/";
   };
 
   public render() {
@@ -39,7 +42,8 @@ export class ErrorBoundary extends Component<Props, State> {
             </div>
             <h2 className="text-xl font-bold mb-2">Something went wrong</h2>
             <p className="text-xs text-slate-400 mb-6 leading-relaxed">
-              An unexpected render error occurred. Resetting cached state will restore the platform interface.
+              An unexpected render error occurred. Resetting cached state will
+              restore the platform interface.
             </p>
             {this.state.error && (
               <pre className="p-3 mb-6 bg-black/60 rounded-xl text-left text-[11px] font-mono text-red-300 overflow-x-auto whitespace-pre-wrap max-h-32">

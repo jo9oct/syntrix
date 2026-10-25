@@ -4,21 +4,23 @@
 import { get } from "../../request/request.js";
 import { getAuthenticatedRequestOptions } from "../../request/authenticatedRequestOptions.js";
 import { createSecurityEvidence } from "../shared/evidenceBuilder.js";
-import { calculateConfidence } from "../shared/confidence.js";
-import { normalizeFinding } from "../shared/findingNormalizer.js";
 import {
   createSecurityScanner,
   getTargetUrl,
 } from "../shared/scannerContract.js";
 import { assertSafeUrl } from "../../recon/shared/resolver.js";
-
-const FILE_INPUT_PATTERN = /<input\b[^>]*type\s*=\s*["']?file["']?[^>]*>/gi;
+import {
+  FILE_INPUT_PATTERN,
+  evaluateFileTypeValidation,
+} from "./fileTypeChecks.js";
+import { evaluateFilenameHandling } from "./filenameChecks.js";
+import { evaluateUploadRestrictions } from "./restrictionChecks.js";
 
 const scanner = createSecurityScanner({
   id: "security.file-upload",
   name: "File Upload Security",
   description:
-    "Detects file-upload forms and checks for client-visible restrictions without submitting files.",
+    "Detects file-upload forms and evaluates file-type validation, filename handling, and upload restrictions without submitting files.",
 
   async run(context) {
     const targetUrl = getTargetUrl(context);
@@ -26,7 +28,6 @@ const scanner = createSecurityScanner({
     await assertSafeUrl(targetUrl);
 
     const requestHeaders = context?.session?.getHeaders?.() ?? {};
-
     const authenticatedRequestOptions = getAuthenticatedRequestOptions(context);
 
     const response = await get(targetUrl, {
@@ -39,36 +40,25 @@ const scanner = createSecurityScanner({
 
     const inputs = body.match(FILE_INPUT_PATTERN) ?? [];
 
-    const unrestricted = inputs.filter((input) => !/\baccept\s*=/i.test(input));
+    // 1. File type validation checks
+    const fileTypeRes = evaluateFileTypeValidation(inputs);
 
-    const findings = [];
+    // 2. Filename handling checks
+    const filenameRes = evaluateFilenameHandling(body);
 
-    if (unrestricted.length > 0) {
-      findings.push(
-        normalizeFinding({
-          scannerId: "security.file-upload",
-          title: "File Upload Input Without Client-Side Type Restriction",
-          description:
-            "A file upload input was identified without an HTML accept attribute. This is an informational observation only; it does not establish a server-side upload vulnerability.",
-          severity: "info",
-          confidence: calculateConfidence({
-            confirmed: false,
-          }),
-          remediation:
-            "Use an appropriate accept attribute for user experience, but enforce file type, size, content validation, storage isolation, and execution restrictions on the server.",
-          category: "file-upload",
-          metadata: {
-            uploadInputs: inputs.length,
-            inputsWithoutAccept: unrestricted.length,
-          },
-        }),
-      );
-    }
+    // 3. Upload restrictions checks
+    const restrictionRes = evaluateUploadRestrictions(body);
+
+    const findings = [
+      ...fileTypeRes.findings,
+      ...filenameRes.findings,
+      ...restrictionRes.findings,
+    ];
 
     return {
       data: {
         uploadInputs: inputs.length,
-        inputsWithoutAccept: unrestricted.length,
+        inputsWithoutAccept: fileTypeRes.unrestricted.length,
       },
       findings,
       evidence:

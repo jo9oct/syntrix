@@ -1,19 +1,15 @@
 // STATUS: UPDATED
 // File: src/scanners/commandInjection/scanner.js
 
-import { get } from "../../request/request.js";
-import { getAuthenticatedRequestOptions } from "../../request/authenticatedRequestOptions.js";
-import { createSecurityEvidence } from "../shared/evidenceBuilder.js";
-import { calculateConfidence } from "../shared/confidence.js";
-import { normalizeFinding } from "../shared/findingNormalizer.js";
 import {
   createSecurityScanner,
   getTargetUrl,
 } from "../shared/scannerContract.js";
-import { getParameters, setParameter } from "../shared/parameterTester.js";
-import { getSafeMarker } from "../shared/payloadManager.js";
+import { getParameters } from "../shared/parameterTester.js";
 import { assertSafeUrl } from "../../recon/shared/resolver.js";
 import { runConcurrent } from "../../utils/concurrency.js";
+import { checkErrorBasedCommandInjection } from "./errorBased.js";
+import { checkTimeBasedCommandInjection } from "./timeBased.js";
 
 const MAX_PARAMETERS = 5;
 
@@ -21,7 +17,7 @@ const scanner = createSecurityScanner({
   id: "security.command-injection",
   name: "Command Injection Surface",
   description:
-    "Performs a conservative command-injection surface assessment without executing commands.",
+    "Performs command-injection assessment using error-based and time-based detection techniques.",
 
   async run(context) {
     const targetUrl = getTargetUrl(context);
@@ -30,14 +26,11 @@ const scanner = createSecurityScanner({
 
     const parameters = getParameters(targetUrl);
     const testedParameters = parameters.slice(0, MAX_PARAMETERS);
-    const marker = `${getSafeMarker()}-command`;
 
     const findings = [];
     const evidence = [];
 
     const requestHeaders = context?.session?.getHeaders?.() ?? {};
-
-    const authenticatedRequestOptions = getAuthenticatedRequestOptions(context);
 
     await runConcurrent(
       testedParameters,
@@ -47,61 +40,32 @@ const scanner = createSecurityScanner({
           return;
         }
 
-        const testUrl = setParameter(targetUrl, parameter, marker);
-
-        await assertSafeUrl(testUrl);
-
-        const response = await get(testUrl, {
-          signal: context?.signal,
-          headers: requestHeaders,
-          ...authenticatedRequestOptions,
+        // 1. Error-based & reflected marker detection
+        const errorRes = await checkErrorBasedCommandInjection({
+          targetUrl,
+          parameter,
+          context,
+          requestHeaders,
         });
 
-        const body = typeof response.data === "string" ? response.data : "";
+        findings.push(...errorRes.findings);
+        evidence.push(...errorRes.evidence);
 
-        if (!body.includes(marker)) {
-          return;
-        }
-
-        findings.push(
-          normalizeFinding({
-            scannerId: "security.command-injection",
-            title: "Potential Command Processing Input Surface",
-            description: `A controlled marker was reflected in the response for parameter "${parameter}". Reflection alone does not confirm operating-system command execution or command injection.`,
-            severity: "medium",
-            confidence: calculateConfidence({
-              confirmed: false,
-            }),
-            remediation:
-              "Avoid shell interpretation of user input. Use safe process APIs, strict input validation, and allowlisted values where appropriate.",
-            category: "command-injection",
-            metadata: {
-              parameter,
-              detection: "reflected-marker",
-            },
-          }),
-        );
-
-        evidence.push(
-          createSecurityEvidence({
-            request: {
-              method: "GET",
-              url: testUrl,
-              headers: requestHeaders,
-            },
-            response: {
-              status: response.status,
-              statusText: response.statusText,
-              headers: response.headers,
-              body,
-            },
+        // 2. Time-based blind command injection check (if not already flagged as high/critical)
+        if (
+          !context?.signal?.aborted &&
+          !errorRes.findings.some((f) => f.severity === "critical")
+        ) {
+          const timeRes = await checkTimeBasedCommandInjection({
+            targetUrl,
             parameter,
-            payload: marker,
-            metadata: {
-              marker: "[REDACTED]",
-            },
-          }),
-        );
+            context,
+            requestHeaders,
+          });
+
+          findings.push(...timeRes.findings);
+          evidence.push(...timeRes.evidence);
+        }
       },
       context?.signal,
     );

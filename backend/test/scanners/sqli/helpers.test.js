@@ -1,4 +1,3 @@
-
 import test from "node:test";
 import assert from "node:assert/strict";
 
@@ -16,67 +15,45 @@ test("normalizes string response bodies", () => {
 });
 
 test("normalizes object response bodies", () => {
-  assert.equal(
-    normalizeBody({ message: "hello" }),
-    '{"message":"hello"}',
-  );
+  assert.equal(normalizeBody({ message: "hello" }), '{"message":"hello"}');
 });
 
 test("normalizes whitespace for comparison", () => {
-  assert.equal(
-    normalizeComparableBody("  hello\n\tworld  "),
-    "hello world",
-  );
+  assert.equal(normalizeComparableBody("  hello\n\tworld  "), "hello world");
 });
 
 test("normalizes changing timestamps", () => {
-  const first = normalizeComparableBody(
-    "Welcome. Time: 2026-10-19T10:00:00Z",
-  );
-  const second = normalizeComparableBody(
-    "Welcome. Time: 2026-10-19T10:00:01Z",
-  );
+  const first = normalizeComparableBody("Welcome. Time: 2026-10-19T10:00:00Z");
+  const second = normalizeComparableBody("Welcome. Time: 2026-10-19T10:00:01Z");
 
   assert.equal(first, second);
 });
 
 test("returns no SQL error signature for ordinary content", () => {
-  assert.equal(
-    getSqlErrorSignature("<html><body>Welcome</body></html>"),
-    null,
-  );
+  assert.equal(getSqlErrorSignature("<html><body>Welcome</body></html>"), null);
 });
 
 test("recognizes a PostgreSQL-style syntax error", () => {
   assert.notEqual(
-    getSqlErrorSignature(
-      'ERROR: syntax error at or near "SELECT"',
-    ),
+    getSqlErrorSignature('ERROR: syntax error at or near "SELECT"'),
     null,
   );
 });
 
 test("identifies a tentative PostgreSQL family hint", () => {
   assert.equal(
-    identifyDatabaseFamily(
-      'ERROR: syntax error at or near "SELECT"',
-    ),
+    identifyDatabaseFamily('ERROR: syntax error at or near "SELECT"'),
     "postgresql",
   );
 });
 
 test("does not identify a database from ordinary content", () => {
-  assert.equal(
-    identifyDatabaseFamily("Welcome to the store"),
-    null,
-  );
+  assert.equal(identifyDatabaseFamily("Welcome to the store"), null);
 });
 
 test("does not guess when database fingerprints are ambiguous", () => {
   assert.equal(
-    identifyDatabaseFamily(
-      "ORA-12345: Oracle error. SQLite error.",
-    ),
+    identifyDatabaseFamily("ORA-12345: Oracle error. SQLite error."),
     null,
   );
 });
@@ -103,11 +80,7 @@ test("does not flag identical Boolean responses", () => {
   };
 
   assert.equal(
-    isMeaningfulBooleanDifference(
-      baseline,
-      { ...baseline },
-      { ...baseline },
-    ),
+    isMeaningfulBooleanDifference(baseline, { ...baseline }, { ...baseline }),
     false,
   );
 });
@@ -165,11 +138,7 @@ test("does not flag small dynamic numeric changes", () => {
   };
 
   assert.equal(
-    isMeaningfulBooleanDifference(
-      baseline,
-      trueResponse,
-      falseResponse,
-    ),
+    isMeaningfulBooleanDifference(baseline, trueResponse, falseResponse),
     false,
   );
 });
@@ -188,11 +157,7 @@ test("detects a clear Boolean response difference against baseline", () => {
   };
 
   assert.equal(
-    isMeaningfulBooleanDifference(
-      baseline,
-      trueResponse,
-      falseResponse,
-    ),
+    isMeaningfulBooleanDifference(baseline, trueResponse, falseResponse),
     true,
   );
 });

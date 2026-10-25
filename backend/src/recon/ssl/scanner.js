@@ -1,14 +1,10 @@
-
 /* STATUS: UPDATED */
 
 import tls from "node:tls";
 import net from "node:net";
 
 import { createFingerprint } from "../shared/fingerprint.js";
-import {
-  createReconScanner,
-  getTargetUrl,
-} from "../shared/reconContract.js";
+import { createReconScanner, getTargetUrl } from "../shared/reconContract.js";
 import { assertSafeUrl } from "../shared/resolver.js";
 
 const DEFAULT_TIMEOUT_MS = 5000;
@@ -28,25 +24,18 @@ const createTimeoutError = () =>
 const getCertificate = (socket) => {
   const certificate = socket.getPeerCertificate();
 
-  if (
-    !certificate ||
-    Object.keys(certificate).length === 0
-  ) {
+  if (!certificate || Object.keys(certificate).length === 0) {
     return null;
   }
 
   return {
     subject: certificate.subject ?? null,
     issuer: certificate.issuer ?? null,
-    subjectAlternativeName:
-      certificate.subjectaltname ?? null,
+    subjectAlternativeName: certificate.subjectaltname ?? null,
     validFrom: certificate.valid_from ?? null,
     validTo: certificate.valid_to ?? null,
     serialNumber: certificate.serialNumber ?? null,
-    fingerprint:
-      certificate.fingerprint256 ??
-      certificate.fingerprint ??
-      null,
+    fingerprint: certificate.fingerprint256 ?? certificate.fingerprint ?? null,
     raw: certificate.raw ?? null,
   };
 };
@@ -58,10 +47,7 @@ const normalizeTimeout = (value) => {
     return DEFAULT_TIMEOUT_MS;
   }
 
-  return Math.min(
-    Math.max(parsed, MIN_TIMEOUT_MS),
-    MAX_TIMEOUT_MS,
-  );
+  return Math.min(Math.max(parsed, MIN_TIMEOUT_MS), MAX_TIMEOUT_MS);
 };
 
 const getCertificateStatus = (certificate, hostname) => {
@@ -86,36 +72,25 @@ const getCertificateStatus = (certificate, hostname) => {
     Number.isFinite(validTo) &&
     validFrom <= validTo;
 
-  const notYetValid =
-    Number.isFinite(validFrom) && now < validFrom;
+  const notYetValid = Number.isFinite(validFrom) && now < validFrom;
 
-  const expired =
-    Number.isFinite(validTo) && now > validTo;
+  const expired = Number.isFinite(validTo) && now > validTo;
 
-  const hostnameError = tls.checkServerIdentity(
-    hostname,
-    {
-      subject: certificate.subject,
-      subjectaltname: certificate.subjectAlternativeName,
-      raw: certificate.raw,
-      issuerCertificate: undefined,
-    },
-  );
+  const hostnameError = tls.checkServerIdentity(hostname, {
+    subject: certificate.subject,
+    subjectaltname: certificate.subjectAlternativeName,
+    raw: certificate.raw,
+    issuerCertificate: undefined,
+  });
 
   const hostnameMatches = !hostnameError;
 
   return {
     present: true,
     hostnameMatches,
-    currentlyValid:
-      validDates &&
-      !notYetValid &&
-      !expired &&
-      hostnameMatches,
+    currentlyValid: validDates && !notYetValid && !expired && hostnameMatches,
     expired: Number.isFinite(validTo) ? expired : null,
-    notYetValid: Number.isFinite(validFrom)
-      ? notYetValid
-      : null,
+    notYetValid: Number.isFinite(validFrom) ? notYetValid : null,
     daysUntilExpiry: Number.isFinite(validTo)
       ? Math.floor((validTo - now) / 86400000)
       : null,
@@ -124,13 +99,7 @@ const getCertificateStatus = (certificate, hostname) => {
   };
 };
 
-const connectTls = ({
-  address,
-  port,
-  hostname,
-  timeoutMs,
-  signal,
-}) =>
+const connectTls = ({ address, port, hostname, timeoutMs, signal }) =>
   new Promise((resolve, reject) => {
     let settled = false;
 
@@ -187,15 +156,12 @@ const connectTls = ({
       // internal addresses or implementation details.
       finish(
         reject,
-        Object.assign(
-          new Error("TLS connection could not be established."),
-          {
-            code:
-              typeof error?.code === "string"
-                ? error.code
-                : "TLS_CONNECTION_ERROR",
-          },
-        ),
+        Object.assign(new Error("TLS connection could not be established."), {
+          code:
+            typeof error?.code === "string"
+              ? error.code
+              : "TLS_CONNECTION_ERROR",
+        }),
       );
     };
 
@@ -206,8 +172,7 @@ const connectTls = ({
         protocol: socket.getProtocol() ?? null,
         cipher: socket.getCipher()?.name ?? null,
         authorized: socket.authorized,
-        authorizationError:
-          socket.authorizationError ?? null,
+        authorizationError: socket.authorizationError ?? null,
         certificate,
       });
     };
@@ -281,15 +246,31 @@ const scanner = createReconScanner({
       return cancelledResult();
     }
 
-    const port = parsedUrl.port
-      ? Number(parsedUrl.port)
-      : 443;
+    const port = parsedUrl.port ? Number(parsedUrl.port) : 443;
 
     if (!Number.isInteger(port) || port < 1 || port > 65535) {
       throw new Error("Invalid TLS target port.");
     }
 
-    const resolution = await assertSafeUrl(targetUrl);
+    let resolution;
+    try {
+      resolution = await assertSafeUrl(targetUrl);
+    } catch (error) {
+      return {
+        data: {
+          supported: false,
+          error: error?.message ?? "Target resolution failed.",
+        },
+        evidence: [],
+        fingerprints: [],
+        verificationRecords: [],
+        metadata: {
+          supported: false,
+          error: error?.message,
+          cancelled: false,
+        },
+      };
+    }
 
     if (context?.signal?.aborted) {
       return cancelledResult();
@@ -298,26 +279,59 @@ const scanner = createReconScanner({
     const addresses = resolution?.addresses;
 
     if (!Array.isArray(addresses) || addresses.length === 0) {
-      throw new Error(
-        "No safe address was available for TLS inspection.",
-      );
+      return {
+        data: {
+          supported: false,
+          error: "No safe address was available for TLS inspection.",
+        },
+        evidence: [],
+        fingerprints: [],
+        verificationRecords: [],
+        metadata: {
+          supported: false,
+          error: "No safe address available.",
+          cancelled: false,
+        },
+      };
     }
 
     // Pin the connection to an address returned by the safe resolver.
     // Keep the original hostname for SNI and certificate identity checks.
     const address = addresses[0];
 
-    const timeoutMs = normalizeTimeout(
-      context?.options?.tlsTimeoutMs,
-    );
+    const timeoutMs = normalizeTimeout(context?.options?.tlsTimeoutMs);
 
-    const tlsResult = await connectTls({
-      address,
-      port,
-      hostname: parsedUrl.hostname,
-      timeoutMs,
-      signal: context?.signal,
-    });
+    let tlsResult;
+    try {
+      tlsResult = await connectTls({
+        address,
+        port,
+        hostname: parsedUrl.hostname,
+        timeoutMs,
+        signal: context?.signal,
+      });
+    } catch (error) {
+      if (context?.signal?.aborted) {
+        return cancelledResult();
+      }
+
+      return {
+        data: {
+          supported: false,
+          error: error?.message ?? "TLS handshake failed",
+          code: error?.code,
+        },
+        evidence: [],
+        fingerprints: [],
+        verificationRecords: [],
+        metadata: {
+          supported: false,
+          error: error?.message ?? "TLS connection failed",
+          errorCode: error?.code,
+          cancelled: false,
+        },
+      };
+    }
 
     if (context?.signal?.aborted) {
       return cancelledResult();
@@ -338,14 +352,12 @@ const scanner = createReconScanner({
         protocol: tlsResult.protocol,
         cipher: tlsResult.cipher,
         authorized: tlsResult.authorized,
-        authorizationError:
-          tlsResult.authorizationError,
+        authorizationError: tlsResult.authorizationError,
         certificate: certificate
           ? {
               subject: certificate.subject,
               issuer: certificate.issuer,
-              subjectAlternativeName:
-                certificate.subjectAlternativeName,
+              subjectAlternativeName: certificate.subjectAlternativeName,
               validFrom: certificate.validFrom,
               validTo: certificate.validTo,
               serialNumber: certificate.serialNumber,
@@ -373,10 +385,8 @@ const scanner = createReconScanner({
             fingerprint: certificate.fingerprint,
             validFrom: certificate.validFrom,
             validTo: certificate.validTo,
-            hostnameMatches:
-              certificateStatus.hostnameMatches,
-            currentlyValid:
-              certificateStatus.currentlyValid,
+            hostnameMatches: certificateStatus.hostnameMatches,
+            currentlyValid: certificateStatus.currentlyValid,
           },
         }),
       );
@@ -390,14 +400,12 @@ const scanner = createReconScanner({
         protocol: tlsResult.protocol,
         cipher: tlsResult.cipher,
         authorized: tlsResult.authorized,
-        authorizationError:
-          tlsResult.authorizationError,
+        authorizationError: tlsResult.authorizationError,
         certificate: certificate
           ? {
               subject: certificate.subject,
               issuer: certificate.issuer,
-              subjectAlternativeName:
-                certificate.subjectAlternativeName,
+              subjectAlternativeName: certificate.subjectAlternativeName,
               validFrom: certificate.validFrom,
               validTo: certificate.validTo,
               serialNumber: certificate.serialNumber,
@@ -414,10 +422,8 @@ const scanner = createReconScanner({
       metadata: {
         timeoutMs,
         certificatePresent: Boolean(certificate),
-        hostnameMatches:
-          certificateStatus.hostnameMatches,
-        certificateCurrentlyValid:
-          certificateStatus.currentlyValid,
+        hostnameMatches: certificateStatus.hostnameMatches,
+        certificateCurrentlyValid: certificateStatus.currentlyValid,
         cancelled: false,
       },
     };

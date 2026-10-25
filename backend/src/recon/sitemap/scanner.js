@@ -1,23 +1,16 @@
-
 /* STATUS: UPDATED */
 
 import { get } from "../../request/request.js";
 
 import { createExchangeEvidence } from "../shared/evidence.js";
-import {
-  createReconScanner,
-  getTargetUrl,
-} from "../shared/reconContract.js";
+import { createReconScanner, getTargetUrl } from "../shared/reconContract.js";
 import { assertSafeUrl } from "../shared/resolver.js";
 
 const MAX_SITEMAP_URLS = 100;
 const MAX_SITEMAP_BYTES = 1024 * 1024;
 const MAX_LOCATION_LENGTH = 2048;
 
-const SITEMAP_PATHS = Object.freeze([
-  "/sitemap.xml",
-  "/sitemap_index.xml",
-]);
+const SITEMAP_PATHS = Object.freeze(["/sitemap.xml", "/sitemap_index.xml"]);
 
 const decodeXmlValue = (value) =>
   value
@@ -42,8 +35,7 @@ const extractLocations = (body, allowedOrigin) => {
     (match = pattern.exec(body)) !== null &&
     locations.size < MAX_SITEMAP_URLS
   ) {
-    const value = decodeXmlValue(match[1])
-      .slice(0, MAX_LOCATION_LENGTH);
+    const value = decodeXmlValue(match[1]).slice(0, MAX_LOCATION_LENGTH);
 
     if (!value) {
       continue;
@@ -152,32 +144,26 @@ const scanner = createReconScanner({
 
         const status = Number(response?.status);
 
-        if (
-          !Number.isInteger(status) ||
-          status < 100 ||
-          status > 599
-        ) {
+        if (!Number.isInteger(status) || status < 100 || status > 599) {
           discovered.push(createUnavailableResult(sitemapUrl));
           continue;
         }
 
         const successfulResponse = status >= 200 && status < 300;
-        const body = successfulResponse && typeof response.data === "string"
-          ? response.data
-          : null;
+        const body =
+          successfulResponse && typeof response.data === "string"
+            ? response.data
+            : null;
 
-        const bodyBytes = body === null
-          ? 0
-          : Buffer.byteLength(body, "utf8");
+        const bodyBytes = body === null ? 0 : Buffer.byteLength(body, "utf8");
 
         if (bodyBytes > MAX_SITEMAP_BYTES) {
           discovered.push(createUnavailableResult(sitemapUrl, status));
           continue;
         }
 
-        const locations = body === null
-          ? []
-          : extractLocations(body, baseUrl.origin);
+        const locations =
+          body === null ? [] : extractLocations(body, baseUrl.origin);
 
         discovered.push({
           url: sitemapUrl,
@@ -199,10 +185,7 @@ const scanner = createReconScanner({
               status,
               statusText: response?.statusText ?? null,
               headers: response?.headers ?? {},
-              contentType: getResponseHeader(
-                response?.headers,
-                "content-type",
-              ),
+              contentType: getResponseHeader(response?.headers, "content-type"),
               // Do not duplicate potentially large sitemap XML in evidence.
               body: null,
             },
@@ -226,9 +209,7 @@ const scanner = createReconScanner({
     }
 
     const discoveredUrls = [
-      ...new Set(
-        discovered.flatMap((sitemap) => sitemap.locations),
-      ),
+      ...new Set(discovered.flatMap((sitemap) => sitemap.locations)),
     ].slice(0, MAX_SITEMAP_URLS);
 
     return {
@@ -248,8 +229,7 @@ const scanner = createReconScanner({
         discoveredUrlCount: discoveredUrls.length,
         cancelled,
         sameOriginOnly: true,
-        note:
-          "Discovered URLs are candidates only. Revalidate scope and SSRF protections before crawling them.",
+        note: "Discovered URLs are candidates only. Revalidate scope and SSRF protections before crawling them.",
       },
     };
   },

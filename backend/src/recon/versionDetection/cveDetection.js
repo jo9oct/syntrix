@@ -1,4 +1,3 @@
-
 const NVD_API_URL = "https://services.nvd.nist.gov/rest/json/cves/2.0";
 
 const REQUEST_TIMEOUT_MS = 8_000;
@@ -60,10 +59,7 @@ const getCvss = (metrics = {}) => {
 const readJsonWithLimit = async (response) => {
   const declaredLength = Number(response.headers.get("content-length"));
 
-  if (
-    Number.isFinite(declaredLength) &&
-    declaredLength > MAX_RESPONSE_BYTES
-  ) {
+  if (Number.isFinite(declaredLength) && declaredLength > MAX_RESPONSE_BYTES) {
     throw new Error("NVD response exceeds the configured size limit.");
   }
 
@@ -111,10 +107,7 @@ const searchNvd = async (keyword) => {
   url.searchParams.set("resultsPerPage", String(MAX_CVES_PER_PRODUCT));
 
   const controller = new AbortController();
-  const timeout = setTimeout(
-    () => controller.abort(),
-    REQUEST_TIMEOUT_MS,
-  );
+  const timeout = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
 
   try {
     const headers = {
@@ -152,10 +145,7 @@ const searchNvd = async (keyword) => {
  * @param {Array<{name: string, version: string}>} versions
  * @param {{signal?: AbortSignal}} options
  */
-export const detectCveCandidates = async (
-  versions = [],
-  { signal } = {},
-) => {
+export const detectCveCandidates = async (versions = [], { signal } = {}) => {
   if (!Array.isArray(versions) || versions.length === 0) {
     return {
       candidates: [],
@@ -255,12 +245,11 @@ export const detectCveCandidates = async (
       errors.push({
         product: product.name,
         version: product.version,
-        message:
-          signal?.aborted
-            ? "CVE lookup cancelled."
-            : error.name === "AbortError"
-              ? "NVD request timed out."
-              : "NVD lookup failed.",
+        message: signal?.aborted
+          ? "CVE lookup cancelled."
+          : error.name === "AbortError"
+            ? "NVD request timed out."
+            : "NVD lookup failed.",
       });
 
       if (signal?.aborted) {

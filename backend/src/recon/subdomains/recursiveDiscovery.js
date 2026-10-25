@@ -1,4 +1,3 @@
-
 /* STATUS: CREATED */
 
 import {
@@ -105,13 +104,10 @@ const discoverRecursively = async ({
     return [];
   }
 
-  const knownHosts = validateAndDeduplicateCandidates(
-    discovered,
-    {
-      rootHostname: root,
-      maxCandidates: DEFAULT_MAX_CANDIDATES,
-    },
-  );
+  const knownHosts = validateAndDeduplicateCandidates(discovered, {
+    rootHostname: root,
+    maxCandidates: DEFAULT_MAX_CANDIDATES,
+  });
 
   const queue = knownHosts.map((entry) => ({
     hostname: entry.hostname,
@@ -121,10 +117,7 @@ const discoverRecursively = async ({
     ),
   }));
 
-  const seen = new Set([
-    root,
-    ...knownHosts.map((entry) => entry.hostname),
-  ]);
+  const seen = new Set([root, ...knownHosts.map((entry) => entry.hostname)]);
 
   const results = [];
 
@@ -174,7 +167,4 @@ const discoverRecursively = async ({
   });
 };
 
-export {
-  DEFAULT_LABELS,
-  discoverRecursively,
-};
+export { DEFAULT_LABELS, discoverRecursively };

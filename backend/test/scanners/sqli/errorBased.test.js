@@ -1,4 +1,3 @@
-
 /*
  * STATUS: CREATED
  * File: test/scanners/sqli/errorBased.test.js
@@ -20,12 +19,14 @@ const makeRequest = (responses) => {
     requestedUrls.push(url);
     const response = responses.shift();
 
-    return response ?? {
-      response: {
-        status: 200,
-        data: "<html><body>Product details</body></html>",
-      },
-    };
+    return (
+      response ?? {
+        response: {
+          status: 200,
+          data: "<html><body>Product details</body></html>",
+        },
+      }
+    );
   };
 
   return { request, requestedUrls };
@@ -33,8 +34,18 @@ const makeRequest = (responses) => {
 
 test("does not flag ordinary responses", async () => {
   const { request, requestedUrls } = makeRequest([
-    { response: { status: 200, data: "<html><body>Product details</body></html>" } },
-    { response: { status: 200, data: "<html><body>Product details</body></html>" } },
+    {
+      response: {
+        status: 200,
+        data: "<html><body>Product details</body></html>",
+      },
+    },
+    {
+      response: {
+        status: 200,
+        data: "<html><body>Product details</body></html>",
+      },
+    },
   ]);
 
   const result = await testErrorBased({
@@ -103,9 +114,7 @@ test("does not flag a matching SQL error already present in baseline", async () 
 });
 
 test("stops when the request layer reports a skipped request", async () => {
-  const { request, requestedUrls } = makeRequest([
-    { skipped: true },
-  ]);
+  const { request, requestedUrls } = makeRequest([{ skipped: true }]);
 
   const result = await testErrorBased({
     targetUrl: "https://example.com/product?id=1",

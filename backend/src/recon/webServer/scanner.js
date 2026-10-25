@@ -1,14 +1,10 @@
-
 /* STATUS: UPDATED */
 
 import { get } from "../../request/request.js";
 
 import { createExchangeEvidence } from "../shared/evidence.js";
 import { createServiceFingerprint } from "../shared/fingerprint.js";
-import {
-  createReconScanner,
-  getTargetUrl,
-} from "../shared/reconContract.js";
+import { createReconScanner, getTargetUrl } from "../shared/reconContract.js";
 import { assertSafeUrl } from "../shared/resolver.js";
 
 const MAX_HEADER_LENGTH = 2048;
@@ -51,9 +47,7 @@ const getHeader = (headers, name) => {
 
   const value = normalizeHeaderValue(entry[1]);
 
-  return value
-    ? value.trim().slice(0, MAX_HEADER_LENGTH) || null
-    : null;
+  return value ? value.trim().slice(0, MAX_HEADER_LENGTH) || null : null;
 };
 
 const sanitizeHeaders = (headers) => {
@@ -75,18 +69,10 @@ const sanitizeHeaders = (headers) => {
 };
 
 const normalizeStatus = (response) => {
-  const status = Number(
-    response?.status ?? response?.statusCode,
-  );
+  const status = Number(response?.status ?? response?.statusCode);
 
-  if (
-    !Number.isInteger(status) ||
-    status < 100 ||
-    status > 599
-  ) {
-    throw new Error(
-      "Web server detection received an invalid HTTP status.",
-    );
+  if (!Number.isInteger(status) || status < 100 || status > 599) {
+    throw new Error("Web server detection received an invalid HTTP status.");
   }
 
   return status;
@@ -142,15 +128,44 @@ const scanner = createReconScanner({
         ? 443
         : 80;
 
-    const requestHeaders =
-      context?.session?.getHeaders?.() ?? {};
+    const requestHeaders = context?.session?.getHeaders?.() ?? {};
 
-    const response = await get(targetUrl, {
-      signal: context?.signal,
-      scope: context?.scope,
-      headers: requestHeaders,
-      maxRedirects: 0,
-    });
+    let response;
+    try {
+      response = await get(targetUrl, {
+        signal: context?.signal,
+        scope: context?.scope,
+        headers: requestHeaders,
+        maxRedirects: 0,
+      });
+    } catch (error) {
+      if (context?.signal?.aborted) {
+        return cancelledResult();
+      }
+
+      return {
+        data: {
+          server: null,
+          poweredBy: null,
+          protocol,
+          status: null,
+          contentType: null,
+        },
+        evidence: [],
+        fingerprints: [],
+        verificationRecords: [],
+        metadata: {
+          serverDetected: false,
+          poweredByDetected: false,
+          port,
+          detectionMethod: "http-response-headers",
+          identityVerified: false,
+          reachable: false,
+          error: error?.message ?? "Request failed",
+          cancelled: false,
+        },
+      };
+    }
 
     if (context?.signal?.aborted) {
       return cancelledResult();
@@ -158,22 +173,18 @@ const scanner = createReconScanner({
 
     const responseHeaders = response?.headers ?? {};
 
-    const status = normalizeStatus(response);
+    let status;
+    try {
+      status = normalizeStatus(response);
+    } catch {
+      status = null;
+    }
 
-    const server = getHeader(
-      responseHeaders,
-      "server",
-    );
+    const server = getHeader(responseHeaders, "server");
 
-    const poweredBy = getHeader(
-      responseHeaders,
-      "x-powered-by",
-    );
+    const poweredBy = getHeader(responseHeaders, "x-powered-by");
 
-    const contentType = getHeader(
-      responseHeaders,
-      "content-type",
-    );
+    const contentType = getHeader(responseHeaders, "content-type");
 
     const fingerprints = [];
 
@@ -249,8 +260,7 @@ const scanner = createReconScanner({
         detectionMethod: "http-response-headers",
         identityVerified: false,
         cancelled: false,
-        note:
-          "Server headers are self-reported response values and may be absent, modified, or spoofed.",
+        note: "Server headers are self-reported response values and may be absent, modified, or spoofed.",
       },
     };
   },

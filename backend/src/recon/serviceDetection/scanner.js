@@ -1,14 +1,10 @@
-
 /* STATUS: UPDATED */
 
 import { get } from "../../request/request.js";
 
 import { createExchangeEvidence } from "../shared/evidence.js";
 import { createServiceFingerprint } from "../shared/fingerprint.js";
-import {
-  createReconScanner,
-  getTargetUrl,
-} from "../shared/reconContract.js";
+import { createReconScanner, getTargetUrl } from "../shared/reconContract.js";
 import { assertSafeUrl } from "../shared/resolver.js";
 
 const MAX_TITLE_LENGTH = 500;
@@ -41,13 +37,10 @@ const getHeader = (headers, name) => {
   }
 
   const key = Object.keys(headers).find(
-    (candidate) =>
-      candidate.toLowerCase() === name.toLowerCase(),
+    (candidate) => candidate.toLowerCase() === name.toLowerCase(),
   );
 
-  return key
-    ? normalizeHeaderValue(headers[key])
-    : null;
+  return key ? normalizeHeaderValue(headers[key]) : null;
 };
 
 const sanitizeHeaders = (headers) => {
@@ -77,9 +70,7 @@ const extractTitle = (body) => {
     return null;
   }
 
-  const match = body.match(
-    /<title\b[^>]*>([\s\S]*?)<\/title\s*>/i,
-  );
+  const match = body.match(/<title\b[^>]*>([\s\S]*?)<\/title\s*>/i);
 
   if (!match) {
     return null;
@@ -90,21 +81,13 @@ const extractTitle = (body) => {
     .replace(/\s+/g, " ")
     .trim();
 
-  return title
-    ? title.slice(0, MAX_TITLE_LENGTH)
-    : null;
+  return title ? title.slice(0, MAX_TITLE_LENGTH) : null;
 };
 
 const normalizeStatus = (response) => {
-  const value = Number(
-    response?.status ?? response?.statusCode,
-  );
+  const value = Number(response?.status ?? response?.statusCode);
 
-  return Number.isInteger(value) &&
-    value >= 100 &&
-    value <= 599
-    ? value
-    : null;
+  return Number.isInteger(value) && value >= 100 && value <= 599 ? value : null;
 };
 
 const normalizeBody = (response) => {
@@ -119,20 +102,32 @@ const getServiceDetails = (url) => {
   const protocol = parsed.protocol.slice(0, -1);
 
   if (protocol !== "http" && protocol !== "https") {
-    throw new Error(
-      "Service detection supports HTTP and HTTPS targets only.",
-    );
+    throw new Error("Service detection supports HTTP and HTTPS targets only.");
   }
 
   return {
     protocol,
     service: protocol,
     hostname: parsed.hostname,
-    port: Number(
-      parsed.port || (protocol === "https" ? 443 : 80),
-    ),
+    port: Number(parsed.port || (protocol === "https" ? 443 : 80)),
   };
 };
+
+const cancelledResult = (serviceDetails = {}) => ({
+  data: {
+    hostname: serviceDetails.hostname ?? null,
+    port: serviceDetails.port ?? null,
+    protocol: serviceDetails.protocol ?? null,
+    service: serviceDetails.service ?? null,
+    status: null,
+    cancelled: true,
+  },
+  evidence: [],
+  fingerprints: [],
+  metadata: {
+    cancelled: true,
+  },
+});
 
 const scanner = createReconScanner({
   id: "recon.service-detection",
@@ -144,79 +139,98 @@ const scanner = createReconScanner({
 
   async run(context) {
     if (context?.signal?.aborted) {
-      return {
-        data: {
-          cancelled: true,
-        },
-        evidence: [],
-        fingerprints: [],
-      };
+      return cancelledResult();
     }
 
     const targetUrl = getTargetUrl(context);
-
     const serviceDetails = getServiceDetails(targetUrl);
 
     await assertSafeUrl(targetUrl);
 
-    const sessionHeaders =
-      context?.session?.getHeaders?.() ?? {};
-
-    const response = await get(targetUrl, {
-      signal: context?.signal,
-      scope: context?.scope,
-      headers: sessionHeaders,
-      maxRedirects: 0,
-    });
-
     if (context?.signal?.aborted) {
+      return cancelledResult(serviceDetails);
+    }
+
+    const sessionHeaders = context?.session?.getHeaders?.() ?? {};
+
+    let response;
+    try {
+      response = await get(targetUrl, {
+        signal: context?.signal,
+        scope: context?.scope,
+        headers: sessionHeaders,
+        maxRedirects: 0,
+      });
+    } catch (error) {
+      if (context?.signal?.aborted) {
+        return cancelledResult(serviceDetails);
+      }
+
+      // Gracefully handle unreachable host, connection refusal, or timeouts
       return {
         data: {
-          cancelled: true,
+          hostname: serviceDetails.hostname,
+          port: serviceDetails.port,
+          protocol: serviceDetails.protocol,
+          service: serviceDetails.service,
+          status: null,
+          statusText: null,
+          server: null,
+          poweredBy: null,
+          version: null,
+          contentType: null,
+          title: null,
         },
         evidence: [],
         fingerprints: [],
+        metadata: {
+          reachable: false,
+          error: error?.message ?? "Service connection failed",
+          errorCode: error?.code ?? "CONNECTION_FAILED",
+          cancelled: false,
+        },
       };
+    }
+
+    if (context?.signal?.aborted) {
+      return cancelledResult(serviceDetails);
     }
 
     const status = normalizeStatus(response);
 
     if (status === null) {
-      throw new Error(
-        "Service detection received an invalid HTTP response status.",
-      );
+      return {
+        data: {
+          hostname: serviceDetails.hostname,
+          port: serviceDetails.port,
+          protocol: serviceDetails.protocol,
+          service: serviceDetails.service,
+          status: null,
+          error: "Invalid HTTP response status received.",
+        },
+        evidence: [],
+        fingerprints: [],
+        metadata: {
+          reachable: false,
+          resolutionStatus: "invalid_response",
+          cancelled: false,
+        },
+      };
     }
 
     const responseHeaders = response?.headers ?? {};
-
-    const server = getHeader(
-      responseHeaders,
-      "server",
-    );
-
-    const poweredBy = getHeader(
-      responseHeaders,
-      "x-powered-by",
-    );
-
-    const contentType = getHeader(
-      responseHeaders,
-      "content-type",
-    );
-
+    const server = getHeader(responseHeaders, "server");
+    const poweredBy = getHeader(responseHeaders, "x-powered-by");
+    const contentType = getHeader(responseHeaders, "content-type");
     const body = normalizeBody(response);
 
     const title =
       contentType?.toLowerCase().includes("html") ||
-      /^\s*(?:<!doctype\s+html|<html\b)/i.test(
-        body ?? "",
-      )
+      /^\s*(?:<!doctype\s+html|<html\b)/i.test(body ?? "")
         ? extractTitle(body)
         : null;
 
-    const safeResponseHeaders = sanitizeHeaders(
-      responseHeaders,
-    );
+    const safeResponseHeaders = sanitizeHeaders(responseHeaders);
 
     const evidence = [
       createExchangeEvidence({
@@ -270,8 +284,17 @@ const scanner = createReconScanner({
       evidence,
 
       fingerprints: [fingerprint],
+
+      metadata: {
+        reachable: true,
+        statusCode: status,
+        serverDetected: Boolean(server),
+        titleDetected: Boolean(title),
+        cancelled: false,
+      },
     };
   },
 });
 
 export default scanner;
+export { scanner, getServiceDetails };
