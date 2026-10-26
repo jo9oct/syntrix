@@ -1,4 +1,4 @@
-﻿// STATUS: UPDATED
+// STATUS: UPDATED
 // File: src/reports/reportService.js
 
 import * as reportRepository from "../database/repositories/report.repository.js";
@@ -7,6 +7,7 @@ import * as targetRepository from "../database/repositories/target.repository.js
 import * as findingRepository from "../database/repositories/finding.repository.js";
 import * as evidenceRepository from "../database/repositories/evidence.repository.js";
 import * as fingerprintRepository from "../database/repositories/fingerprint.repository.js";
+import * as aiAnalysisRepository from "../database/repositories/aiAnalysis.repository.js";
 
 import { buildReport, SUPPORTED_FORMATS } from "./reportBuilder.js";
 
@@ -137,7 +138,7 @@ const generateReport = async ({
   }
 
   // Repositories enforce owner and scan scope.
-  const [findings, evidence, fingerprints] = await Promise.all([
+  const [findings, evidence, fingerprints, fetchedAiAnalysis] = await Promise.all([
     findingRepository.listByScan(ownerId, scanId, {
       limit: 1000,
       skip: 0,
@@ -150,7 +151,13 @@ const generateReport = async ({
       limit: 1000,
       skip: 0,
     }),
+    aiAnalysis
+      ? Promise.resolve(aiAnalysis)
+      : aiAnalysisRepository.findByScanId(ownerId, scanId).catch(() => null),
   ]);
+
+  const effectiveAiAnalysis =
+    aiAnalysis || (fetchedAiAnalysis?.length ? fetchedAiAnalysis : null);
 
   const normalizedScan = {
     ...scan,
@@ -184,7 +191,7 @@ const generateReport = async ({
     evidence,
     fingerprints,
     risk,
-    aiAnalysis,
+    aiAnalysis: effectiveAiAnalysis,
     companyRuleAnalysis: normalizedScan.companyRuleAnalysis,
     generatedAt,
   });

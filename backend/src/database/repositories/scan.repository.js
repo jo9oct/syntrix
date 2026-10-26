@@ -143,7 +143,7 @@ const getTransitionRule = (nextStatus) => {
 
     case "running":
       return {
-        allowedFrom: ["pending"],
+        allowedFrom: ["pending", "running"],
         reason: "scan_started",
         type: "worker",
       };

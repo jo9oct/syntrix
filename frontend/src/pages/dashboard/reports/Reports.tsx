@@ -36,6 +36,7 @@ export const Reports: React.FC = () => {
 
   const [loadingTargets, setLoadingTargets] = useState(true);
   const [loadingReports, setLoadingReports] = useState(false);
+  const [isRefreshing, setIsRefreshing] = useState(false);
   const [generatingFormat, setGeneratingFormat] = useState<ReportFormat | null>(null);
   const [actionMessage, setActionMessage] = useState<string | null>(null);
 
@@ -122,6 +123,100 @@ export const Reports: React.FC = () => {
     fetchTargetsAndScans();
   }, []);
 
+  // Modular scan loader for target
+  const fetchScansForTarget = async (target: Target, preferredScanId?: string) => {
+    try {
+      let scans: Scan[] = [];
+      if (/^[0-9a-fA-F]{24}$/.test(target._id)) {
+        try {
+          const histRes = await api.get(`/targets/${target._id}/scans`);
+          if (histRes.data?.data?.scans) {
+            scans = histRes.data.data.scans;
+          }
+        } catch {
+          // fallback
+        }
+      }
+
+      if (scans.length === 0) {
+        const allRes = await api.get('/scans');
+        const allScans: Scan[] = allRes.data?.data?.scans || [];
+        scans = allScans.filter(
+          s => s.targetId === target._id ||
+               (s.targetUrl && s.targetUrl.includes(target.hostname))
+        );
+        if (scans.length === 0 && allScans.length > 0) {
+          scans = allScans;
+        }
+      }
+
+      setTargetScans(scans);
+
+      let active = scans[0] || null;
+      const scanToSelect = preferredScanId || urlScanId;
+      if (scanToSelect) {
+        const match = scans.find(s => s._id === scanToSelect);
+        if (match) active = match;
+      }
+      setSelectedScan(active);
+      return { scans, activeScan: active };
+    } catch (err) {
+      console.error('Failed to load target scans', err);
+      return { scans: [], activeScan: null };
+    }
+  };
+
+  // Modular reports loader for scan
+  const fetchReportsForScan = async (scanId?: string) => {
+    const targetScanId = scanId || selectedScan?._id;
+    if (!targetScanId) {
+      setReportsByFormat({});
+      return;
+    }
+
+    setLoadingReports(true);
+    try {
+      const res = await api.get(`/reports?scanId=${targetScanId}`);
+      const reportsData = res.data?.data?.reports;
+
+      if (reportsData) {
+        if (Array.isArray(reportsData)) {
+          const map: { [key: string]: Report } = {};
+          reportsData.forEach((r: Report) => {
+            if (r.format) map[r.format] = r;
+          });
+          setReportsByFormat(map);
+        } else {
+          setReportsByFormat(reportsData);
+        }
+      } else {
+        setReportsByFormat({});
+      }
+    } catch {
+      setReportsByFormat({});
+    } finally {
+      setLoadingReports(false);
+    }
+  };
+
+  // On-demand refresh for reports detail view without page reload
+  const handleRefreshDetails = async () => {
+    if (!selectedTarget) return;
+    setIsRefreshing(true);
+    try {
+      const { activeScan } = await fetchScansForTarget(selectedTarget, selectedScan?._id);
+      if (activeScan) {
+        await fetchReportsForScan(activeScan._id);
+      }
+      setActionMessage("Report deliverables and scan details refreshed successfully.");
+      setTimeout(() => setActionMessage(null), 3500);
+    } catch (err) {
+      console.error("Failed to refresh details", err);
+    } finally {
+      setIsRefreshing(false);
+    }
+  };
+
   // 2. When selectedTarget changes, load its scans
   useEffect(() => {
     if (!selectedTarget) {
@@ -130,87 +225,17 @@ export const Reports: React.FC = () => {
       setReportsByFormat({});
       return;
     }
-
-    const fetchScansForTarget = async () => {
-      try {
-        let scans: Scan[] = [];
-        // API 6: GET /api/v1/targets/:targetId/scans (if 24-hex mongo id)
-        if (/^[0-9a-fA-F]{24}$/.test(selectedTarget._id)) {
-          try {
-            const histRes = await api.get(`/targets/${selectedTarget._id}/scans`);
-            if (histRes.data?.data?.scans) {
-              scans = histRes.data.data.scans;
-            }
-          } catch (e) {
-            // fallback to general scans
-          }
-        }
-
-        if (scans.length === 0) {
-          const allRes = await api.get('/scans');
-          const allScans: Scan[] = allRes.data?.data?.scans || [];
-          scans = allScans.filter(
-            s => s.targetId === selectedTarget._id ||
-                 (s.targetUrl && s.targetUrl.includes(selectedTarget.hostname))
-          );
-          if (scans.length === 0 && allScans.length > 0) {
-            scans = allScans;
-          }
-        }
-
-        setTargetScans(scans);
-
-        // Preselect active scan
-        let active = scans[0] || null;
-        if (urlScanId) {
-          const match = scans.find(s => s._id === urlScanId);
-          if (match) active = match;
-        }
-        setSelectedScan(active);
-      } catch (err) {
-        console.error('Failed to load target scans', err);
-      }
-    };
-
-    fetchScansForTarget();
+    fetchScansForTarget(selectedTarget);
   }, [selectedTarget]);
 
   // 3. When selectedScan changes, load reports for this scan
   useEffect(() => {
-    if (!selectedScan) {
+    if (!selectedScan?._id) {
       setReportsByFormat({});
       return;
     }
-
-    const fetchReportsForScan = async () => {
-      setLoadingReports(true);
-      try {
-        // API 11: GET /api/v1/reports?scanId=:scanId
-        const res = await api.get(`/reports?scanId=${selectedScan._id}`);
-        const reportsData = res.data?.data?.reports;
-
-        if (reportsData) {
-          if (Array.isArray(reportsData)) {
-            const map: { [key: string]: Report } = {};
-            reportsData.forEach((r: Report) => {
-              if (r.format) map[r.format] = r;
-            });
-            setReportsByFormat(map);
-          } else {
-            setReportsByFormat(reportsData);
-          }
-        } else {
-          setReportsByFormat({});
-        }
-      } catch (err) {
-        setReportsByFormat({});
-      } finally {
-        setLoadingReports(false);
-      }
-    };
-
-    fetchReportsForScan();
-  }, [selectedScan]);
+    fetchReportsForScan(selectedScan._id);
+  }, [selectedScan?._id]);
 
   // View Report in another tab using storageUrl
   const handleViewReport = (report: Report) => {
@@ -388,6 +413,18 @@ export const Reports: React.FC = () => {
         </div>
 
         <div className="flex items-center gap-3">
+          {selectedTarget && (
+            <button
+              onClick={handleRefreshDetails}
+              disabled={isRefreshing || loadingReports}
+              className="px-3 py-1.5 rounded-xl bg-white/5 hover:bg-white/10 border border-white/10 text-xs font-semibold text-white flex items-center gap-1.5 transition-all disabled:opacity-50 shadow-sm"
+              title="Refresh reports and audit versions without reloading the page"
+            >
+              <RefreshCw size={13} className={isRefreshing || loadingReports ? "animate-spin text-brand-cyan" : ""} />
+              <span>{isRefreshing || loadingReports ? "Refreshing..." : "Refresh"}</span>
+            </button>
+          )}
+
           {(user?.role === 'client_owner' || user?.role === 'client_member') && (
             <span className={`px-3 py-1 rounded-full text-xs font-bold uppercase tracking-wider ${
               userTier === 'enterprise'
@@ -545,6 +582,16 @@ export const Reports: React.FC = () => {
                       );
                     })}
                   </select>
+
+                  <button
+                    onClick={handleRefreshDetails}
+                    disabled={isRefreshing || loadingReports}
+                    className="px-2.5 py-2 rounded-xl bg-white/5 hover:bg-white/10 text-white border border-white/10 text-xs font-semibold flex items-center gap-1.5 transition-all disabled:opacity-50 shadow-sm"
+                    title="Refresh reports and scan version details without reloading page"
+                  >
+                    <RefreshCw size={13} className={isRefreshing || loadingReports ? "animate-spin text-brand-cyan" : ""} />
+                    <span>{isRefreshing || loadingReports ? "Refreshing..." : "Refresh"}</span>
+                  </button>
                 </div>
               )}
             </div>
@@ -588,16 +635,27 @@ export const Reports: React.FC = () => {
 
           {/* DELIVERABLE REPORTS FOR EACH FORMAT (PDF, HTML, JSON) */}
           <div className="space-y-4">
-            <div className="flex items-center justify-between">
+            <div className="flex flex-wrap items-center justify-between gap-2">
               <h3 className="text-xs font-bold text-white uppercase tracking-wider flex items-center gap-2">
                 <FileText size={14} className="text-brand-cyan" />
                 Compliance Deliverables & Artifacts
               </h3>
-              {loadingReports && (
-                <span className="text-[11px] text-text-muted flex items-center gap-1 font-mono">
-                  <RefreshCw size={11} className="animate-spin text-brand-cyan" /> Checking storage records...
-                </span>
-              )}
+              <div className="flex items-center gap-2.5">
+                <button
+                  onClick={handleRefreshDetails}
+                  disabled={isRefreshing || loadingReports}
+                  className="px-2.5 py-1 rounded-lg bg-brand-cyan/10 hover:bg-brand-cyan/20 text-brand-cyan border border-brand-cyan/30 text-xs font-semibold flex items-center gap-1.5 transition-all disabled:opacity-50"
+                  title="Check for newly generated report deliverables without reloading page"
+                >
+                  <RefreshCw size={12} className={isRefreshing || loadingReports ? "animate-spin" : ""} />
+                  <span>{isRefreshing || loadingReports ? "Refreshing..." : "Refresh Deliverables"}</span>
+                </button>
+                {loadingReports && (
+                  <span className="text-[11px] text-text-muted flex items-center gap-1 font-mono">
+                    Checking storage records...
+                  </span>
+                )}
+              </div>
             </div>
 
             {selectedScan && selectedScan.status !== 'completed' && (

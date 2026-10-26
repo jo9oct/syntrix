@@ -10,10 +10,11 @@ import {
   ShieldCheck, AlertTriangle, ArrowRight, FileText,
   RotateCcw, Download, CheckCircle2, Bug, ArrowLeft, X,
   Trash2, Layers, Search, Eye, ExternalLink, Globe, Database,
-  RefreshCw, Check, Sparkles, Sliders, Plus, Clock
+  RefreshCw, Check, Sparkles, Sliders, Plus, Clock, Lock
 } from 'lucide-react';
 import { useParams, useNavigate, Link } from 'react-router-dom';
 import { useUserTier } from '../../../store/authStore';
+import { AiRecommendationCard } from '../../../components/ui/AiRecommendationCard';
 
 export const ScanResults: React.FC = () => {
   const { id } = useParams<{ id: string }>();
@@ -40,6 +41,45 @@ export const ScanResults: React.FC = () => {
   // Search in findings & evidence
   const [findingSearch, setFindingSearch] = useState('');
   const [findingSeverityFilter, setFindingSeverityFilter] = useState('all');
+  const [batchAiLoading, setBatchAiLoading] = useState(false);
+  const [batchAiMessage, setBatchAiMessage] = useState<string | null>(null);
+
+  const handleBatchAiAnalysis = async () => {
+    if (isFree) {
+      setBatchAiMessage('AI Security Advisory is exclusive to Pro and Enterprise tiers. Please upgrade your subscription.');
+      navigate('/dashboard/billing');
+      return;
+    }
+    if (!id) return;
+    setBatchAiLoading(true);
+    setBatchAiMessage(null);
+    try {
+      const res = await api.post(`/ai-analysis/scans/${id}/analyze`);
+      const analyses = res.data?.data?.analyses || [];
+      const analysesMap = new Map();
+      analyses.forEach((a: any) => {
+        if (a.findingId) {
+          analysesMap.set(String(a.findingId), a.result || a.analysis || a);
+        }
+      });
+      setFindings(prev =>
+        prev.map(f => {
+          const matched = analysesMap.get(String(f._id));
+          if (matched) {
+            return { ...f, aiAnalysis: matched };
+          }
+          return f;
+        })
+      );
+      setBatchAiMessage(`Successfully completed AI advisory analysis for ${analyses.length} findings.`);
+      setTimeout(() => setBatchAiMessage(null), 4000);
+    } catch (err: any) {
+      setBatchAiMessage(err.response?.data?.error || err.response?.data?.message || 'Failed to complete batch AI analysis.');
+      setTimeout(() => setBatchAiMessage(null), 4000);
+    } finally {
+      setBatchAiLoading(false);
+    }
+  };
 
   const fetchScanResults = async () => {
     if (!id) return;
@@ -64,6 +104,30 @@ export const ScanResults: React.FC = () => {
         }
       } catch (e) {
         console.error('Failed to get findings', e);
+      }
+
+      // 2.1 Fetch AI Analysis for Scan
+      try {
+        const aiRes = await api.get(`/ai-analysis/scans/${id}`);
+        if (aiRes.data?.data?.analyses) {
+          const analysesMap = new Map();
+          aiRes.data.data.analyses.forEach((a: any) => {
+            if (a.findingId) {
+              analysesMap.set(String(a.findingId), a.result || a.analysis || a);
+            }
+          });
+          setFindings(prev =>
+            prev.map(f => {
+              const matched = analysesMap.get(String(f._id));
+              if (matched && !f.aiAnalysis) {
+                return { ...f, aiAnalysis: matched };
+              }
+              return f;
+            })
+          );
+        }
+      } catch {
+        // AI analysis optional
       }
 
       // 3. API 7: Get Evidence by Scan ID
@@ -634,7 +698,44 @@ export const ScanResults: React.FC = () => {
               <option value="low">Low</option>
               <option value="info">Info</option>
             </select>
+
+            {findings.length > 0 && (
+              <button
+                onClick={handleBatchAiAnalysis}
+                disabled={batchAiLoading}
+                className={
+                  isFree
+                    ? "ml-auto px-3.5 py-2 rounded-xl bg-amber-500/15 hover:bg-amber-500/25 text-amber-300 border border-amber-500/30 text-xs font-semibold flex items-center gap-1.5 transition-all shadow-sm"
+                    : "ml-auto px-3.5 py-2 rounded-xl bg-gradient-to-r from-brand-cyan/20 to-brand-primary/20 hover:from-brand-cyan/30 hover:to-brand-primary/30 text-brand-cyan border border-brand-cyan/30 text-xs font-semibold flex items-center gap-1.5 transition-all shadow-sm disabled:opacity-50"
+                }
+                title={
+                  isFree
+                    ? "AI Security Advisory is exclusive to Pro and Enterprise tiers"
+                    : "Run AI advisory analysis on all detected findings"
+                }
+              >
+                {isFree ? (
+                  <Lock size={13} className="text-amber-400" />
+                ) : (
+                  <Sparkles size={13} className={batchAiLoading ? 'animate-spin' : ''} />
+                )}
+                {batchAiLoading
+                  ? 'Analyzing Findings with AI...'
+                  : isFree
+                  ? 'Upgrade for AI Advisory for All'
+                  : 'Generate AI Advisory for All'}
+              </button>
+            )}
           </div>
+
+          {batchAiMessage && (
+            <div className={`p-3 rounded-xl text-xs flex items-center gap-2 ${
+              isFree ? 'bg-amber-500/10 border border-amber-500/20 text-amber-300' : 'bg-brand-cyan/10 border border-brand-cyan/20 text-brand-cyan'
+            }`}>
+              {isFree ? <Lock size={15} /> : <CheckCircle2 size={15} />}
+              <span>{batchAiMessage}</span>
+            </div>
+          )}
 
           {filteredFindings.length === 0 ? (
             <GlassCard className="p-8 text-center text-text-muted text-xs">
@@ -698,12 +799,17 @@ export const ScanResults: React.FC = () => {
                   </div>
                 </div>
 
-                <div className="p-3 rounded-xl bg-white/[0.02] border border-white/5 text-xs space-y-1">
-                  <span className="text-[11px] font-bold text-emerald-400 uppercase tracking-wider block">
-                    Remediation Guidance
-                  </span>
-                  <div className="text-slate-300">{finding.remediation}</div>
-                </div>
+                {/* AI Recommendation & Remediation Guidance */}
+                <AiRecommendationCard
+                  findingId={finding._id}
+                  initialAnalysis={finding.aiAnalysis}
+                  baselineRemediation={finding.remediation}
+                  onAnalysisUpdated={(updated) => {
+                    setFindings(prev =>
+                      prev.map(f => (f._id === finding._id ? { ...f, aiAnalysis: updated } : f))
+                    );
+                  }}
+                />
 
                 <div className="flex items-center justify-between text-[11px] font-mono text-text-muted pt-1 border-t border-white/5">
                   <span>

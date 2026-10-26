@@ -176,6 +176,11 @@ const findingSchema = new Schema(
       maxlength: 10_000,
     },
 
+    aiAnalysis: {
+      type: Schema.Types.Mixed,
+      default: null,
+    },
+
     metadata: {
       type: Schema.Types.Mixed,
       default: {},

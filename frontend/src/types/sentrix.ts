@@ -164,6 +164,24 @@ export interface FindingMetadata {
   [key: string]: any;
 }
 
+export interface AiRemediation {
+  summary: string;
+  actions?: string[];
+  references?: string[];
+}
+
+export interface AiAnalysisData {
+  summary: string | null;
+  impact: string | null;
+  rootCause: string | null;
+  uncertainty: string | null;
+  remediation: AiRemediation | null;
+  status?: string;
+  provider?: string;
+  model?: string;
+  completedAt?: string;
+}
+
 export interface Finding {
   _id: string;
   ownerId: string;
@@ -184,6 +202,7 @@ export interface Finding {
   tags: string[];
   fingerprint: string;
   remediation: string;
+  aiAnalysis?: AiAnalysisData | null;
   metadata?: FindingMetadata;
   firstDetectedAt: string;
   lastDetectedAt: string;

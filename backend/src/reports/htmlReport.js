@@ -1,4 +1,4 @@
-﻿// STATUS: UPDATED
+// STATUS: UPDATED
 // File: src/reports/htmlReport.js
 
 const escapeHtml = (value) => {
@@ -236,7 +236,16 @@ const renderCompanyRuleAnalysis = (companyRuleAnalysis = null) => {
   `;
 };
 
-const renderFinding = (finding) => `
+const renderFinding = (finding, aiAdvice = null) => {
+  const hasAi = Boolean(
+    aiAdvice &&
+      (aiAdvice.summary ||
+        aiAdvice.rootCause ||
+        aiAdvice.impact ||
+        aiAdvice.remediation)
+  );
+
+  return `
 <section class="finding">
   <div class="finding-header">
     <div>
@@ -254,6 +263,8 @@ const renderFinding = (finding) => `
       <span class="badge">
         ${escapeHtml(finding?.confidence || "low")} confidence
       </span>
+
+      ${hasAi ? `<span class="badge badge-ai">✦ AI Advisory</span>` : ""}
     </div>
   </div>
 
@@ -272,23 +283,115 @@ const renderFinding = (finding) => `
   </div>
 
   ${
-    finding?.remediation
+    hasAi
       ? `
-        <div class="remediation">
-          <strong>Remediation</strong>
-          <p>${escapeHtml(
-            typeof finding.remediation === "string"
-              ? finding.remediation
-              : JSON.stringify(finding.remediation),
-          )}</p>
+        <div class="ai-advisory-box">
+          <div class="ai-header">
+            <span class="ai-badge">✦ AI Security Advisory</span>
+            ${
+              aiAdvice?.model
+                ? `<span class="ai-model">${escapeHtml(aiAdvice.model)}</span>`
+                : ""
+            }
+          </div>
+
+          ${
+            aiAdvice?.summary
+              ? `
+                <div class="ai-field">
+                  <strong>Executive Vulnerability Summary:</strong>
+                  <p>${escapeHtml(aiAdvice.summary)}</p>
+                </div>
+              `
+              : ""
+          }
+
+          <div class="ai-grid">
+            ${
+              aiAdvice?.rootCause
+                ? `
+                  <div class="ai-card ai-root-cause">
+                    <strong>Root Cause Analysis</strong>
+                    <p>${escapeHtml(aiAdvice.rootCause)}</p>
+                  </div>
+                `
+                : ""
+            }
+
+            ${
+              aiAdvice?.impact
+                ? `
+                  <div class="ai-card ai-impact">
+                    <strong>Threat & Business Impact</strong>
+                    <p>${escapeHtml(aiAdvice.impact)}</p>
+                  </div>
+                `
+                : ""
+            }
+          </div>
+
+          ${
+            aiAdvice?.remediation
+              ? `
+                <div class="ai-remediation">
+                  <strong>Defensive Developer Remediation Checklist:</strong>
+                  ${
+                    aiAdvice.remediation.summary
+                      ? `<p class="ai-remediation-summary">${escapeHtml(aiAdvice.remediation.summary)}</p>`
+                      : ""
+                  }
+                  ${
+                    Array.isArray(aiAdvice.remediation.actions) &&
+                    aiAdvice.remediation.actions.length > 0
+                      ? `
+                        <ol class="ai-actions-list">
+                          ${aiAdvice.remediation.actions
+                            .map((action) => `<li>${escapeHtml(action)}</li>`)
+                            .join("")}
+                        </ol>
+                      `
+                      : ""
+                  }
+                  ${
+                    Array.isArray(aiAdvice.remediation.references) &&
+                    aiAdvice.remediation.references.length > 0
+                      ? `
+                        <div class="ai-references">
+                          <strong>Standards & References:</strong>
+                          ${aiAdvice.remediation.references
+                            .map(
+                              (ref) =>
+                                `<span class="ai-ref-pill">${escapeHtml(ref)}</span>`,
+                            )
+                            .join(" ")}
+                        </div>
+                      `
+                      : ""
+                  }
+                </div>
+              `
+              : ""
+          }
         </div>
       `
-      : ""
+      : finding?.remediation
+        ? `
+          <div class="remediation">
+            <strong>Remediation</strong>
+            <p>${escapeHtml(
+              typeof finding.remediation === "string"
+                ? finding.remediation
+                : JSON.stringify(finding.remediation),
+            )}</p>
+          </div>
+        `
+        : ""
   }
 </section>
 `;
+};
 
-const renderFindings = (findings = []) => {
+const renderFindings = (findings = [], aiAnalysis = null) => {
   if (!findings.length) {
     return `
       <div class="empty">
@@ -297,7 +400,25 @@ const renderFindings = (findings = []) => {
     `;
   }
 
-  return findings.map(renderFinding).join("\n");
+  const aiAnalysisMap = new Map();
+  if (Array.isArray(aiAnalysis)) {
+    for (const item of aiAnalysis) {
+      if (item?.findingId) {
+        aiAnalysisMap.set(String(item.findingId), item.result || item.analysis || item);
+      }
+    }
+  }
+
+  return findings
+    .map((finding) => {
+      const fid = String(finding?._id ?? finding?.id ?? "");
+      const matchedAi =
+        finding?.aiAnalysis ||
+        (fid ? aiAnalysisMap.get(fid) : null) ||
+        null;
+      return renderFinding(finding, matchedAi);
+    })
+    .join("\n");
 };
 
 const buildHtmlReport = ({
@@ -305,6 +426,7 @@ const buildHtmlReport = ({
   target,
   findings = [],
   risk = null,
+  aiAnalysis = null,
   companyRuleAnalysis = null,
   generatedAt = new Date(),
 }) => {
@@ -488,6 +610,182 @@ const buildHtmlReport = ({
       color: #a12622;
     }
 
+    .badge-ai {
+      background: #bae6fd;
+      color: #0369a1;
+      border: 1px solid #7dd3fc;
+    }
+
+    .ai-advisory-box {
+      margin-top: 18px;
+      padding: 16px;
+      border: 1px solid #bae6fd;
+      border-left: 4px solid #0284c7;
+      background: #f0f9ff;
+      border-radius: 6px;
+    }
+
+    .ai-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      margin-bottom: 12px;
+      flex-wrap: wrap;
+      gap: 8px;
+    }
+
+    .ai-badge {
+      display: inline-block;
+      padding: 3px 8px;
+      background: #0284c7;
+      color: #ffffff;
+      font-size: 11px;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+      border-radius: 4px;
+    }
+
+    .ai-model {
+      font-size: 11px;
+      color: #0369a1;
+      font-family: monospace;
+      background: #e0f2fe;
+      padding: 2px 6px;
+      border-radius: 4px;
+      border: 1px solid #bae6fd;
+    }
+
+    .ai-field {
+      margin-top: 8px;
+      font-size: 13px;
+      line-height: 1.5;
+      color: #1e293b;
+    }
+
+    .ai-field strong {
+      display: block;
+      font-size: 11px;
+      text-transform: uppercase;
+      color: #475569;
+      margin-bottom: 3px;
+      letter-spacing: 0.5px;
+    }
+
+    .ai-field p {
+      margin: 0;
+    }
+
+    .ai-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 12px;
+      margin-top: 12px;
+    }
+
+    @media (max-width: 680px) {
+      .ai-grid {
+        grid-template-columns: 1fr;
+      }
+    }
+
+    .ai-card {
+      padding: 10px 12px;
+      border-radius: 5px;
+      font-size: 12px;
+      line-height: 1.5;
+    }
+
+    .ai-card strong {
+      display: block;
+      font-size: 11px;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+      margin-bottom: 4px;
+    }
+
+    .ai-card p {
+      margin: 0;
+    }
+
+    .ai-root-cause {
+      background: #fffbeb;
+      border: 1px solid #fef3c7;
+      border-left: 3px solid #d97706;
+      color: #78350f;
+    }
+
+    .ai-root-cause strong {
+      color: #b45309;
+    }
+
+    .ai-impact {
+      background: #fef2f2;
+      border: 1px solid #fee2e2;
+      border-left: 3px solid #dc2626;
+      color: #7f1d1d;
+    }
+
+    .ai-impact strong {
+      color: #b91c1c;
+    }
+
+    .ai-remediation {
+      margin-top: 14px;
+      padding: 12px;
+      background: #f0fdf4;
+      border: 1px solid #dcfce7;
+      border-left: 3px solid #16a34a;
+      border-radius: 5px;
+      font-size: 12px;
+      color: #14532d;
+    }
+
+    .ai-remediation strong {
+      display: block;
+      font-size: 11px;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+      color: #15803d;
+      margin-bottom: 6px;
+    }
+
+    .ai-remediation-summary {
+      margin: 0 0 8px 0;
+      font-weight: 500;
+      color: #166534;
+    }
+
+    .ai-actions-list {
+      margin: 0;
+      padding-left: 20px;
+      color: #1e293b;
+    }
+
+    .ai-actions-list li {
+      margin-bottom: 4px;
+      line-height: 1.4;
+    }
+
+    .ai-references {
+      margin-top: 8px;
+      padding-top: 8px;
+      border-top: 1px solid #bbf7d0;
+      font-size: 11px;
+    }
+
+    .ai-ref-pill {
+      display: inline-block;
+      padding: 1px 6px;
+      background: #ffffff;
+      border: 1px solid #86efac;
+      border-radius: 3px;
+      color: #166534;
+      font-size: 10px;
+      font-family: monospace;
+      margin-left: 4px;
+    }
+
     .empty {
       padding: 25px;
       text-align: center;
@@ -509,6 +807,10 @@ const buildHtmlReport = ({
       .finding {
         box-shadow: none;
         border: 1px solid #ddd;
+        break-inside: avoid;
+      }
+
+      .ai-advisory-box {
         break-inside: avoid;
       }
 
@@ -602,7 +904,7 @@ const buildHtmlReport = ({
 
     <section>
       <h2>Findings</h2>
-      ${renderFindings(findings)}
+      ${renderFindings(findings, aiAnalysis)}
     </section>
 
   </main>

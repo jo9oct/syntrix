@@ -33,6 +33,7 @@ import crawlRoutes from "./src/routes/crawl.routes.js";
 import targetRoutes from "./src/routes/target.routes.js";
 import scopeRoutes from "./src/routes/scope.routes.js";
 import reportRoutes from "./src/routes/report.routes.js";
+import aiAnalysisRoutes from "./src/routes/aiAnalysis.routes.js";
 
 import paymentRoutes from "./src/routes/payment.routes.js";
 
@@ -148,6 +149,8 @@ app.use("/api/v1/targets", targetRoutes);
 app.use("/api/v1/scopes", scopeRoutes);
 app.use("/api/v1/payment", paymentRoutes);
 app.use("/api/v1/reports", reportRoutes);
+app.use("/api/v1/ai-analysis", aiAnalysisRoutes);
+app.use("/api/v1/ai", aiAnalysisRoutes);
 
 // Authentication routes
 app.use("/api/v1/auth", authRoutes);

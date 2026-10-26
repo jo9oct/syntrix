@@ -1487,7 +1487,7 @@ const processScanJob = async (job) => {
   try {
     await assertWorkerCanContinue({ ownerId, scanId, isGuest });
 
-    const runningScan = await scanRepository.updateStatus(
+    let runningScan = await scanRepository.updateStatus(
       ownerId,
       scanId,
       "running",
@@ -1506,8 +1506,9 @@ const processScanJob = async (job) => {
         return buildDeletedScanResult({ scanId, ownerId, targetId });
       }
 
-      // Comparison retries must not rerun scanners or require credentials.
-      if (currentScan?.status === "completed" && currentScan?.completedAt) {
+      if (currentScan?.status === "running") {
+        runningScan = currentScan;
+      } else if (currentScan?.status === "completed" && currentScan?.completedAt) {
         try {
           await createAndPersistComparisonForScan({
             ownerId,
@@ -1905,47 +1906,16 @@ const processScanJob = async (job) => {
      * AI-analysis failure does not fail the security scan.
      */
 
-    let aiAnalysis = {
-      enabled: false,
-      status: "disabled",
+    /*
+     * AI Analysis is preserved on-demand: findings are analyzed only when the user
+     * explicitly clicks "Generate AI Advisory" to optimize AI consumption and scan speed.
+     */
+    const aiAnalysis = {
+      enabled: environment.ai.enabled,
+      status: "on_demand",
       analyses: [],
       persisted: [],
     };
-
-    try {
-      await assertWorkerCanContinue({ ownerId, scanId, isGuest });
-
-      aiAnalysis = await analyzeAndPersistFindings({
-        ownerId,
-        scanId,
-        findings: persisted.persistedFindings,
-        evidence: persisted.persistedEvidence,
-        target: scanTarget,
-      });
-
-      await assertWorkerCanContinue({ ownerId, scanId, isGuest });
-    } catch (error) {
-      if (
-        isDeletedScanError(error) ||
-        error?.code === "GUEST_SESSION_EXPIRED" ||
-        isCancellationError(error)
-      ) {
-        throw error;
-      }
-
-      logFailure("scan.ai_analysis.failed", {
-        scanId,
-        ownerId,
-        errorCode: error?.code ?? "AI_ANALYSIS_FAILED",
-      });
-
-      aiAnalysis = {
-        enabled: environment.ai.enabled,
-        status: "failed",
-        analyses: [],
-        persisted: [],
-      };
-    }
 
     await assertWorkerCanContinue({ ownerId, scanId, isGuest });
 

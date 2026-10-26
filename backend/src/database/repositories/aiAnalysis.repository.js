@@ -4,7 +4,7 @@
 import AiAnalysis from "../models/aiAnalysis.model.js";
 import Scan from "../models/scan.model.js";
 
-const WRITABLE_SCAN_STATUSES = ["pending", "running"];
+const WRITABLE_SCAN_STATUSES = ["pending", "running", "completed"];
 
 const UPDATEABLE_SCAN_STATUSES = ["pending", "running", "completed"];
 
@@ -63,6 +63,42 @@ const findByFindingId = async (ownerId, findingId) => {
   })
     .sort({ createdAt: -1, _id: -1 })
     .lean();
+};
+
+const findLatestByFindingId = async (ownerId, findingId) => {
+  if (!ownerId || !findingId) {
+    throw new TypeError("ownerId and findingId are required.");
+  }
+
+  return AiAnalysis.findOne({
+    ownerId,
+    findingId,
+  })
+    .sort({ createdAt: -1, _id: -1 })
+    .lean();
+};
+
+const upsertByFinding = async (data) => {
+  assertScanScope(data?.ownerId, data?.scanId);
+  await assertWritableScan(data.ownerId, data.scanId);
+
+  return AiAnalysis.findOneAndUpdate(
+    {
+      ownerId: data.ownerId,
+      findingId: data.findingId,
+    },
+    {
+      $set: {
+        ...data,
+        updatedAt: new Date(),
+      },
+    },
+    {
+      upsert: true,
+      new: true,
+      setDefaultsOnInsert: true,
+    },
+  );
 };
 
 const findByScanId = async (ownerId, scanId) => {
@@ -161,8 +197,10 @@ const deleteByOwnerId = async (ownerId) => {
 
 export {
   create,
+  upsertByFinding,
   findById,
   findByFindingId,
+  findLatestByFindingId,
   findByScanId,
   updateStatus,
   deleteByScan,

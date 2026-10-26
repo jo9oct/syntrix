@@ -1,4 +1,4 @@
-﻿// STATUS: UPDATED
+// STATUS: UPDATED
 // File: src/reports/jsonReport.js
 
 const buildJsonReport = ({
@@ -78,19 +78,39 @@ const buildJsonReport = ({
         }
       : null,
 
-    findings: findings.map((finding) => ({
-      id: finding?._id ?? finding?.id ?? null,
-      fingerprint: finding?.fingerprint ?? null,
-      scannerId: finding?.scannerId ?? null,
-      category: finding?.category ?? null,
-      title: finding?.title ?? null,
-      description: finding?.description ?? null,
-      severity: finding?.severity ?? "info",
-      confidence: finding?.confidence ?? "low",
-      status: finding?.status ?? "detected",
-      remediation: finding?.remediation ?? null,
-      metadata: finding?.metadata ?? {},
-    })),
+    findings: (() => {
+      const aiAnalysisMap = new Map();
+      if (Array.isArray(aiAnalysis)) {
+        for (const item of aiAnalysis) {
+          if (item?.findingId) {
+            aiAnalysisMap.set(String(item.findingId), item.result || item.analysis || item);
+          }
+        }
+      }
+
+      return findings.map((finding) => {
+        const fid = String(finding?._id ?? finding?.id ?? "");
+        const matchedAi =
+          finding?.aiAnalysis ||
+          (fid ? aiAnalysisMap.get(fid) : null) ||
+          null;
+
+        return {
+          id: finding?._id ?? finding?.id ?? null,
+          fingerprint: finding?.fingerprint ?? null,
+          scannerId: finding?.scannerId ?? null,
+          category: finding?.category ?? null,
+          title: finding?.title ?? null,
+          description: finding?.description ?? null,
+          severity: finding?.severity ?? "info",
+          confidence: finding?.confidence ?? "low",
+          status: finding?.status ?? "detected",
+          remediation: finding?.remediation ?? null,
+          aiAnalysis: matchedAi,
+          metadata: finding?.metadata ?? {},
+        };
+      });
+    })(),
 
     evidence: evidence.map((item) => ({
       id: item?._id ?? item?.id ?? null,

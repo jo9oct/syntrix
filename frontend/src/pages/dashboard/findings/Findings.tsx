@@ -7,10 +7,11 @@ import { EvidenceViewer } from '../../../components/ui/EvidenceViewer';
 import {
   ShieldAlert, Plus, Search, Filter, ArrowRight,
   CheckCircle2, RotateCcw, AlertTriangle, User, X,
-  Eye, Check, ExternalLink, ShieldCheck, Tag
+  Eye, Check, ExternalLink, ShieldCheck, Tag, Sparkles, Lock
 } from 'lucide-react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { useAuthStore, useUserTier } from '../../../store/authStore';
+import { AiRecommendationCard } from '../../../components/ui/AiRecommendationCard';
 
 export const Findings: React.FC = () => {
   const navigate = useNavigate();
@@ -26,6 +27,8 @@ export const Findings: React.FC = () => {
   const [statusFilter, setStatusFilter] = useState<string>('all');
   const [selectedEvidence, setSelectedEvidence] = useState<Evidence | null>(null);
   const [updatingId, setUpdatingId] = useState<string | null>(null);
+  const [batchLoading, setBatchLoading] = useState(false);
+  const [batchMessage, setBatchMessage] = useState<string | null>(null);
 
   const fetchFindings = async () => {
     try {
@@ -87,6 +90,60 @@ export const Findings: React.FC = () => {
 
     return matchSearch && matchSeverity && matchStatus;
   });
+
+  const handleBatchAiAnalysis = async () => {
+    if (isFree) {
+      setBatchMessage('AI Security Advisory is exclusive to Pro and Enterprise tiers. Please upgrade your subscription.');
+      navigate('/dashboard/billing');
+      return;
+    }
+    if (filtered.length === 0) return;
+    setBatchLoading(true);
+    setBatchMessage(null);
+    try {
+      if (filterScanId) {
+        const res = await api.post(`/ai-analysis/scans/${filterScanId}/analyze`);
+        const analyses = res.data?.data?.analyses || [];
+        const analysesMap = new Map();
+        analyses.forEach((a: any) => {
+          if (a.findingId) {
+            analysesMap.set(String(a.findingId), a.result || a.analysis || a);
+          }
+        });
+        setFindings(prev =>
+          prev.map(f => {
+            const matched = analysesMap.get(String(f._id));
+            return matched ? { ...f, aiAnalysis: matched } : f;
+          })
+        );
+        setBatchMessage(`Generated AI Advisory for ${analyses.length} findings.`);
+      } else {
+        let updatedCount = 0;
+        const targetFindings = filtered.slice(0, 10);
+        for (const item of targetFindings) {
+          try {
+            const res = await api.post(`/ai-analysis/findings/${item._id}/analyze`);
+            const analysisData = res.data?.data?.analysis || res.data?.data?.result;
+            if (analysisData) {
+              setFindings(prev =>
+                prev.map(f => (f._id === item._id ? { ...f, aiAnalysis: analysisData } : f))
+              );
+              updatedCount++;
+            }
+          } catch {
+            // continue
+          }
+        }
+        setBatchMessage(`Generated AI Advisory for ${updatedCount} findings.`);
+      }
+      setTimeout(() => setBatchMessage(null), 5000);
+    } catch (err: any) {
+      setBatchMessage(err.response?.data?.error || err.response?.data?.message || 'Failed to complete AI analysis.');
+      setTimeout(() => setBatchMessage(null), 5000);
+    } finally {
+      setBatchLoading(false);
+    }
+  };
 
   return (
     <div className="p-8 space-y-8 max-w-7xl mx-auto">
@@ -197,8 +254,45 @@ export const Findings: React.FC = () => {
           <span className="text-xs text-text-muted pl-2">
             Showing <strong className="text-white">{filtered.length}</strong> findings
           </span>
+
+          {filtered.length > 0 && (
+            <button
+              onClick={handleBatchAiAnalysis}
+              disabled={batchLoading}
+              className={
+                isFree
+                  ? "ml-auto px-3.5 py-2 rounded-xl bg-amber-500/15 hover:bg-amber-500/25 text-amber-300 border border-amber-500/30 text-xs font-semibold flex items-center gap-1.5 transition-all shadow-sm"
+                  : "ml-auto px-3.5 py-2 rounded-xl bg-gradient-to-r from-brand-cyan/20 to-brand-primary/20 hover:from-brand-cyan/30 hover:to-brand-primary/30 text-brand-cyan border border-brand-cyan/30 text-xs font-semibold flex items-center gap-1.5 transition-all shadow-sm disabled:opacity-50"
+              }
+              title={
+                isFree
+                  ? "AI Security Advisory is exclusive to Pro and Enterprise tiers"
+                  : "Generate AI advisory for all visible findings"
+              }
+            >
+              {isFree ? (
+                <Lock size={13} className="text-amber-400" />
+              ) : (
+                <Sparkles size={13} className={batchLoading ? 'animate-spin' : ''} />
+              )}
+              {batchLoading
+                ? 'Analyzing with AI...'
+                : isFree
+                ? 'Upgrade for AI Advisory for All'
+                : 'Generate AI Advisory for All'}
+            </button>
+          )}
         </div>
       </div>
+
+      {batchMessage && (
+        <div className={`p-3 rounded-xl text-xs flex items-center gap-2 ${
+          isFree ? 'bg-amber-500/10 border border-amber-500/20 text-amber-300' : 'bg-brand-cyan/10 border border-brand-cyan/20 text-brand-cyan'
+        }`}>
+          {isFree ? <Lock size={15} /> : <CheckCircle2 size={15} />}
+          <span>{batchMessage}</span>
+        </div>
+      )}
 
       {/* Findings List */}
       {loading ? (
@@ -267,13 +361,17 @@ export const Findings: React.FC = () => {
                 </div>
               </div>
 
-              {/* Remediation Box */}
-              <div className="p-3.5 rounded-xl bg-white/[0.02] border border-white/5 space-y-1">
-                <span className="text-[11px] font-bold text-green-400 uppercase tracking-wider block">
-                  Remediation Action
-                </span>
-                <p className="text-xs text-slate-300">{finding.remediation}</p>
-              </div>
+              {/* AI Remediation Card */}
+              <AiRecommendationCard
+                findingId={finding._id}
+                initialAnalysis={finding.aiAnalysis}
+                baselineRemediation={finding.remediation}
+                onAnalysisUpdated={(updated) => {
+                  setFindings(prev =>
+                    prev.map(f => (f._id === finding._id ? { ...f, aiAnalysis: updated } : f))
+                  );
+                }}
+              />
 
               {/* Metadata row */}
               <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 text-[11px] font-mono text-text-muted pt-2 border-t border-white/5">
