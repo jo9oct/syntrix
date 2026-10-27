@@ -116,30 +116,100 @@ export const Home: React.FC = () => {
           {/* Right: Stats Card */}
           <div className="relative">
             {/* Glow behind card */}
-            <div className="absolute -inset-8 bg-gradient-glow-cyan opacity-60 blur-3xl pointer-events-none" aria-hidden="true" />
+            <div 
+              className="absolute -inset-8 bg-gradient-glow-cyan opacity-60 blur-3xl pointer-events-none"
+              aria-hidden="true" 
+            />
 
-            <div className="relative z-10 glass-elevated border border-brand-cyan/15 rounded-3xl p-6 shadow-glow-cyan flex flex-col gap-5">
-              {/* Top stats row */}
-              <div className="grid grid-cols-2 gap-3">
-                <div className="stat-card rounded-xl p-4">
-                  <div className="text-[10px] text-text-muted uppercase font-bold tracking-widest mb-2">THREATS MITIGATED</div>
-                  <div className="text-3xl font-extrabold text-white tabular-nums">12.4K</div>
-                  <div className="flex items-center gap-1 text-xs text-emerald-400 mt-1.5 font-semibold">
-                    <TrendingUp size={11} /> +8.2% past 7 days
+            <div 
+              className="relative z-10 glass-elevated border border-brand-cyan/20 rounded-3xl p-6 shadow-glow-cyan overflow-hidden"
+              style={{
+                clipPath: 'polygon(24px 0, calc(100% - 24px) 0, 100% 24px, 100% 100%, 0 100%, 0 24px)',
+              }}
+            >
+              {/* Top-Left Slash Accent Line */}
+              <div 
+                className="absolute w-[34px] h-[1.5px] bg-gradient-to-r from-brand-cyan via-white/80 to-brand-cyan pointer-events-none origin-top-left z-20 shadow-[0_0_8px_rgba(6,182,212,0.6)]"
+                style={{ left: 0, top: '24px', transform: 'rotate(-45deg)' }}
+              />
+              {/* Top-Right Slash Accent Line */}
+              <div 
+                className="absolute w-[34px] h-[1.5px] bg-gradient-to-r from-brand-cyan via-white/80 to-brand-cyan pointer-events-none origin-top-left z-20 shadow-[0_0_8px_rgba(6,182,212,0.6)]"
+                style={{ right: '24px', top: 0, transform: 'rotate(45deg)' }}
+              />
+              {/* Top Horizontal Border between slashes */}
+              <div 
+                className="absolute top-0 left-[24px] right-[24px] h-[1px] bg-gradient-to-r from-brand-cyan/50 via-white/30 to-brand-cyan/50 pointer-events-none z-10" 
+              />
+
+              <div className="flex flex-col gap-5">
+                {/* Top stats row */}
+                <div className="grid grid-cols-2 gap-3">
+                  <div 
+                    className="stat-card rounded-xl p-4 relative overflow-hidden transition-all duration-200 hover:border-brand-cyan/30"
+                    style={{
+                      clipPath: 'polygon(14px 0, calc(100% - 14px) 0, 100% 14px, 100% 100%, 0 100%, 0 14px)',
+                    }}
+                  >
+                    {/* Top-Left slash accent line */}
+                    <div 
+                      className="absolute w-[20px] h-[1.5px] bg-gradient-to-r from-brand-cyan/60 to-emerald-400/60 pointer-events-none origin-top-left z-10"
+                      style={{ left: 0, top: '14px', transform: 'rotate(-45deg)' }}
+                    />
+                    {/* Top-Right slash accent line */}
+                    <div 
+                      className="absolute w-[20px] h-[1.5px] bg-gradient-to-r from-emerald-400/60 to-brand-cyan/60 pointer-events-none origin-top-left z-10"
+                      style={{ right: '14px', top: 0, transform: 'rotate(45deg)' }}
+                    />
+                    <div className="text-[10px] text-text-muted uppercase font-bold tracking-widest mb-2">THREATS MITIGATED</div>
+                    <div className="text-3xl font-extrabold text-white tabular-nums">12.4K</div>
+                    <div className="flex items-center gap-1 text-xs text-emerald-400 mt-1.5 font-semibold">
+                      <TrendingUp size={11} /> +8.2% past 7 days
+                    </div>
+                  </div>
+
+                  <div 
+                    className="stat-card rounded-xl p-4 relative overflow-hidden transition-all duration-200 hover:border-brand-cyan/30"
+                    style={{
+                      clipPath: 'polygon(14px 0, calc(100% - 14px) 0, 100% 14px, 100% 100%, 0 100%, 0 14px)',
+                    }}
+                  >
+                    {/* Top-Left slash accent line */}
+                    <div 
+                      className="absolute w-[20px] h-[1.5px] bg-gradient-to-r from-brand-purple/60 to-brand-cyan/60 pointer-events-none origin-top-left z-10"
+                      style={{ left: 0, top: '14px', transform: 'rotate(-45deg)' }}
+                    />
+                    {/* Top-Right slash accent line */}
+                    <div 
+                      className="absolute w-[20px] h-[1.5px] bg-gradient-to-r from-brand-cyan/60 to-brand-purple/60 pointer-events-none origin-top-left z-10"
+                      style={{ right: '14px', top: 0, transform: 'rotate(45deg)' }}
+                    />
+                    <div className="text-[10px] text-text-muted uppercase font-bold tracking-widest mb-2">MTTR RESOLUTION</div>
+                    <div className="text-3xl font-extrabold text-white tabular-nums">6m 20s</div>
+                    <div className="flex items-center gap-1 text-xs text-brand-cyan mt-1.5 font-semibold">
+                      <Zap size={11} /> -14% vs baseline
+                    </div>
                   </div>
                 </div>
-                <div className="stat-card rounded-xl p-4">
-                  <div className="text-[10px] text-text-muted uppercase font-bold tracking-widest mb-2">MTTR RESOLUTION</div>
-                  <div className="text-3xl font-extrabold text-white tabular-nums">6m 20s</div>
-                  <div className="flex items-center gap-1 text-xs text-brand-cyan mt-1.5 font-semibold">
-                    <Zap size={11} /> -14% vs baseline
-                  </div>
-                </div>
-              </div>
 
-              {/* Chart area */}
-              <div className="rounded-2xl bg-black/25 border border-white/5 p-4 flex flex-col gap-3">
-                <div className="flex items-center justify-between text-xs">
+                {/* Chart area */}
+                <div 
+                  className="rounded-2xl bg-black/25 border border-white/5 p-4 flex flex-col gap-3 relative overflow-hidden"
+                  style={{
+                    clipPath: 'polygon(16px 0, calc(100% - 16px) 0, 100% 16px, 100% 100%, 0 100%, 0 16px)',
+                  }}
+                >
+                  {/* Top-Left slash accent line */}
+                  <div 
+                    className="absolute w-[23px] h-[1.5px] bg-white/20 pointer-events-none origin-top-left z-10"
+                    style={{ left: 0, top: '16px', transform: 'rotate(-45deg)' }}
+                  />
+                  {/* Top-Right slash accent line */}
+                  <div 
+                    className="absolute w-[23px] h-[1.5px] bg-white/20 pointer-events-none origin-top-left z-10"
+                    style={{ right: '16px', top: 0, transform: 'rotate(45deg)' }}
+                  />
+                  <div className="flex items-center justify-between text-xs">
                   <span className="font-semibold text-text-muted">Real-time threat telemetry</span>
                   <span className="flex items-center gap-1.5 text-emerald-400 font-bold">
                     <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 shadow-[0_0_5px_rgba(52,211,153,0.7)] animate-pulse" />
@@ -195,7 +265,8 @@ export const Home: React.FC = () => {
             </div>
           </div>
         </div>
-      </section>
+      </div>
+    </section>
 
       {/* ── Embedded Sections ─────────────────────────── */}
       <Features embedded={true} />
