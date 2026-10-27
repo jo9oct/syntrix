@@ -278,7 +278,15 @@ export const Admin: React.FC = () => {
   const [usersLoading, setUsersLoading] = useState(false);
   const [usersError, setUsersError] = useState<string | null>(null);
   const [statusUpdatingId, setStatusUpdatingId] = useState<string | null>(null);
-  const [searchTerm, setSearchTerm] = useState('');
+  const urlSearch = searchParams.get('search') || searchParams.get('q') || '';
+  const [searchTerm, setSearchTerm] = useState(urlSearch);
+
+  useEffect(() => {
+    const q = searchParams.get('search') || searchParams.get('q');
+    if (q !== null && q !== undefined) {
+      setSearchTerm(q);
+    }
+  }, [searchParams]);
   const [showInviteModal, setShowInviteModal] = useState(false);
 
   // Role Change Modal State

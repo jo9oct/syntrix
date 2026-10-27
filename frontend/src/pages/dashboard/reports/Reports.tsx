@@ -21,7 +21,15 @@ export const Reports: React.FC = () => {
 
   // Targets state (Level 1: Target List Page)
   const [targets, setTargets] = useState<Target[]>([]);
-  const [targetSearch, setTargetSearch] = useState('');
+  const urlSearch = searchParams.get('search') || searchParams.get('q') || '';
+  const [targetSearch, setTargetSearch] = useState(urlSearch);
+
+  useEffect(() => {
+    const q = searchParams.get('search') || searchParams.get('q');
+    if (q !== null && q !== undefined) {
+      setTargetSearch(q);
+    }
+  }, [searchParams]);
   const [selectedTarget, setSelectedTarget] = useState<Target | null>(null);
 
   // Scans for the selected target (Level 2: Scans dropdown)

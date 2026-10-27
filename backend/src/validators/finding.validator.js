@@ -33,10 +33,12 @@ const listFindingQuerySchema = Joi.object({
 
   scannerId: Joi.string().trim().max(128).optional(),
 
+  guestId: Joi.string().trim().hex().length(24).optional(),
+
   limit: Joi.number().integer().min(1).max(100).default(100),
 
   skip: Joi.number().integer().min(0).max(100_000).default(0),
-});
+}).unknown(true);
 
 const updateFindingSchema = Joi.object({
   status: findingStatus.optional(),

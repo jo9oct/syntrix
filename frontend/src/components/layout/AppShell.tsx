@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { Outlet, NavLink, useNavigate, Link, useLocation } from 'react-router-dom';
 import {
   LayoutDashboard, Bug,
@@ -66,6 +66,33 @@ export const AppShell: React.FC = () => {
   const [notifications, setNotifications] = useState(DEMO_NOTIFICATIONS);
   const [mobileSidebarOpen, setMobileSidebarOpen] = useState(false);
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
+  const [globalSearch, setGlobalSearch] = useState('');
+  const [isSearchOpen, setIsSearchOpen] = useState(false);
+  const searchContainerRef = useRef<HTMLDivElement>(null);
+  const searchInputRef = useRef<HTMLInputElement>(null);
+
+  useEffect(() => {
+    const handleClickOutside = (e: MouseEvent) => {
+      if (searchContainerRef.current && !searchContainerRef.current.contains(e.target as Node)) {
+        setIsSearchOpen(false);
+      }
+    };
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        setIsSearchOpen(false);
+      } else if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'k') {
+        e.preventDefault();
+        searchInputRef.current?.focus();
+        setIsSearchOpen(true);
+      }
+    };
+    document.addEventListener('mousedown', handleClickOutside);
+    document.addEventListener('keydown', handleKeyDown);
+    return () => {
+      document.removeEventListener('mousedown', handleClickOutside);
+      document.removeEventListener('keydown', handleKeyDown);
+    };
+  }, []);
 
   React.useEffect(() => {
     useAuthStore.getState().fetchMe();
@@ -134,6 +161,54 @@ export const AppShell: React.FC = () => {
 
   const unreadCount = notifications.filter(n => n.unread).length;
 
+  const searchablePages = [
+    { label: 'Security Dashboard', path: '/dashboard', category: 'Navigation', icon: LayoutDashboard },
+    { label: 'Vulnerability Findings', path: '/dashboard/findings', category: 'Security', icon: Bug },
+    { label: 'Targets & Attack Surface', path: '/dashboard/projects', category: 'Assets', icon: Globe },
+    { label: 'Launch New Assessment', path: '/dashboard/assessment/new', category: 'Actions', icon: ShieldCheck },
+    { label: 'Remediation Workflow Board', path: '/dashboard/remediation', category: 'Workflow', icon: ArrowRightLeft },
+    { label: 'Retest Verification', path: '/dashboard/retest', category: 'Workflow', icon: RotateCcw },
+    { label: 'Security & Compliance Reports', path: '/dashboard/reports', category: 'Deliverables', icon: FileText },
+    { label: 'Malware Detonation Sandbox', path: '/dashboard/malware', category: 'Labs', icon: Bug },
+    { label: 'Security Scopes & Seeds', path: '/dashboard/scopes', category: 'Configuration', icon: Network },
+    { label: 'Company Security Policies', path: '/dashboard/rules', category: 'Configuration', icon: Sliders },
+    { label: 'Service Orders Queue', path: '/dashboard/service-orders', category: 'Services', icon: ClipboardList },
+    { label: 'Project Workspaces', path: '/dashboard/service-projects', category: 'Services', icon: Layers },
+    { label: 'Deleted Scans Recovery', path: '/dashboard/scans/deleted', category: 'Storage', icon: Trash2 },
+    { label: 'Billing & Subscription Plans', path: '/dashboard/billing', category: 'Account', icon: Sparkles },
+    ...(isAdmin ? [
+      { label: 'Admin Operations Control', path: '/dashboard/admin?tab=overview', category: 'Administration', icon: LayoutDashboard },
+      { label: 'Admin Client Orders Dispatch', path: '/dashboard/admin?tab=orders', category: 'Administration', icon: ClipboardList },
+      { label: 'Platform Users & Roles', path: '/dashboard/admin?tab=users', category: 'Administration', icon: Users },
+      { label: 'System Health & Engine Logs', path: '/dashboard/admin?tab=system', category: 'Administration', icon: Activity },
+    ] : [])
+  ];
+
+  const matchedPages = globalSearch.trim().length > 0
+    ? searchablePages.filter(p =>
+        p.label.toLowerCase().includes(globalSearch.toLowerCase()) ||
+        p.category.toLowerCase().includes(globalSearch.toLowerCase())
+      ).slice(0, 5)
+    : [];
+
+  const handleGlobalSearchSubmit = (e?: React.FormEvent) => {
+    if (e) e.preventDefault();
+    const query = globalSearch.trim();
+    if (!query) return;
+
+    setIsSearchOpen(false);
+    const exactPage = searchablePages.find(p => p.label.toLowerCase() === query.toLowerCase());
+    if (exactPage) {
+      navigate(exactPage.path);
+      return;
+    }
+    if (matchedPages.length === 1) {
+      navigate(matchedPages[0].path);
+      return;
+    }
+    navigate(`/dashboard/findings?search=${encodeURIComponent(query)}`);
+  };
+
   return (
     <div className="flex h-screen w-full bg-background-darker overflow-hidden font-sans text-white relative">
       {/* Mobile Backdrop Overlay */}
@@ -151,7 +226,7 @@ export const AppShell: React.FC = () => {
         } ${sidebarCollapsed ? 'w-[4.5rem]' : 'w-72 lg:w-64'}`}
       >
         {/* Logo Header */}
-        <div className={`flex items-center border-b border-white/10 ${sidebarCollapsed ? 'justify-between px-2.5 py-3.5' : 'justify-between px-5 py-4'}`}>
+        <div className={`flex items-center border-b border-white/10 ${sidebarCollapsed ? 'flex-col gap-2 py-3 px-2 justify-center' : 'justify-between px-5 py-4'}`}>
           <Link to="/dashboard" onClick={() => setMobileSidebarOpen(false)} title="Sentrix" className="flex items-center gap-2.5 shrink-0">
             <img src="/logo.png" alt="Sentrix" className="w-7 h-7 rounded-lg object-contain shadow-md shadow-brand-cyan/20" />
             {!sidebarCollapsed && <span className="text-lg font-bold text-white tracking-tight">Sentrix.</span>}
@@ -181,364 +256,465 @@ export const AppShell: React.FC = () => {
         <nav className={`flex-1 overflow-y-auto ${sidebarCollapsed ? 'px-2 py-3' : 'px-3 py-4'} space-y-4`}>
           {isAdmin && isAdminSection ? (
             /* ADMIN OPERATIONS & DISPATCH CENTER NAVIGATION */
-            <div className="space-y-4">
+            <div className={sidebarCollapsed ? "space-y-2" : "space-y-4"}>
               {/* Dispatch & Orders Section */}
               <div>
-                <div className="px-3 pb-1.5 text-[10px] font-bold uppercase tracking-wider text-text-muted flex items-center justify-between">
-                  <span>Operations & Orders</span>
-                  <span className="text-[9px] bg-brand-cyan/20 text-brand-cyan px-1.5 py-0.2 rounded font-mono font-bold">Admin</span>
-                </div>
+                {!sidebarCollapsed ? (
+                  <div className="px-3 pb-1.5 text-[10px] font-bold uppercase tracking-wider text-text-muted flex items-center justify-between">
+                    <span>Operations & Orders</span>
+                    <span className="text-[9px] bg-brand-cyan/20 text-brand-cyan px-1.5 py-0.2 rounded font-mono font-bold">Admin</span>
+                  </div>
+                ) : (
+                  <div className="my-1.5 border-t border-white/10" />
+                )}
                 <div className="space-y-1">
                   <Link
                     to="/dashboard/admin?tab=overview"
                     onClick={() => setMobileSidebarOpen(false)}
-                    className={`flex items-center gap-3 px-3.5 py-2.5 rounded-xl text-xs sm:text-sm font-medium transition-all duration-150 ${
+                    title={sidebarCollapsed ? "Admin Control" : undefined}
+                    className={`flex items-center ${
+                      sidebarCollapsed ? 'justify-center px-0 h-10 w-10 mx-auto' : 'gap-3 px-3.5 py-2.5'
+                    } rounded-xl text-xs sm:text-sm font-medium transition-all duration-150 ${
                       location.pathname === '/dashboard/admin' && (!location.search || location.search === '' || location.search.includes('tab=overview'))
                         ? 'bg-brand-cyan/15 text-brand-cyan border border-brand-cyan/25 shadow-sm shadow-brand-cyan/10 font-semibold'
                         : 'text-text-muted hover:text-white hover:bg-white/5'
                     }`}
                   >
                     <LayoutDashboard size={18} className="shrink-0" />
-                    <span className="truncate">Admin Control</span>
+                    {!sidebarCollapsed && <span className="truncate">Admin Control</span>}
                   </Link>
 
                   <Link
                     to="/dashboard/admin?tab=orders"
                     onClick={() => setMobileSidebarOpen(false)}
-                    className={`flex items-center gap-3 px-3.5 py-2.5 rounded-xl text-xs sm:text-sm font-medium transition-all duration-150 ${
+                    title={sidebarCollapsed ? "Client Orders" : undefined}
+                    className={`flex items-center ${
+                      sidebarCollapsed ? 'justify-center px-0 h-10 w-10 mx-auto' : 'gap-3 px-3.5 py-2.5'
+                    } rounded-xl text-xs sm:text-sm font-medium transition-all duration-150 ${
                       location.search.includes('tab=orders') && !location.search.includes('group=')
                         ? 'bg-brand-cyan/15 text-brand-cyan border border-brand-cyan/25 shadow-sm shadow-brand-cyan/10 font-semibold'
                         : 'text-text-muted hover:text-white hover:bg-white/5'
                     }`}
                   >
                     <ClipboardList size={18} className="shrink-0" />
-                    <span className="truncate">Client Orders</span>
+                    {!sidebarCollapsed && <span className="truncate">Client Orders</span>}
                   </Link>
 
                   <Link
                     to="/dashboard/service-projects"
                     onClick={() => setMobileSidebarOpen(false)}
-                    className={`flex items-center gap-3 px-3.5 py-2.5 rounded-xl text-xs sm:text-sm font-medium transition-all duration-150 ${
+                    title={sidebarCollapsed ? "Project Workspaces" : undefined}
+                    className={`flex items-center ${
+                      sidebarCollapsed ? 'justify-center px-0 h-10 w-10 mx-auto' : 'gap-3 px-3.5 py-2.5'
+                    } rounded-xl text-xs sm:text-sm font-medium transition-all duration-150 ${
                       location.pathname.startsWith('/dashboard/service-projects')
                         ? 'bg-brand-cyan/15 text-brand-cyan border border-brand-cyan/25 shadow-sm shadow-brand-cyan/10 font-semibold'
                         : 'text-text-muted hover:text-white hover:bg-white/5'
                     }`}
                   >
                     <Layers size={18} className="shrink-0" />
-                    <span className="truncate">Project Workspaces</span>
+                    {!sidebarCollapsed && <span className="truncate">Project Workspaces</span>}
                   </Link>
                 </div>
               </div>
 
               {/* Specialist Teams Section */}
               <div>
-                <div className="px-3 pb-1.5 text-[10px] font-bold uppercase tracking-wider text-text-muted">
-                  Specialist Teams
-                </div>
+                {!sidebarCollapsed ? (
+                  <div className="px-3 pb-1.5 text-[10px] font-bold uppercase tracking-wider text-text-muted">
+                    Specialist Teams
+                  </div>
+                ) : (
+                  <div className="my-1.5 border-t border-white/10" />
+                )}
                 <div className="space-y-1">
                   <Link
                     to="/dashboard/admin?tab=orders&group=security_engineer"
                     onClick={() => setMobileSidebarOpen(false)}
-                    className={`flex items-center justify-between px-3.5 py-2.5 rounded-xl text-xs sm:text-sm font-medium transition-all duration-150 ${
+                    title={sidebarCollapsed ? "Security Testers" : undefined}
+                    className={`flex items-center ${
+                      sidebarCollapsed ? 'justify-center px-0 h-10 w-10 mx-auto' : 'justify-between px-3.5 py-2.5'
+                    } rounded-xl text-xs sm:text-sm font-medium transition-all duration-150 ${
                       location.search.includes('group=security_engineer')
                         ? 'bg-brand-cyan/15 text-brand-cyan border border-brand-cyan/25 shadow-sm shadow-brand-cyan/10 font-semibold'
                         : 'text-text-muted hover:text-white hover:bg-white/5'
                     }`}
                   >
-                    <div className="flex items-center gap-3 min-w-0">
+                    <div className={`flex items-center ${sidebarCollapsed ? 'justify-center' : 'gap-3 min-w-0'}`}>
                       <ShieldCheck size={18} className="shrink-0 text-brand-cyan" />
-                      <span className="truncate">Security Testers</span>
+                      {!sidebarCollapsed && <span className="truncate">Security Testers</span>}
                     </div>
-                    <span className="text-[10px] font-mono px-1.5 py-0.5 rounded bg-brand-cyan/15 text-brand-cyan border border-brand-cyan/20">
-                      Pen-Test
-                    </span>
+                    {!sidebarCollapsed && (
+                      <span className="text-[10px] font-mono px-1.5 py-0.5 rounded bg-brand-cyan/15 text-brand-cyan border border-brand-cyan/20">
+                        Pen-Test
+                      </span>
+                    )}
                   </Link>
 
                   <Link
                     to="/dashboard/admin?tab=orders&group=developer"
                     onClick={() => setMobileSidebarOpen(false)}
-                    className={`flex items-center justify-between px-3.5 py-2.5 rounded-xl text-xs sm:text-sm font-medium transition-all duration-150 ${
+                    title={sidebarCollapsed ? "Developers" : undefined}
+                    className={`flex items-center ${
+                      sidebarCollapsed ? 'justify-center px-0 h-10 w-10 mx-auto' : 'justify-between px-3.5 py-2.5'
+                    } rounded-xl text-xs sm:text-sm font-medium transition-all duration-150 ${
                       location.search.includes('group=developer')
                         ? 'bg-emerald-500/15 text-emerald-400 border border-emerald-500/25 shadow-sm shadow-emerald-500/10 font-semibold'
                         : 'text-text-muted hover:text-white hover:bg-white/5'
                     }`}
                   >
-                    <div className="flex items-center gap-3 min-w-0">
+                    <div className={`flex items-center ${sidebarCollapsed ? 'justify-center' : 'gap-3 min-w-0'}`}>
                       <Code size={18} className="shrink-0 text-emerald-400" />
-                      <span className="truncate">Developers</span>
+                      {!sidebarCollapsed && <span className="truncate">Developers</span>}
                     </div>
-                    <span className="text-[10px] font-mono px-1.5 py-0.5 rounded bg-emerald-500/15 text-emerald-400 border border-emerald-500/20">
-                      Patches
-                    </span>
+                    {!sidebarCollapsed && (
+                      <span className="text-[10px] font-mono px-1.5 py-0.5 rounded bg-emerald-500/15 text-emerald-400 border border-emerald-500/20">
+                        Patches
+                      </span>
+                    )}
                   </Link>
 
                   <Link
                     to="/dashboard/admin?tab=orders&group=malware_analyst"
                     onClick={() => setMobileSidebarOpen(false)}
-                    className={`flex items-center justify-between px-3.5 py-2.5 rounded-xl text-xs sm:text-sm font-medium transition-all duration-150 ${
+                    title={sidebarCollapsed ? "Malware Analysts" : undefined}
+                    className={`flex items-center ${
+                      sidebarCollapsed ? 'justify-center px-0 h-10 w-10 mx-auto' : 'justify-between px-3.5 py-2.5'
+                    } rounded-xl text-xs sm:text-sm font-medium transition-all duration-150 ${
                       location.search.includes('group=malware_analyst')
                         ? 'bg-amber-500/15 text-amber-400 border border-amber-500/25 shadow-sm shadow-amber-500/10 font-semibold'
                         : 'text-text-muted hover:text-white hover:bg-white/5'
                     }`}
                   >
-                    <div className="flex items-center gap-3 min-w-0">
+                    <div className={`flex items-center ${sidebarCollapsed ? 'justify-center' : 'gap-3 min-w-0'}`}>
                       <Bug size={18} className="shrink-0 text-amber-400" />
-                      <span className="truncate">Malware Analysts</span>
+                      {!sidebarCollapsed && <span className="truncate">Malware Analysts</span>}
                     </div>
-                    <span className="text-[10px] font-mono px-1.5 py-0.5 rounded bg-amber-500/15 text-amber-400 border border-amber-500/20">
-                      Lab
-                    </span>
+                    {!sidebarCollapsed && (
+                      <span className="text-[10px] font-mono px-1.5 py-0.5 rounded bg-amber-500/15 text-amber-400 border border-amber-500/20">
+                        Lab
+                      </span>
+                    )}
                   </Link>
                 </div>
               </div>
 
               {/* Platform Governance Section */}
               <div>
-                <div className="px-3 pb-1.5 text-[10px] font-bold uppercase tracking-wider text-text-muted">
-                  Platform Governance
-                </div>
+                {!sidebarCollapsed ? (
+                  <div className="px-3 pb-1.5 text-[10px] font-bold uppercase tracking-wider text-text-muted">
+                    Platform Governance
+                  </div>
+                ) : (
+                  <div className="my-1.5 border-t border-white/10" />
+                )}
                 <div className="space-y-1">
                   <Link
                     to="/dashboard/admin?tab=users"
                     onClick={() => setMobileSidebarOpen(false)}
-                    className={`flex items-center gap-3 px-3.5 py-2.5 rounded-xl text-xs sm:text-sm font-medium transition-all duration-150 ${
+                    title={sidebarCollapsed ? "Users & Roles" : undefined}
+                    className={`flex items-center ${
+                      sidebarCollapsed ? 'justify-center px-0 h-10 w-10 mx-auto' : 'gap-3 px-3.5 py-2.5'
+                    } rounded-xl text-xs sm:text-sm font-medium transition-all duration-150 ${
                       location.search.includes('tab=users')
                         ? 'bg-brand-cyan/15 text-brand-cyan border border-brand-cyan/25 shadow-sm shadow-brand-cyan/10 font-semibold'
                         : 'text-text-muted hover:text-white hover:bg-white/5'
                     }`}
                   >
                     <Users size={18} className="shrink-0" />
-                    <span className="truncate">Users & Roles</span>
+                    {!sidebarCollapsed && <span className="truncate">Users & Roles</span>}
                   </Link>
 
                   <Link
                     to="/dashboard/admin?tab=system"
                     onClick={() => setMobileSidebarOpen(false)}
-                    className={`flex items-center gap-3 px-3.5 py-2.5 rounded-xl text-xs sm:text-sm font-medium transition-all duration-150 ${
+                    title={sidebarCollapsed ? "System Health & Logs" : undefined}
+                    className={`flex items-center ${
+                      sidebarCollapsed ? 'justify-center px-0 h-10 w-10 mx-auto' : 'gap-3 px-3.5 py-2.5'
+                    } rounded-xl text-xs sm:text-sm font-medium transition-all duration-150 ${
                       location.search.includes('tab=system') || location.search.includes('tab=audit')
                         ? 'bg-brand-cyan/15 text-brand-cyan border border-brand-cyan/25 shadow-sm shadow-brand-cyan/10 font-semibold'
                         : 'text-text-muted hover:text-white hover:bg-white/5'
                     }`}
                   >
                     <Activity size={18} className="shrink-0" />
-                    <span className="truncate">System Health & Logs</span>
+                    {!sidebarCollapsed && <span className="truncate">System Health & Logs</span>}
                   </Link>
                 </div>
               </div>
             </div>
           ) : currentUser.role === 'developer' && !isAnalysisMode ? (
             /* DEVELOPER OPERATIONS & ASSIGNED ORDERS DISPATCH NAVIGATION */
-            <div className="space-y-4">
+            <div className={sidebarCollapsed ? "space-y-2" : "space-y-4"}>
               {/* Dev Workspace & Assigned Orders */}
               <div>
-                <div className="px-3 pb-1.5 text-[10px] font-bold uppercase tracking-wider text-text-muted flex items-center justify-between">
-                  <span>Developer Operations</span>
-                  <span className="text-[9px] bg-emerald-500/20 text-emerald-400 px-1.5 py-0.2 rounded font-mono font-bold">DevSecOps</span>
-                </div>
+                {!sidebarCollapsed ? (
+                  <div className="px-3 pb-1.5 text-[10px] font-bold uppercase tracking-wider text-text-muted flex items-center justify-between">
+                    <span>Developer Operations</span>
+                    <span className="text-[9px] bg-emerald-500/20 text-emerald-400 px-1.5 py-0.2 rounded font-mono font-bold">DevSecOps</span>
+                  </div>
+                ) : (
+                  <div className="my-1.5 border-t border-white/10" />
+                )}
                 <div className="space-y-1">
                   {/* Developer Dashboard */}
                   <Link
                     to="/dashboard/developer"
                     onClick={() => setMobileSidebarOpen(false)}
-                    className={`flex items-center gap-3 px-3.5 py-2.5 rounded-xl text-xs sm:text-sm font-medium transition-all duration-150 ${
+                    title={sidebarCollapsed ? "Developer Dashboard" : undefined}
+                    className={`flex items-center ${
+                      sidebarCollapsed ? 'justify-center px-0 h-10 w-10 mx-auto' : 'gap-3 px-3.5 py-2.5'
+                    } rounded-xl text-xs sm:text-sm font-medium transition-all duration-150 ${
                       location.pathname === '/dashboard/developer' && (!location.search || location.search === '' || location.search === '?tab=overview')
                         ? 'bg-emerald-500/15 text-emerald-400 border border-emerald-500/25 shadow-sm shadow-emerald-500/10 font-semibold'
                         : 'text-text-muted hover:text-white hover:bg-white/5'
                     }`}
                   >
                     <LayoutDashboard size={18} className="shrink-0" />
-                    <span className="truncate">Developer Dashboard</span>
+                    {!sidebarCollapsed && <span className="truncate">Developer Dashboard</span>}
                   </Link>
 
                   {/* Accept Orders from Admin */}
                   <Link
                     to="/dashboard/developer?tab=orders"
                     onClick={() => setMobileSidebarOpen(false)}
-                    className={`flex items-center justify-between px-3.5 py-2.5 rounded-xl text-xs sm:text-sm font-medium transition-all duration-150 ${
+                    title={sidebarCollapsed ? "Assigned Orders" : undefined}
+                    className={`flex items-center ${
+                      sidebarCollapsed ? 'justify-center px-0 h-10 w-10 mx-auto' : 'justify-between px-3.5 py-2.5'
+                    } rounded-xl text-xs sm:text-sm font-medium transition-all duration-150 ${
                       location.pathname === '/dashboard/developer' && location.search.includes('tab=orders')
                         ? 'bg-emerald-500/15 text-emerald-400 border border-emerald-500/25 shadow-sm shadow-emerald-500/10 font-semibold'
                         : 'text-text-muted hover:text-white hover:bg-white/5'
                     }`}
                   >
-                    <div className="flex items-center gap-3 min-w-0">
+                    <div className={`flex items-center ${sidebarCollapsed ? 'justify-center' : 'gap-3 min-w-0'}`}>
                       <ClipboardList size={18} className="shrink-0 text-emerald-400" />
-                      <span className="truncate">Assigned Orders</span>
+                      {!sidebarCollapsed && <span className="truncate">Assigned Orders</span>}
                     </div>
-                    <span className="text-[10px] font-mono px-1.5 py-0.5 rounded bg-emerald-500/15 text-emerald-400 border border-emerald-500/20 font-bold">
-                      Accept
-                    </span>
+                    {!sidebarCollapsed && (
+                      <span className="text-[10px] font-mono px-1.5 py-0.5 rounded bg-emerald-500/15 text-emerald-400 border border-emerald-500/20 font-bold">
+                        Accept
+                      </span>
+                    )}
                   </Link>
 
                   {/* Project Workspaces */}
                   <Link
                     to="/dashboard/service-projects"
                     onClick={() => setMobileSidebarOpen(false)}
-                    className={`flex items-center gap-3 px-3.5 py-2.5 rounded-xl text-xs sm:text-sm font-medium transition-all duration-150 ${
+                    title={sidebarCollapsed ? "Project Workspaces" : undefined}
+                    className={`flex items-center ${
+                      sidebarCollapsed ? 'justify-center px-0 h-10 w-10 mx-auto' : 'gap-3 px-3.5 py-2.5'
+                    } rounded-xl text-xs sm:text-sm font-medium transition-all duration-150 ${
                       location.pathname.startsWith('/dashboard/service-projects')
                         ? 'bg-emerald-500/15 text-emerald-400 border border-emerald-500/25 shadow-sm shadow-emerald-500/10 font-semibold'
                         : 'text-text-muted hover:text-white hover:bg-white/5'
                     }`}
                   >
                     <Layers size={18} className="shrink-0" />
-                    <span className="truncate">Project Workspaces</span>
+                    {!sidebarCollapsed && <span className="truncate">Project Workspaces</span>}
                   </Link>
                 </div>
               </div>
 
               {/* Code Remediation */}
               <div>
-                <div className="px-3 pb-1.5 text-[10px] font-bold uppercase tracking-wider text-text-muted">
-                  Remediation & Fixes
-                </div>
+                {!sidebarCollapsed ? (
+                  <div className="px-3 pb-1.5 text-[10px] font-bold uppercase tracking-wider text-text-muted">
+                    Remediation & Fixes
+                  </div>
+                ) : (
+                  <div className="my-1.5 border-t border-white/10" />
+                )}
                 <div className="space-y-1">
                   <Link
                     to="/dashboard/remediation"
                     onClick={() => setMobileSidebarOpen(false)}
-                    className={`flex items-center gap-3 px-3.5 py-2.5 rounded-xl text-xs sm:text-sm font-medium transition-all duration-150 ${
+                    title={sidebarCollapsed ? "Code Remediation" : undefined}
+                    className={`flex items-center ${
+                      sidebarCollapsed ? 'justify-center px-0 h-10 w-10 mx-auto' : 'gap-3 px-3.5 py-2.5'
+                    } rounded-xl text-xs sm:text-sm font-medium transition-all duration-150 ${
                       location.pathname.startsWith('/dashboard/remediation')
                         ? 'bg-emerald-500/15 text-emerald-400 border border-emerald-500/25 shadow-sm shadow-emerald-500/10 font-semibold'
                         : 'text-text-muted hover:text-white hover:bg-white/5'
                     }`}
                   >
                     <Code size={18} className="shrink-0 text-emerald-400" />
-                    <span className="truncate">Code Remediation</span>
+                    {!sidebarCollapsed && <span className="truncate">Code Remediation</span>}
                   </Link>
                 </div>
               </div>
             </div>
           ) : currentUser.role === 'security_engineer' && !isAnalysisMode ? (
             /* SECURITY OPERATIONS & ASSIGNED AUDITS NAVIGATION */
-            <div className="space-y-4">
+            <div className={sidebarCollapsed ? "space-y-2" : "space-y-4"}>
               <div>
-                <div className="px-3 pb-1.5 text-[10px] font-bold uppercase tracking-wider text-text-muted flex items-center justify-between">
-                  <span>Security Operations</span>
-                  <span className="text-[9px] bg-brand-cyan/20 text-brand-cyan px-1.5 py-0.2 rounded font-mono font-bold">SecOps</span>
-                </div>
+                {!sidebarCollapsed ? (
+                  <div className="px-3 pb-1.5 text-[10px] font-bold uppercase tracking-wider text-text-muted flex items-center justify-between">
+                    <span>Security Operations</span>
+                    <span className="text-[9px] bg-brand-cyan/20 text-brand-cyan px-1.5 py-0.2 rounded font-mono font-bold">SecOps</span>
+                  </div>
+                ) : (
+                  <div className="my-1.5 border-t border-white/10" />
+                )}
                 <div className="space-y-1">
                   {/* Security Dashboard */}
                   <Link
                     to="/dashboard/security"
                     onClick={() => setMobileSidebarOpen(false)}
-                    className={`flex items-center gap-3 px-3.5 py-2.5 rounded-xl text-xs sm:text-sm font-medium transition-all duration-150 ${
+                    title={sidebarCollapsed ? "Security Dashboard" : undefined}
+                    className={`flex items-center ${
+                      sidebarCollapsed ? 'justify-center px-0 h-10 w-10 mx-auto' : 'gap-3 px-3.5 py-2.5'
+                    } rounded-xl text-xs sm:text-sm font-medium transition-all duration-150 ${
                       location.pathname === '/dashboard/security' && (!location.search || location.search === '' || location.search === '?tab=overview')
                         ? 'bg-brand-cyan/15 text-brand-cyan border border-brand-cyan/25 shadow-sm shadow-brand-cyan/10 font-semibold'
                         : 'text-text-muted hover:text-white hover:bg-white/5'
                     }`}
                   >
                     <LayoutDashboard size={18} className="shrink-0" />
-                    <span className="truncate">Security Dashboard</span>
+                    {!sidebarCollapsed && <span className="truncate">Security Dashboard</span>}
                   </Link>
 
                   {/* Accept Orders from Admin */}
                   <Link
                     to="/dashboard/security?tab=orders"
                     onClick={() => setMobileSidebarOpen(false)}
-                    className={`flex items-center justify-between px-3.5 py-2.5 rounded-xl text-xs sm:text-sm font-medium transition-all duration-150 ${
+                    title={sidebarCollapsed ? "Assigned Orders" : undefined}
+                    className={`flex items-center ${
+                      sidebarCollapsed ? 'justify-center px-0 h-10 w-10 mx-auto' : 'justify-between px-3.5 py-2.5'
+                    } rounded-xl text-xs sm:text-sm font-medium transition-all duration-150 ${
                       location.pathname === '/dashboard/security' && location.search.includes('tab=orders')
                         ? 'bg-brand-cyan/15 text-brand-cyan border border-brand-cyan/25 shadow-sm shadow-brand-cyan/10 font-semibold'
                         : 'text-text-muted hover:text-white hover:bg-white/5'
                     }`}
                   >
-                    <div className="flex items-center gap-3 min-w-0">
+                    <div className={`flex items-center ${sidebarCollapsed ? 'justify-center' : 'gap-3 min-w-0'}`}>
                       <ClipboardList size={18} className="shrink-0 text-brand-cyan" />
-                      <span className="truncate">Assigned Orders</span>
+                      {!sidebarCollapsed && <span className="truncate">Assigned Orders</span>}
                     </div>
-                    <span className="text-[10px] font-mono px-1.5 py-0.5 rounded bg-brand-cyan/15 text-brand-cyan border border-brand-cyan/20 font-bold">
-                      Accept
-                    </span>
+                    {!sidebarCollapsed && (
+                      <span className="text-[10px] font-mono px-1.5 py-0.5 rounded bg-brand-cyan/15 text-brand-cyan border border-brand-cyan/20 font-bold">
+                        Accept
+                      </span>
+                    )}
                   </Link>
 
                   {/* Project Workspaces */}
                   <Link
                     to="/dashboard/service-projects"
                     onClick={() => setMobileSidebarOpen(false)}
-                    className={`flex items-center gap-3 px-3.5 py-2.5 rounded-xl text-xs sm:text-sm font-medium transition-all duration-150 ${
+                    title={sidebarCollapsed ? "Project Workspaces" : undefined}
+                    className={`flex items-center ${
+                      sidebarCollapsed ? 'justify-center px-0 h-10 w-10 mx-auto' : 'gap-3 px-3.5 py-2.5'
+                    } rounded-xl text-xs sm:text-sm font-medium transition-all duration-150 ${
                       location.pathname.startsWith('/dashboard/service-projects')
                         ? 'bg-brand-cyan/15 text-brand-cyan border border-brand-cyan/25 shadow-sm shadow-brand-cyan/10 font-semibold'
                         : 'text-text-muted hover:text-white hover:bg-white/5'
                     }`}
                   >
                     <Layers size={18} className="shrink-0" />
-                    <span className="truncate">Project Workspaces</span>
+                    {!sidebarCollapsed && <span className="truncate">Project Workspaces</span>}
                   </Link>
                 </div>
               </div>
 
               {/* Retest Verification */}
               <div>
-                <div className="px-3 pb-1.5 text-[10px] font-bold uppercase tracking-wider text-text-muted">
-                  Audits & Retest
-                </div>
+                {!sidebarCollapsed ? (
+                  <div className="px-3 pb-1.5 text-[10px] font-bold uppercase tracking-wider text-text-muted">
+                    Audits & Retest
+                  </div>
+                ) : (
+                  <div className="my-1.5 border-t border-white/10" />
+                )}
                 <div className="space-y-1">
                   <Link
                     to="/dashboard/retest"
                     onClick={() => setMobileSidebarOpen(false)}
-                    className={`flex items-center gap-3 px-3.5 py-2.5 rounded-xl text-xs sm:text-sm font-medium transition-all duration-150 ${
+                    title={sidebarCollapsed ? "Retest Verification" : undefined}
+                    className={`flex items-center ${
+                      sidebarCollapsed ? 'justify-center px-0 h-10 w-10 mx-auto' : 'gap-3 px-3.5 py-2.5'
+                    } rounded-xl text-xs sm:text-sm font-medium transition-all duration-150 ${
                       location.pathname.startsWith('/dashboard/retest')
                         ? 'bg-brand-cyan/15 text-brand-cyan border border-brand-cyan/25 shadow-sm shadow-brand-cyan/10 font-semibold'
                         : 'text-text-muted hover:text-white hover:bg-white/5'
                     }`}
                   >
                     <RotateCcw size={18} className="shrink-0 text-brand-cyan" />
-                    <span className="truncate">Retest Verification</span>
+                    {!sidebarCollapsed && <span className="truncate">Retest Verification</span>}
                   </Link>
                 </div>
               </div>
             </div>
           ) : currentUser.role === 'malware_analyst' && !isAnalysisMode ? (
             /* MALWARE OPERATIONS & ASSIGNED LAB DISPATCH NAVIGATION */
-            <div className="space-y-4">
+            <div className={sidebarCollapsed ? "space-y-2" : "space-y-4"}>
               <div>
-                <div className="px-3 pb-1.5 text-[10px] font-bold uppercase tracking-wider text-text-muted flex items-center justify-between">
-                  <span>Malware Operations</span>
-                  <span className="text-[9px] bg-amber-500/20 text-amber-400 px-1.5 py-0.2 rounded font-mono font-bold">MalLab</span>
-                </div>
+                {!sidebarCollapsed ? (
+                  <div className="px-3 pb-1.5 text-[10px] font-bold uppercase tracking-wider text-text-muted flex items-center justify-between">
+                    <span>Malware Operations</span>
+                    <span className="text-[9px] bg-amber-500/20 text-amber-400 px-1.5 py-0.2 rounded font-mono font-bold">MalLab</span>
+                  </div>
+                ) : (
+                  <div className="my-1.5 border-t border-white/10" />
+                )}
                 <div className="space-y-1">
                   {/* Malware Dashboard */}
                   <Link
                     to="/dashboard/malware"
                     onClick={() => setMobileSidebarOpen(false)}
-                    className={`flex items-center gap-3 px-3.5 py-2.5 rounded-xl text-xs sm:text-sm font-medium transition-all duration-150 ${
+                    title={sidebarCollapsed ? "Malware Dashboard" : undefined}
+                    className={`flex items-center ${
+                      sidebarCollapsed ? 'justify-center px-0 h-10 w-10 mx-auto' : 'gap-3 px-3.5 py-2.5'
+                    } rounded-xl text-xs sm:text-sm font-medium transition-all duration-150 ${
                       location.pathname === '/dashboard/malware' && (!location.search || location.search === '' || location.search === '?tab=overview')
                         ? 'bg-amber-500/15 text-amber-400 border border-amber-500/25 shadow-sm shadow-amber-500/10 font-semibold'
                         : 'text-text-muted hover:text-white hover:bg-white/5'
                     }`}
                   >
                     <LayoutDashboard size={18} className="shrink-0" />
-                    <span className="truncate">Malware Dashboard</span>
+                    {!sidebarCollapsed && <span className="truncate">Malware Dashboard</span>}
                   </Link>
 
                   {/* Accept Orders from Admin */}
                   <Link
                     to="/dashboard/malware?tab=orders"
                     onClick={() => setMobileSidebarOpen(false)}
-                    className={`flex items-center justify-between px-3.5 py-2.5 rounded-xl text-xs sm:text-sm font-medium transition-all duration-150 ${
+                    title={sidebarCollapsed ? "Assigned Orders" : undefined}
+                    className={`flex items-center ${
+                      sidebarCollapsed ? 'justify-center px-0 h-10 w-10 mx-auto' : 'justify-between px-3.5 py-2.5'
+                    } rounded-xl text-xs sm:text-sm font-medium transition-all duration-150 ${
                       location.pathname === '/dashboard/malware' && location.search.includes('tab=orders')
                         ? 'bg-amber-500/15 text-amber-400 border border-amber-500/25 shadow-sm shadow-amber-500/10 font-semibold'
                         : 'text-text-muted hover:text-white hover:bg-white/5'
                     }`}
                   >
-                    <div className="flex items-center gap-3 min-w-0">
+                    <div className={`flex items-center ${sidebarCollapsed ? 'justify-center' : 'gap-3 min-w-0'}`}>
                       <ClipboardList size={18} className="shrink-0 text-amber-400" />
-                      <span className="truncate">Assigned Orders</span>
+                      {!sidebarCollapsed && <span className="truncate">Assigned Orders</span>}
                     </div>
-                    <span className="text-[10px] font-mono px-1.5 py-0.5 rounded bg-amber-500/15 text-amber-400 border border-amber-500/20 font-bold">
-                      Accept
-                    </span>
+                    {!sidebarCollapsed && (
+                      <span className="text-[10px] font-mono px-1.5 py-0.5 rounded bg-amber-500/15 text-amber-400 border border-amber-500/20 font-bold">
+                        Accept
+                      </span>
+                    )}
                   </Link>
 
                   {/* Project Workspaces */}
                   <Link
                     to="/dashboard/service-projects"
                     onClick={() => setMobileSidebarOpen(false)}
-                    className={`flex items-center gap-3 px-3.5 py-2.5 rounded-xl text-xs sm:text-sm font-medium transition-all duration-150 ${
+                    title={sidebarCollapsed ? "Project Workspaces" : undefined}
+                    className={`flex items-center ${
+                      sidebarCollapsed ? 'justify-center px-0 h-10 w-10 mx-auto' : 'gap-3 px-3.5 py-2.5'
+                    } rounded-xl text-xs sm:text-sm font-medium transition-all duration-150 ${
                       location.pathname.startsWith('/dashboard/service-projects')
                         ? 'bg-amber-500/15 text-amber-400 border border-amber-500/25 shadow-sm shadow-amber-500/10 font-semibold'
                         : 'text-text-muted hover:text-white hover:bg-white/5'
                     }`}
                   >
                     <Layers size={18} className="shrink-0" />
-                    <span className="truncate">Project Workspaces</span>
+                    {!sidebarCollapsed && <span className="truncate">Project Workspaces</span>}
                   </Link>
                 </div>
               </div>
@@ -691,14 +867,184 @@ export const AppShell: React.FC = () => {
               <Menu size={18} />
             </button>
 
-            {/* Quick search on desktop */}
-            <div className="relative hidden sm:block w-64 lg:w-80">
-              <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-text-muted" size={14} />
-              <input
-                type="text"
-                placeholder="Search findings, projects, endpoints..."
-                className="w-full bg-white/5 border border-white/10 rounded-xl py-1.5 pl-9 pr-3 text-xs text-white placeholder-text-muted focus:outline-none focus:border-brand-cyan transition-colors"
-              />
+            {/* Quick Global Search */}
+            <div ref={searchContainerRef} className="relative hidden sm:block w-72 lg:w-96 z-50">
+              <form onSubmit={handleGlobalSearchSubmit} className="relative">
+                <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-text-muted" size={14} />
+                <input
+                  ref={searchInputRef}
+                  type="text"
+                  value={globalSearch}
+                  onFocus={() => setIsSearchOpen(true)}
+                  onChange={e => {
+                    setGlobalSearch(e.target.value);
+                    setIsSearchOpen(true);
+                  }}
+                  placeholder="Search findings, projects, endpoints..."
+                  className="w-full bg-white/5 border border-white/10 rounded-xl py-1.5 pl-9 pr-14 text-xs text-white placeholder-text-muted focus:outline-none focus:border-brand-cyan transition-colors"
+                />
+                <div className="absolute right-2.5 top-1/2 -translate-y-1/2 flex items-center gap-1.5">
+                  {globalSearch ? (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setGlobalSearch('');
+                        searchInputRef.current?.focus();
+                      }}
+                      className="p-0.5 rounded hover:bg-white/10 text-text-muted hover:text-white"
+                      title="Clear search"
+                    >
+                      <X size={12} />
+                    </button>
+                  ) : (
+                    <kbd className="hidden lg:inline-block px-1.5 py-0.5 text-[9px] font-mono text-text-muted bg-white/5 border border-white/10 rounded">
+                      Ctrl K
+                    </kbd>
+                  )}
+                </div>
+              </form>
+
+              {/* Interactive Search Popover */}
+              {isSearchOpen && (
+                <div className="absolute left-0 right-0 top-full mt-2 bg-[#0f172a] border border-white/20 rounded-2xl p-3 shadow-2xl shadow-black z-50 text-white max-h-96 overflow-y-auto space-y-3 animate-fadeIn">
+                  {globalSearch.trim().length > 0 ? (
+                    <>
+                      {/* Direct query jumps */}
+                      <div>
+                        <div className="text-[10px] font-bold uppercase tracking-wider text-text-muted px-2 pb-1.5">
+                          Quick Search Actions
+                        </div>
+                        <div className="space-y-1">
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setIsSearchOpen(false);
+                              navigate(`/dashboard/findings?search=${encodeURIComponent(globalSearch.trim())}`);
+                            }}
+                            className="w-full flex items-center justify-between px-2.5 py-2 rounded-xl text-xs hover:bg-brand-cyan/15 hover:text-brand-cyan transition-colors text-left group"
+                          >
+                            <span className="flex items-center gap-2 truncate">
+                              <Bug size={14} className="text-brand-cyan shrink-0" />
+                              Search Findings for &quot;<span className="font-semibold text-white group-hover:text-brand-cyan">{globalSearch}</span>&quot;
+                            </span>
+                            <span className="text-[10px] font-mono px-1.5 py-0.5 rounded bg-white/5 text-text-muted shrink-0">Findings</span>
+                          </button>
+
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setIsSearchOpen(false);
+                              navigate(`/dashboard/projects?search=${encodeURIComponent(globalSearch.trim())}`);
+                            }}
+                            className="w-full flex items-center justify-between px-2.5 py-2 rounded-xl text-xs hover:bg-emerald-500/15 hover:text-emerald-400 transition-colors text-left group"
+                          >
+                            <span className="flex items-center gap-2 truncate">
+                              <Globe size={14} className="text-emerald-400 shrink-0" />
+                              Search Targets for &quot;<span className="font-semibold text-white group-hover:text-emerald-400">{globalSearch}</span>&quot;
+                            </span>
+                            <span className="text-[10px] font-mono px-1.5 py-0.5 rounded bg-white/5 text-text-muted shrink-0">Targets</span>
+                          </button>
+
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setIsSearchOpen(false);
+                              navigate(`/dashboard/reports?search=${encodeURIComponent(globalSearch.trim())}`);
+                            }}
+                            className="w-full flex items-center justify-between px-2.5 py-2 rounded-xl text-xs hover:bg-blue-500/15 hover:text-blue-400 transition-colors text-left group"
+                          >
+                            <span className="flex items-center gap-2 truncate">
+                              <FileText size={14} className="text-blue-400 shrink-0" />
+                              Search Reports for &quot;<span className="font-semibold text-white group-hover:text-blue-400">{globalSearch}</span>&quot;
+                            </span>
+                            <span className="text-[10px] font-mono px-1.5 py-0.5 rounded bg-white/5 text-text-muted shrink-0">Reports</span>
+                          </button>
+
+                          {isAdmin && (
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setIsSearchOpen(false);
+                                navigate(`/dashboard/admin?tab=orders&search=${encodeURIComponent(globalSearch.trim())}`);
+                              }}
+                              className="w-full flex items-center justify-between px-2.5 py-2 rounded-xl text-xs hover:bg-amber-500/15 hover:text-amber-400 transition-colors text-left group"
+                            >
+                              <span className="flex items-center gap-2 truncate">
+                                <ClipboardList size={14} className="text-amber-400 shrink-0" />
+                                Search Orders for &quot;<span className="font-semibold text-white group-hover:text-amber-400">{globalSearch}</span>&quot;
+                              </span>
+                              <span className="text-[10px] font-mono px-1.5 py-0.5 rounded bg-white/5 text-text-muted shrink-0">Admin</span>
+                            </button>
+                          )}
+                        </div>
+                      </div>
+
+                      {/* Matched Pages */}
+                      {matchedPages.length > 0 && (
+                        <div className="pt-2 border-t border-white/10">
+                          <div className="text-[10px] font-bold uppercase tracking-wider text-text-muted px-2 pb-1.5">
+                            Matching Platform Views
+                          </div>
+                          <div className="space-y-1">
+                            {matchedPages.map((page) => {
+                              const PageIcon = page.icon;
+                              return (
+                                <button
+                                  key={page.path}
+                                  type="button"
+                                  onClick={() => {
+                                    setIsSearchOpen(false);
+                                    navigate(page.path);
+                                  }}
+                                  className="w-full flex items-center justify-between px-2.5 py-2 rounded-xl text-xs hover:bg-white/10 text-white transition-colors text-left group"
+                                >
+                                  <span className="flex items-center gap-2 truncate">
+                                    <PageIcon size={14} className="text-brand-cyan shrink-0" />
+                                    <span>{page.label}</span>
+                                  </span>
+                                  <span className="text-[10px] font-mono px-1.5 py-0.5 rounded bg-white/5 text-text-muted shrink-0">
+                                    {page.category}
+                                  </span>
+                                </button>
+                              );
+                            })}
+                          </div>
+                        </div>
+                      )}
+                    </>
+                  ) : (
+                    <div>
+                      <div className="text-[10px] font-bold uppercase tracking-wider text-text-muted px-2 pb-1.5">
+                        Quick Platform Navigation
+                      </div>
+                      <div className="grid grid-cols-2 gap-1.5">
+                        {[
+                          { label: 'Findings', path: '/dashboard/findings', icon: Bug, color: 'text-brand-cyan' },
+                          { label: 'Targets', path: '/dashboard/projects', icon: Globe, color: 'text-emerald-400' },
+                          { label: 'Remediation', path: '/dashboard/remediation', icon: ArrowRightLeft, color: 'text-sky-400' },
+                          { label: 'Reports', path: '/dashboard/reports', icon: FileText, color: 'text-brand-purple' },
+                        ].map((item) => {
+                          const IconComp = item.icon;
+                          return (
+                            <button
+                              key={item.path}
+                              type="button"
+                              onClick={() => {
+                                setIsSearchOpen(false);
+                                navigate(item.path);
+                              }}
+                              className="flex items-center gap-2 p-2 rounded-xl bg-white/[0.03] hover:bg-white/10 border border-white/5 text-xs text-left transition-colors"
+                            >
+                              <IconComp size={14} className={item.color} />
+                              <span className="truncate">{item.label}</span>
+                            </button>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  )}
+                </div>
+              )}
             </div>
           </div>
 
@@ -828,30 +1174,15 @@ export const AppShell: React.FC = () => {
               )}
             </div>
 
-            {/* User pill & Sign Out */}
-            <div className="flex items-center gap-2 pl-2 border-l border-white/10">
+            {/* User Profile Icon Only */}
+            <div className="flex items-center pl-2 border-l border-white/10">
               <button
                 onClick={() => setShowProfileModal(true)}
-                className="flex items-center gap-2 hover:opacity-85 transition-opacity group cursor-pointer text-left focus:outline-none"
-                title="Click to view user profile"
+                className="w-8 h-8 rounded-full bg-gradient-brand flex items-center justify-center text-xs font-bold text-white shadow-md hover:ring-2 hover:ring-brand-cyan/50 transition-all cursor-pointer focus:outline-none"
+                title={`View Profile (${currentUser.name})`}
+                aria-label="View user profile"
               >
-                <div className="w-8 h-8 rounded-full bg-gradient-brand flex items-center justify-center text-xs font-bold text-white shadow-md group-hover:ring-2 group-hover:ring-brand-cyan/50 transition-all">
-                  {currentUser.name.charAt(0).toUpperCase()}
-                </div>
-                <div className="hidden xl:block text-left">
-                  <div className="text-xs font-semibold text-white leading-tight group-hover:text-brand-cyan transition-colors">{currentUser.name}</div>
-                  <div className="text-[10px] text-text-muted leading-tight">{currentUser.email}</div>
-                </div>
-              </button>
-              <button
-                onClick={() => {
-                  logout();
-                  navigate('/login');
-                }}
-                title="Sign Out"
-                className="p-1.5 rounded-lg text-text-muted hover:text-red-400 hover:bg-white/5 transition-colors ml-1"
-              >
-                <LogOut size={16} />
+                {currentUser.name.charAt(0).toUpperCase()}
               </button>
             </div>
           </div>

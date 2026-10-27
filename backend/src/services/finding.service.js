@@ -3,6 +3,7 @@
 import mongoose from "mongoose";
 
 import * as findingRepository from "../database/repositories/finding.repository.js";
+import * as scanRepository from "../database/repositories/scan.repository.js";
 
 const createServiceError = (code, message, statusCode) => {
   const error = new Error(message);
@@ -75,13 +76,21 @@ const listFindings = async ({
   limit = 100,
   skip = 0,
 }) => {
-  const normalizedOwnerId = assertOwnerId(ownerId);
+  let normalizedOwnerId = assertOwnerId(ownerId);
 
   const normalizedScanId = assertOptionalObjectId(
     scanId,
     "INVALID_SCAN_ID",
     "Scan ID must be a valid ObjectId.",
   );
+
+  // If a scanId is provided, resolve the scan's actual ownerId so guest sessions never miss findings
+  if (normalizedScanId) {
+    const scan = await scanRepository.findByIdOnly(normalizedScanId);
+    if (scan && scan.ownerId) {
+      normalizedOwnerId = scan.ownerId;
+    }
+  }
 
   return findingRepository.list(normalizedOwnerId, {
     scanId: normalizedScanId,

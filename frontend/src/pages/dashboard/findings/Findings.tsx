@@ -19,10 +19,18 @@ export const Findings: React.FC = () => {
   const { tier: userTier, isFree, isPro, isEnterprise } = useUserTier();
   const [searchParams] = useSearchParams();
   const filterScanId = searchParams.get('scanId');
+  const urlSearch = searchParams.get('search') || searchParams.get('q') || '';
 
   const [findings, setFindings] = useState<Finding[]>([]);
   const [loading, setLoading] = useState(true);
-  const [searchTerm, setSearchTerm] = useState('');
+  const [searchTerm, setSearchTerm] = useState(urlSearch);
+
+  useEffect(() => {
+    const q = searchParams.get('search') || searchParams.get('q');
+    if (q !== null && q !== undefined) {
+      setSearchTerm(q);
+    }
+  }, [searchParams]);
   const [severityFilter, setSeverityFilter] = useState<string>('all');
   const [statusFilter, setStatusFilter] = useState<string>('all');
   const [selectedEvidence, setSelectedEvidence] = useState<Evidence | null>(null);

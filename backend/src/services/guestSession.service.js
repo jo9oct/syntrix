@@ -9,7 +9,7 @@ import * as guestSessionRepository from "../database/repositories/guestSession.r
 import { enqueueCleanupJob } from "../jobs/cleanup.job.js";
 
 const getGuestSessionTtlMs = () =>
-  environment.guest.sessionTtlMinutes * 60 * 1000;
+  Math.max(60, Number(environment.guest?.sessionTtlMinutes) || 60) * 60 * 1000;
 
 const assertGuestOwnerId = (guestOwnerId) => {
   if (!mongoose.isValidObjectId(guestOwnerId)) {

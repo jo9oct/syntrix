@@ -272,6 +272,12 @@ const findById = async (ownerId, scanId) =>
     status: { $ne: "deleted" },
   }).lean();
 
+const findByIdOnly = async (scanId) =>
+  Scan.findOne({
+    _id: assertObjectId(scanId, "scanId"),
+    status: { $ne: "deleted" },
+  }).lean();
+
 const findAnyById = async (ownerId, scanId) =>
   Scan.findOne({
     _id: assertObjectId(scanId, "scanId"),
@@ -903,6 +909,7 @@ export {
   TERMINAL_STATUSES,
   create,
   findById,
+  findByIdOnly,
   findAnyById,
   findDocumentById,
   findDeletedById,

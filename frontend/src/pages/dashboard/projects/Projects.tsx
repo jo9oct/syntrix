@@ -8,7 +8,7 @@ import {
   Clock, CheckCircle2, AlertTriangle, Activity, Server, Sliders,
   FileText, RefreshCw, Sparkles, Lock
 } from 'lucide-react';
-import { Link, useNavigate } from 'react-router-dom';
+import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import { useAuthStore, useUserTier } from '../../../store/authStore';
 
 export const Projects: React.FC = () => {
@@ -18,7 +18,16 @@ export const Projects: React.FC = () => {
   const [targets, setTargets] = useState<Target[]>([]);
   const [latestScanMap, setLatestScanMap] = useState<Record<string, { status: string; scanId: string; version: number }>>({});
   const [loading, setLoading] = useState(true);
-  const [searchTerm, setSearchTerm] = useState('');
+  const [searchParams] = useSearchParams();
+  const urlSearch = searchParams.get('search') || searchParams.get('q') || '';
+  const [searchTerm, setSearchTerm] = useState(urlSearch);
+
+  useEffect(() => {
+    const q = searchParams.get('search') || searchParams.get('q');
+    if (q !== null && q !== undefined) {
+      setSearchTerm(q);
+    }
+  }, [searchParams]);
 
   const fetchTargets = async () => {
     try {

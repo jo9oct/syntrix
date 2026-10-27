@@ -14,7 +14,7 @@ import {
   requireOwner,
 } from "../middleware/authorization.middleware.js";
 
-import { protect } from "../middleware/auth.js";
+import { optionalProtect } from "../middleware/auth.js";
 
 import { validate } from "../middleware/validation.middleware.js";
 
@@ -26,30 +26,8 @@ import {
 
 const router = Router();
 
-// Verify the JWT when supplied.
-// Preserve guest access when no Authorization header is supplied.
-const verifyBearerIfPresent = (req, res, next) => {
-  const authorization = req.headers.authorization;
-
-  if (authorization === undefined) {
-    return next();
-  }
-
-  if (
-    typeof authorization !== "string" ||
-    !/^Bearer\s+\S+$/i.test(authorization)
-  ) {
-    return res.status(401).json({
-      success: false,
-      error: "Invalid Authorization header.",
-    });
-  }
-
-  return protect(req, res, next);
-};
-
-// Authentication -> Authorization -> Ownership
-router.use(verifyBearerIfPresent, requireAuthorization, requireOwner);
+// Authentication (graceful) -> Authorization -> Ownership
+router.use(optionalProtect, requireAuthorization, requireOwner);
 
 // GET /api/v1/findings
 router.get("/", validate(listFindingQuerySchema, "query"), listFindings);

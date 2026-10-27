@@ -41,9 +41,25 @@ const getAuthenticatedUserId = (req) => {
 };
 
 /**
- * Parse the guest session ID from the guest-id cookie.
+ * Parse the guest session ID from request headers, query parameters, or the guest-id cookie.
  */
 const getGuestIdFromCookie = (req) => {
+  const headerGuestId = req.headers?.["x-guest-id"];
+  if (
+    typeof headerGuestId === "string" &&
+    mongoose.isValidObjectId(headerGuestId.trim())
+  ) {
+    return normalizeOwnerId(headerGuestId.trim());
+  }
+
+  const queryGuestId = req.query?.guestId;
+  if (
+    typeof queryGuestId === "string" &&
+    mongoose.isValidObjectId(queryGuestId.trim())
+  ) {
+    return normalizeOwnerId(queryGuestId.trim());
+  }
+
   const cookieHeader = req.headers.cookie;
 
   if (typeof cookieHeader !== "string" || !cookieHeader.trim()) {
@@ -193,8 +209,9 @@ const requireAuthorization = async (req, res, next) => {
       return next();
     }
 
+    let guestOwnerId = cookieGuestOwnerId;
     const existingSession = await guestSessionService.getGuestSession({
-      guestOwnerId: cookieGuestOwnerId,
+      guestOwnerId,
     });
 
     if (
@@ -202,18 +219,14 @@ const requireAuthorization = async (req, res, next) => {
       !existingSession.expiresAt ||
       new Date(existingSession.expiresAt).getTime() <= Date.now()
     ) {
-      const guestOwnerId = await createNewGuestSession(res);
-
-      req.auth = {
-        ownerId: guestOwnerId,
-        userType: "guest",
-      };
-
-      return next();
+      await guestSessionService.getOrCreateGuestSession({
+        guestOwnerId,
+      });
+      setGuestCookie(res, guestOwnerId);
     }
 
     req.auth = {
-      ownerId: cookieGuestOwnerId,
+      ownerId: guestOwnerId,
       userType: "guest",
     };
 

@@ -4,7 +4,7 @@
 import dotenv from "dotenv";
 import Joi from "joi";
 
-dotenv.config();
+dotenv.config({ override: true });
 
 const environmentSchema = Joi.object({
   NODE_ENV: Joi.string()

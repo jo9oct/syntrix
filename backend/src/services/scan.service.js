@@ -610,10 +610,18 @@ const getScan = async ({ ownerId, scanId }) => {
 
   const normalizedScanId = assertScanId(scanId);
 
-  const scan = await scanRepository.findById(
+  let scan = await scanRepository.findById(
     normalizedOwnerId,
     normalizedScanId,
   );
+
+  if (!scan) {
+    // Robust fallback: if scan was created by a guest, allow retrieving by scanId
+    const fallbackScan = await scanRepository.findByIdOnly(normalizedScanId);
+    if (fallbackScan && (!fallbackScan.credentials || !fallbackScan.credentials.credentialProvided)) {
+      scan = fallbackScan;
+    }
+  }
 
   if (!scan) {
     throw createServiceError("SCAN_NOT_FOUND", "Scan not found.", 404);

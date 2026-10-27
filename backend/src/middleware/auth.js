@@ -121,6 +121,87 @@ export const protect = async (req, res, next) => {
   }
 };
 
+export const optionalProtect = async (req, res, next) => {
+  const authHeader = req.headers.authorization;
+  let token = authHeader?.startsWith("Bearer ")
+    ? authHeader.slice(7).trim()
+    : null;
+
+  if (!token && req.headers.cookie) {
+    const cookies = parseCookies(req.headers.cookie);
+    token = cookies.sentrix_token || cookies.token || cookies.jwt || null;
+  }
+
+  if (!token) {
+    req.user = null;
+    delete req.headers.authorization;
+    return next();
+  }
+
+  // Support demo and switched actor tokens seamlessly
+  if (token.startsWith("sentrix_")) {
+    const roleClean = token
+      .replace("sentrix_token_", "")
+      .replace("sentrix_demo_auth_token", "security_engineer")
+      .trim();
+    const validRoles = [
+      "admin",
+      "client_owner",
+      "client_member",
+      "security_engineer",
+      "developer",
+      "malware_analyst",
+    ];
+    const targetRole = validRoles.includes(roleClean)
+      ? roleClean
+      : "client_member";
+
+    try {
+      let user = await User.findOne({ role: targetRole, isActive: true });
+      if (!user) {
+        user = await User.create({
+          name: targetRole
+            .replace(/_/g, " ")
+            .replace(/\b\w/g, (c) => c.toUpperCase()),
+          email: `${targetRole}@sentrix.local`,
+          role: targetRole,
+          isActive: true,
+        });
+      }
+      req.user = user;
+      return next();
+    } catch {
+      req.user = null;
+      delete req.headers.authorization;
+      return next();
+    }
+  }
+
+  const secret = process.env.JWT_SECRET;
+  if (!secret) {
+    req.user = null;
+    delete req.headers.authorization;
+    return next();
+  }
+
+  try {
+    const decoded = jwt.verify(token, secret);
+    if (typeof decoded === "object" && decoded.id) {
+      const user = await User.findById(decoded.id);
+      if (user && user.isActive) {
+        req.user = user;
+        return next();
+      }
+    }
+  } catch {
+    // Expired or invalid token
+  }
+
+  req.user = null;
+  delete req.headers.authorization;
+  return next();
+};
+
 export const authorize = (...roles) => {
   return (req, res, next) => {
     if (!req.user || !roles.includes(req.user.role)) {
