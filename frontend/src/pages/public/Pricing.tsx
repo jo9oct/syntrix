@@ -25,7 +25,7 @@ export const Pricing: React.FC<{ embedded?: boolean }> = ({ embedded = false }) 
       priceMonthlyUSD: 0,
       priceAnnualUSD: 0,
       popular: false,
-      accentBorder: 'border-white/10 hover:border-white/20',
+      cardClass: 'border-white/8 hover:border-brand-cyan/20',
       ctaText: 'Get Started Free',
       ctaVariant: 'secondary' as const,
       features: [
@@ -54,7 +54,7 @@ export const Pricing: React.FC<{ embedded?: boolean }> = ({ embedded = false }) 
       priceMonthlyUSD: 29,
       priceAnnualUSD: 290,
       popular: true,
-      accentBorder: 'border-brand-cyan/50 shadow-2xl shadow-brand-cyan/20 ring-1 ring-brand-cyan/40',
+      cardClass: 'border-brand-cyan/40 shadow-glow-cyan ring-1 ring-brand-cyan/25',
       ctaText: 'Upgrade with Chapa',
       ctaVariant: 'primary' as const,
       features: [
@@ -84,7 +84,7 @@ export const Pricing: React.FC<{ embedded?: boolean }> = ({ embedded = false }) 
       priceMonthlyUSD: 99,
       priceAnnualUSD: 990,
       popular: false,
-      accentBorder: 'border-brand-purple/40 hover:border-brand-purple/60 shadow-xl shadow-brand-purple/10',
+      cardClass: 'border-brand-purple/30 hover:border-brand-purple/50 shadow-glow-purple',
       ctaText: 'Contact Enterprise',
       ctaVariant: 'primary' as const,
       features: [
@@ -132,12 +132,12 @@ export const Pricing: React.FC<{ embedded?: boolean }> = ({ embedded = false }) 
 
   const content = (
     <div id="pricing" className="max-w-7xl mx-auto w-full px-4 sm:px-6 lg:px-8 relative z-10 scroll-mt-28">
-      {/* Header */}
-      <div className="text-center max-w-3xl mx-auto space-y-4 mb-12">
-        <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-brand-cyan/10 border border-brand-cyan/20 text-xs font-semibold text-brand-cyan tracking-wide">
-          <Sparkles size={14} /> Modern Transparent Pricing
+      {/* Section Header */}
+      <div className="text-center max-w-3xl mx-auto space-y-4 mb-14">
+        <div className="section-badge bg-brand-cyan/10 border border-brand-cyan/20 text-brand-cyan">
+          <Sparkles size={12} /> Modern Transparent Pricing
         </div>
-        <h2 className="text-3xl sm:text-5xl lg:text-6xl font-extrabold tracking-tight leading-tight text-white">
+        <h2 className="text-3xl sm:text-4xl lg:text-5xl font-extrabold tracking-tight leading-tight text-white">
           Security operations,{' '}
           <span className="text-transparent bg-clip-text bg-gradient-brand">
             scaled for everyone.
@@ -147,42 +147,42 @@ export const Pricing: React.FC<{ embedded?: boolean }> = ({ embedded = false }) 
           Choose the workspace capability that fits your posture. Powered by Chapa for instant checkout via Telebirr, CBEBirr, and debit/credit cards.
         </p>
 
-        {/* Controls: Billing Cycle & Currency Switchers */}
-        <div className="flex flex-wrap items-center justify-center gap-4 pt-6">
+        {/* Billing Cycle & Currency Switchers */}
+        <div className="flex flex-wrap items-center justify-center gap-3 pt-4">
           {/* Monthly / Annual Toggle */}
-          <div className="inline-flex items-center p-1 rounded-2xl bg-white/5 border border-white/10 backdrop-blur-xl">
+          <div className="inline-flex items-center p-1 rounded-2xl bg-white/5 border border-white/10 backdrop-blur-xl gap-0.5">
             <button
               onClick={() => setBillingCycle('monthly')}
-              className={`px-4 py-2 rounded-xl text-xs font-semibold transition-all ${
+              className={`px-4 py-2 rounded-xl text-xs font-bold transition-all focus-visible:outline focus-visible:outline-2 focus-visible:outline-brand-cyan ${
                 billingCycle === 'monthly'
                   ? 'bg-gradient-brand text-white shadow-md'
                   : 'text-text-muted hover:text-white'
               }`}
             >
-              Monthly Billing
+              Monthly
             </button>
             <button
               onClick={() => setBillingCycle('annual')}
-              className={`px-4 py-2 rounded-xl text-xs font-semibold transition-all flex items-center gap-1.5 ${
+              className={`px-4 py-2 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 focus-visible:outline focus-visible:outline-2 focus-visible:outline-brand-cyan ${
                 billingCycle === 'annual'
                   ? 'bg-gradient-brand text-white shadow-md'
                   : 'text-text-muted hover:text-white'
               }`}
             >
-              Annual Billing
-              <span className="px-1.5 py-0.5 rounded-full bg-green-500/20 text-green-400 text-[10px] font-bold border border-green-500/30">
+              Annual
+              <span className="px-1.5 py-0.5 rounded-full bg-emerald-500/25 text-emerald-400 text-[10px] font-bold border border-emerald-500/30">
                 2 Mo. Free
               </span>
             </button>
           </div>
 
           {/* Currency Switcher */}
-          <div className="inline-flex items-center p-1 rounded-2xl bg-white/5 border border-white/10 backdrop-blur-xl text-xs font-semibold">
+          <div className="inline-flex items-center p-1 rounded-2xl bg-white/5 border border-white/10 backdrop-blur-xl text-xs font-bold gap-0.5">
             <button
               onClick={() => setCurrency('ETB')}
-              className={`px-3 py-2 rounded-xl transition-all ${
+              className={`px-3 py-2 rounded-xl transition-all focus-visible:outline focus-visible:outline-2 focus-visible:outline-brand-cyan ${
                 currency === 'ETB'
-                  ? 'bg-brand-cyan/20 text-brand-cyan border border-brand-cyan/30'
+                  ? 'bg-brand-cyan/15 text-brand-cyan border border-brand-cyan/30'
                   : 'text-text-muted hover:text-white'
               }`}
             >
@@ -190,9 +190,9 @@ export const Pricing: React.FC<{ embedded?: boolean }> = ({ embedded = false }) 
             </button>
             <button
               onClick={() => setCurrency('USD')}
-              className={`px-3 py-2 rounded-xl transition-all ${
+              className={`px-3 py-2 rounded-xl transition-all focus-visible:outline focus-visible:outline-2 focus-visible:outline-brand-cyan ${
                 currency === 'USD'
-                  ? 'bg-brand-purple/20 text-brand-purple border border-brand-purple/30'
+                  ? 'bg-brand-purple/15 text-brand-purple border border-brand-purple/30'
                   : 'text-text-muted hover:text-white'
               }`}
             >
@@ -203,7 +203,7 @@ export const Pricing: React.FC<{ embedded?: boolean }> = ({ embedded = false }) 
       </div>
 
       {/* Pricing Cards Grid */}
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-8 items-stretch mb-20">
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 items-stretch mb-16">
         {plans.map((plan) => {
           const rawPrice =
             currency === 'ETB'
@@ -217,76 +217,78 @@ export const Pricing: React.FC<{ embedded?: boolean }> = ({ embedded = false }) 
           const isFree = rawPrice === 0;
 
           return (
-            <GlassCard
+            <div
               key={plan.id}
-              className={`p-6 sm:p-8 flex flex-col justify-between relative transition-all duration-300 hover:-translate-y-1 ${plan.accentBorder}`}
+              className={`glass-card flex flex-col justify-between relative transition-all duration-300 ${plan.cardClass} ${
+                plan.popular ? 'scale-[1.02] lg:scale-[1.03]' : 'hover:-translate-y-1'
+              }`}
             >
               {plan.popular && (
-                <div className="absolute -top-3.5 left-1/2 -translate-x-1/2 px-4 py-1 rounded-full bg-gradient-brand text-white text-xs font-bold shadow-lg shadow-brand-cyan/30 flex items-center gap-1.5">
-                  <Zap size={12} fill="white" />
+                <div className="absolute -top-4 left-1/2 -translate-x-1/2 px-4 py-1.5 rounded-full bg-gradient-brand text-white text-[11px] font-extrabold shadow-lg shadow-brand-cyan/30 flex items-center gap-1.5 tracking-wide">
+                  <Zap size={11} fill="white" />
                   {plan.badge}
                 </div>
               )}
 
-              <div>
-                <div className="flex items-center justify-between mb-4">
-                  <h3 className="text-xl font-bold text-white tracking-tight">{plan.name}</h3>
+              <div className="p-6 sm:p-7 flex flex-col h-full">
+                <div className="flex items-center justify-between mb-3">
+                  <h3 className="text-base font-extrabold text-white tracking-tight">{plan.name}</h3>
                   {!plan.popular && (
-                    <span className="text-[11px] font-semibold text-text-muted px-2.5 py-1 rounded-full bg-white/5 border border-white/10">
+                    <span className="text-[10px] font-bold text-text-muted px-2.5 py-1 rounded-full bg-white/5 border border-white/10 tracking-wide">
                       {plan.badge}
                     </span>
                   )}
                 </div>
 
-                <p className="text-xs text-text-muted leading-relaxed min-h-[36px] mb-6">
+                <p className="text-xs text-text-muted leading-relaxed mb-5">
                   {plan.tagline}
                 </p>
 
-                {/* Price Display */}
-                <div className="mb-6 pb-6 border-b border-white/10">
+                {/* Price */}
+                <div className="mb-5 pb-5 border-b border-white/8">
                   <div className="flex items-baseline gap-1">
                     {isFree ? (
                       <span className="text-4xl font-extrabold text-white">Free</span>
                     ) : (
                       <>
-                        <span className="text-2xl font-bold text-text-muted">
+                        <span className="text-xl font-bold text-text-muted">
                           {currency === 'ETB' ? 'ETB' : '$'}
                         </span>
-                        <span className="text-4xl sm:text-5xl font-extrabold text-white tracking-tight">
+                        <span className="text-4xl sm:text-5xl font-extrabold text-white tracking-tight tabular-nums">
                           {rawPrice.toLocaleString()}
                         </span>
                       </>
                     )}
-                    <span className="text-xs text-text-muted font-medium">
+                    <span className="text-xs text-text-muted font-medium ml-0.5">
                       /{billingCycle === 'annual' ? 'year' : 'month'}
                     </span>
                   </div>
                   {billingCycle === 'annual' && !isFree && (
-                    <p className="text-[11px] text-green-400 font-medium mt-1.5 flex items-center gap-1">
-                      <Check size={12} /> Includes 2 months complimentary
+                    <p className="text-[11px] text-emerald-400 font-semibold mt-1.5 flex items-center gap-1">
+                      <Check size={11} /> Includes 2 months complimentary
                     </p>
                   )}
                 </div>
 
-                {/* Features List */}
-                <div className="space-y-3 mb-8">
-                  <div className="text-xs font-bold uppercase tracking-wider text-text-muted">
-                    Included capabilities:
+                {/* Features */}
+                <div className="space-y-2.5 mb-7 flex-1">
+                  <div className="text-[10px] font-extrabold uppercase tracking-widest text-text-muted mb-3">
+                    Included capabilities
                   </div>
                   {plan.features.map((feat, idx) => (
                     <div key={idx} className="flex items-start gap-2.5 text-xs text-slate-200">
-                      <div className="w-4 h-4 rounded-full bg-brand-cyan/20 text-brand-cyan flex items-center justify-center shrink-0 mt-0.5">
-                        <Check size={11} strokeWidth={3} />
+                      <div className="w-4 h-4 rounded-full bg-brand-cyan/15 text-brand-cyan flex items-center justify-center shrink-0 mt-0.5 border border-brand-cyan/20">
+                        <Check size={10} strokeWidth={3} />
                       </div>
                       <span className="leading-snug">{feat}</span>
                     </div>
                   ))}
 
                   {plan.notIncluded.length > 0 && (
-                    <div className="pt-2 space-y-2 opacity-50">
+                    <div className="pt-2 space-y-2 opacity-40">
                       {plan.notIncluded.map((notFeat, idx) => (
                         <div key={idx} className="flex items-start gap-2.5 text-xs text-text-muted line-through">
-                          <div className="w-4 h-4 rounded-full bg-white/5 text-text-muted flex items-center justify-center shrink-0 mt-0.5">
+                          <div className="w-4 h-4 rounded-full bg-white/5 flex items-center justify-center shrink-0 mt-0.5 text-[10px]">
                             ×
                           </div>
                           <span className="leading-snug">{notFeat}</span>
@@ -295,40 +297,40 @@ export const Pricing: React.FC<{ embedded?: boolean }> = ({ embedded = false }) 
                     </div>
                   )}
                 </div>
-              </div>
 
-              {/* Action Button */}
-              <button
-                onClick={() => handleSelectPlan(plan.id)}
-                className={`w-full py-3 px-4 rounded-xl font-bold text-xs sm:text-sm transition-all flex items-center justify-center gap-2 ${
-                  plan.ctaVariant === 'primary'
-                    ? 'btn-primary shadow-lg shadow-brand-cyan/20 hover:scale-[1.02]'
-                    : 'bg-white/10 hover:bg-white/15 text-white border border-white/15'
-                }`}
-              >
-                {plan.ctaText} <ArrowRight size={15} />
-              </button>
-            </GlassCard>
+                {/* CTA Button */}
+                <button
+                  onClick={() => handleSelectPlan(plan.id)}
+                  className={`w-full py-3 px-4 rounded-xl font-bold text-sm transition-all flex items-center justify-center gap-2 focus-visible:outline focus-visible:outline-2 focus-visible:outline-brand-cyan ${
+                    plan.ctaVariant === 'primary'
+                      ? 'btn-primary'
+                      : 'btn-secondary hover:border-white/20'
+                  }`}
+                >
+                  {plan.ctaText} <ArrowRight size={15} />
+                </button>
+              </div>
+            </div>
           );
         })}
       </div>
 
       {/* Trust & Chapa Payment Banner */}
-      <div className="glass-panel p-8 sm:p-10 rounded-3xl border border-white/10 mb-20 relative overflow-hidden">
-        <div className="absolute inset-0 bg-gradient-glow opacity-25"></div>
+      <div className="glass-elevated p-7 sm:p-10 rounded-3xl border border-white/8 mb-16 relative overflow-hidden">
+        <div className="absolute inset-0 bg-gradient-glow opacity-20 pointer-events-none" aria-hidden="true" />
         <div className="relative z-10 flex flex-col md:flex-row items-center justify-between gap-6">
           <div className="space-y-2 text-center md:text-left">
-            <div className="inline-flex items-center gap-2 text-xs font-semibold text-brand-cyan">
-              <Lock size={14} /> PCI-DSS Compliant Chapa Gateway
+            <div className="inline-flex items-center gap-2 text-xs font-bold text-brand-cyan">
+              <Lock size={13} /> PCI-DSS Compliant Chapa Gateway
             </div>
-            <h3 className="text-xl sm:text-2xl font-bold text-white">
+            <h3 className="text-xl sm:text-2xl font-extrabold text-white tracking-tight">
               Instant activation via local & international payment rails.
             </h3>
-            <p className="text-xs sm:text-sm text-text-muted max-w-xl">
+            <p className="text-xs sm:text-sm text-text-muted max-w-xl leading-relaxed">
               Pay securely in Ethiopian Birr using Telebirr, CBEBirr, Awash Birr, or International Visa & Mastercard.
             </p>
           </div>
-          <div className="flex flex-wrap items-center justify-center gap-3">
+          <div className="flex flex-wrap items-center justify-center gap-2.5">
             {['Telebirr', 'CBEBirr', 'Chapa', 'Visa', 'Mastercard'].map((method) => (
               <span
                 key={method}
@@ -343,8 +345,8 @@ export const Pricing: React.FC<{ embedded?: boolean }> = ({ embedded = false }) 
 
       {/* FAQ Section */}
       <div className="max-w-4xl mx-auto space-y-6">
-        <h3 className="text-2xl font-bold text-center text-white mb-8">
-          Frequently Answered Questions
+        <h3 className="text-2xl font-extrabold text-center text-white mb-8 tracking-tight">
+          Frequently Asked Questions
         </h3>
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
           {[
@@ -365,15 +367,15 @@ export const Pricing: React.FC<{ embedded?: boolean }> = ({ embedded = false }) 
               a: 'Yes. You can manage, cancel, or change your subscription at any time directly inside the Console Billing section without penalties.'
             }
           ].map((faq, idx) => (
-            <GlassCard key={idx} className="p-5 border-white/10">
-              <h4 className="text-sm font-bold text-white mb-2 flex items-center gap-2">
-                <HelpCircle size={15} className="text-brand-cyan shrink-0" />
+            <div key={idx} className="glass-card p-5 border-white/8 hover:border-white/14 transition-colors duration-200">
+              <h4 className="text-sm font-bold text-white mb-2.5 flex items-start gap-2">
+                <HelpCircle size={14} className="text-brand-cyan shrink-0 mt-0.5" />
                 {faq.q}
               </h4>
               <p className="text-xs text-text-muted leading-relaxed pl-6">
                 {faq.a}
               </p>
-            </GlassCard>
+            </div>
           ))}
         </div>
       </div>
@@ -381,7 +383,12 @@ export const Pricing: React.FC<{ embedded?: boolean }> = ({ embedded = false }) 
   );
 
   if (embedded) {
-    return <section className="py-20 text-white relative overflow-hidden font-sans">{content}</section>;
+    return (
+      <section className="py-20 sm:py-24 text-white relative overflow-hidden">
+        <div className="absolute inset-0 section-glow-right opacity-40 pointer-events-none" aria-hidden="true" />
+        {content}
+      </section>
+    );
   }
 
   return (

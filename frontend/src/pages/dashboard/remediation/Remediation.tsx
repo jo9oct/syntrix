@@ -9,6 +9,7 @@ import {
 } from 'lucide-react';
 import { useNavigate, useSearchParams, Link } from 'react-router-dom';
 import api from '../../../lib/api';
+import { getTargetDisplayName } from '../../../lib/targetUtils';
 import type { Target, Scan } from '../../../types/sentrix';
 import type { ServiceProject } from '../../../types/serviceManagement';
 import { useAuthStore } from '../../../store/authStore';
@@ -402,16 +403,22 @@ export const Remediation: React.FC = () => {
   };
 
   const columns: { id: KanbanItem['column']; title: string; count: number; color: string; border: string; bg: string }[] = [
-    { id: 'open', title: 'Backlog / Open', count: items.filter(i => i.column === 'open').length, color: 'text-red-400', border: 'border-red-500/30', bg: 'bg-red-500/10' },
-    { id: 'in_progress', title: 'In Progress', count: items.filter(i => i.column === 'in_progress').length, color: 'text-yellow-400', border: 'border-yellow-500/30', bg: 'bg-yellow-500/10' },
-    { id: 'ready_for_retest', title: 'Ready for Retest', count: items.filter(i => i.column === 'ready_for_retest').length, color: 'text-brand-cyan', border: 'border-brand-cyan/30', bg: 'bg-brand-cyan/10' },
-    { id: 'fixed', title: 'Resolved / Fixed', count: items.filter(i => i.column === 'fixed').length, color: 'text-emerald-400', border: 'border-emerald-500/30', bg: 'bg-emerald-500/10' },
+    { id: 'open', title: 'Backlog / Open', count: items.filter(i => i.column === 'open').length, color: 'text-red-400', border: 'border-red-500/30', bg: 'bg-red-500/15' },
+    { id: 'in_progress', title: 'In Progress', count: items.filter(i => i.column === 'in_progress').length, color: 'text-yellow-400', border: 'border-yellow-500/30', bg: 'bg-yellow-500/15' },
+    { id: 'ready_for_retest', title: 'Ready for Retest', count: items.filter(i => i.column === 'ready_for_retest').length, color: 'text-brand-cyan', border: 'border-brand-cyan/30', bg: 'bg-brand-cyan/15' },
+    { id: 'fixed', title: 'Resolved / Fixed', count: items.filter(i => i.column === 'fixed').length, color: 'text-emerald-400', border: 'border-emerald-500/30', bg: 'bg-emerald-500/15' },
   ];
 
-  const filteredTargets = targets.filter(t =>
-    t.hostname.toLowerCase().includes(targetSearch.toLowerCase()) ||
-    t.url.toLowerCase().includes(targetSearch.toLowerCase())
-  );
+  const filteredTargets = targets.filter(t => {
+    const q = targetSearch.toLowerCase();
+    const displayName = getTargetDisplayName(t).toLowerCase();
+    return (
+      displayName.includes(q) ||
+      (t.name && t.name.toLowerCase().includes(q)) ||
+      (t.hostname && t.hostname.toLowerCase().includes(q)) ||
+      (t.url && t.url.toLowerCase().includes(q))
+    );
+  });
 
   return (
     <div className="p-8 space-y-8 max-w-7xl mx-auto font-sans">
@@ -706,7 +713,7 @@ export const Remediation: React.FC = () => {
                     </div>
 
                     <h3 className="text-base font-bold text-white group-hover:text-brand-cyan transition-colors truncate">
-                      {target.hostname}
+                      {getTargetDisplayName(target)}
                     </h3>
                     <div className="text-xs text-text-muted font-mono truncate mb-4">
                       {target.url}
@@ -770,7 +777,7 @@ export const Remediation: React.FC = () => {
                   </a>
                 </div>
                 <h2 className="text-xl font-bold text-white tracking-tight">
-                  {selectedTarget.hostname}
+                  {getTargetDisplayName(selectedTarget)}
                 </h2>
               </div>
 
@@ -865,14 +872,19 @@ export const Remediation: React.FC = () => {
                 const colItems = items.filter(i => i.column === col.id);
                 return (
                   <div key={col.id} className="space-y-3">
-                    {/* Column Header */}
-                    <div className="flex items-center justify-between p-3 rounded-xl bg-white/5 border border-white/10">
-                      <span className={`text-xs font-bold uppercase tracking-wider ${col.color}`}>
-                        {col.title}
-                      </span>
-                      <span className="w-5 h-5 rounded-full bg-white/10 text-white text-[11px] font-bold flex items-center justify-center font-mono">
-                        {col.count}
-                      </span>
+                    {/* Column Header - Styled directly after user reference image */}
+                    <div className={`p-4 rounded-2xl bg-white/[0.02] border ${col.border} flex items-center justify-between shadow-lg transition-all`}>
+                      <div>
+                        <span className={`text-[10px] font-bold uppercase tracking-wider block ${col.color}`}>
+                          {col.title}
+                        </span>
+                        <div className="text-2xl font-black text-white font-mono mt-1">
+                          {col.count}
+                        </div>
+                      </div>
+                      <div className={`w-8 h-8 rounded-xl ${col.bg} border ${col.border} flex items-center justify-center ${col.color} shrink-0`}>
+                        <Layers size={16} />
+                      </div>
                     </div>
 
                     {/* Column Cards (Clean, no MongoDB hex ID; real user name) */}

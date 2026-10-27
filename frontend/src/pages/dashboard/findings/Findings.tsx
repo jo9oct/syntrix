@@ -91,6 +91,11 @@ export const Findings: React.FC = () => {
     return matchSearch && matchSeverity && matchStatus;
   });
 
+  const critCount = findings.filter(f => f.severity === 'critical').length;
+  const highCount = findings.filter(f => f.severity === 'high').length;
+  const medCount = findings.filter(f => f.severity === 'medium').length;
+  const resolvedCount = findings.filter(f => (f.status as string) === 'resolved' || (f.status as string) === 'fixed' || (f.status as string) === 'accepted').length;
+
   const handleBatchAiAnalysis = async () => {
     if (isFree) {
       setBatchMessage('AI Security Advisory is exclusive to Pro and Enterprise tiers. Please upgrade your subscription.');
@@ -188,6 +193,69 @@ export const Findings: React.FC = () => {
           >
             <Plus size={16} /> New Assessment
           </button>
+        </div>
+      </div>
+
+      {/* 4 Core Hero Telemetry Cards - Layout inspired by reference */}
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+        {/* Card 1: Total Findings */}
+        <div className="p-4 sm:p-5 rounded-2xl bg-white/[0.02] border border-brand-cyan/25 hover:border-brand-cyan/40 transition-all shadow-lg shadow-brand-cyan/[0.02] flex flex-col justify-between">
+          <div className="flex items-center justify-between text-text-muted mb-2">
+            <span className="text-[10px] font-bold uppercase tracking-wider text-brand-cyan">Total Findings</span>
+            <div className="w-8 h-8 rounded-xl bg-brand-cyan/15 border border-brand-cyan/30 flex items-center justify-center text-brand-cyan">
+              <ShieldAlert size={16} />
+            </div>
+          </div>
+          <div className="text-3xl font-black text-white font-mono">{findings.length}</div>
+          <div className="mt-3 pt-2 border-t border-white/5 flex items-center justify-between text-[11px] text-text-muted font-mono">
+            <span>{findings.filter(f => f.status === 'detected' || f.status === 'verified').length} Active</span>
+            <span className="text-brand-cyan font-semibold">{findings.length > 0 ? `${filtered.length} Displayed` : 'Zero'}</span>
+          </div>
+        </div>
+
+        {/* Card 2: Critical Severity */}
+        <div className="p-4 sm:p-5 rounded-2xl bg-white/[0.02] border border-red-500/25 hover:border-red-500/40 transition-all shadow-lg shadow-red-500/[0.02] flex flex-col justify-between">
+          <div className="flex items-center justify-between text-text-muted mb-2">
+            <span className="text-[10px] font-bold uppercase tracking-wider text-red-400">Critical Severity</span>
+            <div className="w-8 h-8 rounded-xl bg-red-500/15 border border-red-500/30 flex items-center justify-center text-red-400">
+              <AlertTriangle size={16} />
+            </div>
+          </div>
+          <div className="text-3xl font-black text-red-400 font-mono">{critCount}</div>
+          <div className="mt-3 pt-2 border-t border-white/5 text-[11px] text-red-400 font-medium flex items-center gap-1">
+            <span>Immediate remediation required</span>
+          </div>
+        </div>
+
+        {/* Card 3: High Severity */}
+        <div className="p-4 sm:p-5 rounded-2xl bg-white/[0.02] border border-orange-500/25 hover:border-orange-500/40 transition-all shadow-lg shadow-orange-500/[0.02] flex flex-col justify-between">
+          <div className="flex items-center justify-between text-text-muted mb-2">
+            <span className="text-[10px] font-bold uppercase tracking-wider text-orange-400">High Severity</span>
+            <div className="w-8 h-8 rounded-xl bg-orange-500/15 border border-orange-500/30 flex items-center justify-center text-orange-400">
+              <ShieldCheck size={16} />
+            </div>
+          </div>
+          <div className="text-3xl font-black text-orange-400 font-mono">{highCount}</div>
+          <div className="mt-3 pt-2 border-t border-white/5 text-[11px] text-orange-400 font-medium">
+            High priority exposure surface
+          </div>
+        </div>
+
+        {/* Card 4: Resolved Vulnerabilities */}
+        <div className="p-4 sm:p-5 rounded-2xl bg-white/[0.02] border border-emerald-500/25 hover:border-emerald-500/40 transition-all shadow-lg shadow-emerald-500/[0.02] flex flex-col justify-between">
+          <div className="flex items-center justify-between text-text-muted mb-2">
+            <span className="text-[10px] font-bold uppercase tracking-wider text-emerald-400">Resolved / Fixed</span>
+            <div className="w-8 h-8 rounded-xl bg-emerald-500/15 border border-emerald-500/30 flex items-center justify-center text-emerald-400">
+              <CheckCircle2 size={16} />
+            </div>
+          </div>
+          <div className="text-3xl font-black text-emerald-400 font-mono">{resolvedCount}</div>
+          <div className="mt-3 pt-2 border-t border-white/5 text-[11px] text-emerald-400 font-medium flex items-center justify-between">
+            <span>Verified in retesting</span>
+            <span className="font-mono text-text-muted font-bold">
+              {findings.length > 0 ? `${Math.round((resolvedCount / findings.length) * 100)}%` : '100%'}
+            </span>
+          </div>
         </div>
       </div>
 
@@ -308,7 +376,15 @@ export const Findings: React.FC = () => {
           {filtered.map(finding => (
             <GlassCard
               key={finding._id}
-              className="p-6 border-white/10 hover:border-brand-cyan/30 transition-all space-y-4"
+              className={`p-6 transition-all space-y-4 ${
+                finding.severity === 'critical'
+                  ? 'border-red-500/30 hover:border-red-500/50 shadow-sm shadow-red-500/5'
+                  : finding.severity === 'high'
+                  ? 'border-orange-500/30 hover:border-orange-500/50 shadow-sm shadow-orange-500/5'
+                  : finding.severity === 'medium'
+                  ? 'border-amber-500/25 hover:border-amber-500/40'
+                  : 'border-white/10 hover:border-brand-cyan/40'
+              }`}
             >
               <div className="flex flex-col lg:flex-row lg:items-start justify-between gap-4">
                 <div className="space-y-2 flex-1 min-w-0">

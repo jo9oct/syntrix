@@ -1,5 +1,5 @@
-import React from 'react';
-import { NavLink, useNavigate } from 'react-router-dom';
+import React, { useState } from 'react';
+import { NavLink, useNavigate, Link } from 'react-router-dom';
 import {
   LayoutDashboard,
   FolderKanban,
@@ -11,9 +11,11 @@ import {
   RotateCcw,
   LogOut,
   ClipboardList,
-  Layers
+  Layers,
+  User as UserIcon
 } from 'lucide-react';
 import { useAuthStore } from '../../store/authStore';
+import { UserProfileModal } from '../ui/UserProfileModal';
 
 export const navItems = [
   { to: '/dashboard', label: 'Dashboard', icon: LayoutDashboard, end: true },
@@ -29,13 +31,14 @@ export const navItems = [
 export const Sidebar: React.FC = () => {
   const navigate = useNavigate();
   const { user, logout } = useAuthStore();
+  const [showProfileModal, setShowProfileModal] = useState(false);
 
   return (
     <div className="w-64 h-screen border-r border-white/10 bg-surface/50 backdrop-blur-xl p-4 flex flex-col">
-      <div className="flex items-center gap-3 px-2 mb-6">
+      <Link to="/dashboard" className="flex items-center gap-3 px-2 mb-6 hover:opacity-90 transition-opacity">
         <img src="/logo.png" alt="Sentrix" className="w-8 h-8 rounded-lg object-contain shadow-md shadow-brand-cyan/20" />
         <h1 className="text-xl font-bold text-white tracking-tight">Sentrix.</h1>
-      </div>
+      </Link>
 
       <nav className="flex-1 space-y-1.5 overflow-y-auto pr-1">
         {navItems.map(({ to, label, icon: Icon, end }) => (
@@ -59,10 +62,19 @@ export const Sidebar: React.FC = () => {
 
       <div className="mt-auto border-t border-white/10 pt-4">
         <div className="flex items-center justify-between px-2">
-          <div>
-            <div className="font-medium text-sm text-white">{user?.name || 'Security Lead'}</div>
-            <div className="text-xs text-brand-cyan capitalize">{user?.role?.replace('_', ' ') || 'Engineer'}</div>
-          </div>
+          <button
+            onClick={() => setShowProfileModal(true)}
+            className="flex items-center gap-2.5 text-left hover:opacity-85 transition-opacity group cursor-pointer"
+            title="Click to view profile"
+          >
+            <div className="w-8 h-8 rounded-full bg-gradient-brand flex items-center justify-center text-xs font-bold text-white shadow-md group-hover:ring-2 group-hover:ring-brand-cyan/50 transition-all">
+              {(user?.name || 'U').charAt(0).toUpperCase()}
+            </div>
+            <div>
+              <div className="font-medium text-sm text-white group-hover:text-brand-cyan transition-colors">{user?.name || 'Security Lead'}</div>
+              <div className="text-xs text-brand-cyan capitalize">{user?.role?.replace('_', ' ') || 'Engineer'}</div>
+            </div>
+          </button>
           <button
             onClick={() => {
               logout();
@@ -75,6 +87,11 @@ export const Sidebar: React.FC = () => {
           </button>
         </div>
       </div>
+
+      <UserProfileModal
+        isOpen={showProfileModal}
+        onClose={() => setShowProfileModal(false)}
+      />
     </div>
   );
 };

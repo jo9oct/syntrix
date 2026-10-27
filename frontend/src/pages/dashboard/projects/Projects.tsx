@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { GlassCard } from '../../../components/ui/GlassCard';
 import type { Target } from '../../../types/sentrix';
 import api from '../../../lib/api';
+import { getTargetDisplayName } from '../../../lib/targetUtils';
 import {
   Globe, Plus, Shield, Search, ArrowRight,
   Clock, CheckCircle2, AlertTriangle, Activity, Server, Sliders,
@@ -106,10 +107,16 @@ export const Projects: React.FC = () => {
     return () => clearInterval(timer);
   }, [latestScanMap]);
 
-  const filtered = targets.filter(t =>
-    t.hostname.toLowerCase().includes(searchTerm.toLowerCase()) ||
-    t.url.toLowerCase().includes(searchTerm.toLowerCase())
-  );
+  const filtered = targets.filter(t => {
+    const q = searchTerm.toLowerCase();
+    const displayName = getTargetDisplayName(t).toLowerCase();
+    return (
+      displayName.includes(q) ||
+      (t.name && t.name.toLowerCase().includes(q)) ||
+      (t.hostname && t.hostname.toLowerCase().includes(q)) ||
+      (t.url && t.url.toLowerCase().includes(q))
+    );
+  });
 
   return (
     <div className="p-8 space-y-8 max-w-7xl mx-auto">
@@ -182,40 +189,75 @@ export const Projects: React.FC = () => {
         </div>
       )}
 
-      {/* Metrics Row */}
-      <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-        <GlassCard className="p-5 border-white/10">
-          <div className="text-xs text-text-muted">Total Monitored Targets</div>
-          <div className="text-2xl font-bold text-white mt-1">
+      {/* 4 Core Hero Telemetry Cards - Layout inspired by reference */}
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+        {/* Card 1: Monitored Targets */}
+        <div className="p-4 sm:p-5 rounded-2xl bg-white/[0.02] border border-brand-cyan/25 hover:border-brand-cyan/40 transition-all shadow-lg shadow-brand-cyan/[0.02] flex flex-col justify-between">
+          <div className="flex items-center justify-between text-text-muted mb-2">
+            <span className="text-[10px] font-bold uppercase tracking-wider text-brand-cyan">Monitored Targets</span>
+            <div className="w-8 h-8 rounded-xl bg-brand-cyan/15 border border-brand-cyan/30 flex items-center justify-center text-brand-cyan">
+              <Globe size={16} />
+            </div>
+          </div>
+          <div className="text-3xl font-black text-white font-mono">
             {targets.length}
             {(user?.role === 'client_owner' || user?.role === 'client_member') && isFree && (
-              <span className="text-xs text-amber-400 font-bold ml-1.5 font-mono">/ 1 Free Limit</span>
+              <span className="text-xs text-amber-400 font-bold ml-1.5 font-mono">/ 1 Max</span>
             )}
           </div>
-          <div className="text-[11px] text-green-400 mt-1 flex items-center gap-1">
-            <CheckCircle2 size={12} /> {targets.filter(t => t.isActive).length} Active Environments
+          <div className="mt-3 pt-2 border-t border-white/5 flex items-center justify-between text-[11px] text-text-muted font-mono">
+            <span className="text-emerald-400 font-semibold">{targets.filter(t => t.isActive).length} Active</span>
+            <span>Target Inventory</span>
           </div>
-        </GlassCard>
+        </div>
 
-        <GlassCard className="p-5 border-white/10">
-          <div className="text-xs text-text-muted">Total Assessment Iterations</div>
-          <div className="text-2xl font-bold text-brand-cyan mt-1">
-            {targets.reduce((acc, t) => acc + (t.scanCount || 0), 0)} Runs
+        {/* Card 2: Active Environments */}
+        <div className="p-4 sm:p-5 rounded-2xl bg-white/[0.02] border border-emerald-500/25 hover:border-emerald-500/40 transition-all shadow-lg shadow-emerald-500/[0.02] flex flex-col justify-between">
+          <div className="flex items-center justify-between text-text-muted mb-2">
+            <span className="text-[10px] font-bold uppercase tracking-wider text-emerald-400">Active Environments</span>
+            <div className="w-8 h-8 rounded-xl bg-emerald-500/15 border border-emerald-500/30 flex items-center justify-center text-emerald-400">
+              <CheckCircle2 size={16} />
+            </div>
           </div>
-          <div className="text-[11px] text-text-muted mt-1">
-            Aggregated across target versions
+          <div className="text-3xl font-black text-emerald-400 font-mono">
+            {targets.filter(t => t.isActive).length}
           </div>
-        </GlassCard>
+          <div className="mt-3 pt-2 border-t border-white/5 text-[11px] text-emerald-400 font-medium flex items-center gap-1">
+            <span>Verified and monitored</span>
+          </div>
+        </div>
 
-        <GlassCard className="p-5 border-white/10">
-          <div className="text-xs text-text-muted">Latest Active Version</div>
-          <div className="text-2xl font-bold text-white mt-1">
+        {/* Card 3: Total Scan Iterations */}
+        <div className="p-4 sm:p-5 rounded-2xl bg-white/[0.02] border border-brand-purple/25 hover:border-brand-purple/40 transition-all shadow-lg shadow-brand-purple/[0.02] flex flex-col justify-between">
+          <div className="flex items-center justify-between text-text-muted mb-2">
+            <span className="text-[10px] font-bold uppercase tracking-wider text-brand-purple">Scan Iterations</span>
+            <div className="w-8 h-8 rounded-xl bg-brand-purple/15 border border-brand-purple/30 flex items-center justify-center text-brand-purple">
+              <Activity size={16} />
+            </div>
+          </div>
+          <div className="text-3xl font-black text-brand-purple font-mono">
+            {targets.reduce((acc, t) => acc + (t.scanCount || 0), 0)}
+          </div>
+          <div className="mt-3 pt-2 border-t border-white/5 text-[11px] text-text-muted font-mono">
+            Aggregated scan runs
+          </div>
+        </div>
+
+        {/* Card 4: Latest Version */}
+        <div className="p-4 sm:p-5 rounded-2xl bg-white/[0.02] border border-blue-500/25 hover:border-blue-500/40 transition-all shadow-lg shadow-blue-500/[0.02] flex flex-col justify-between">
+          <div className="flex items-center justify-between text-text-muted mb-2">
+            <span className="text-[10px] font-bold uppercase tracking-wider text-blue-400">Latest Version</span>
+            <div className="w-8 h-8 rounded-xl bg-blue-500/15 border border-blue-500/30 flex items-center justify-center text-blue-400">
+              <Server size={16} />
+            </div>
+          </div>
+          <div className="text-3xl font-black text-white font-mono">
             v{Math.max(...targets.map(t => t.scanVersionCounter || 1), 1)}
           </div>
-          <div className="text-[11px] text-sky-400 mt-1">
+          <div className="mt-3 pt-2 border-t border-white/5 text-[11px] text-sky-400 font-medium">
             Continuous posture tracking
           </div>
-        </GlassCard>
+        </div>
       </div>
 
       {/* Search Bar */}
@@ -265,8 +307,8 @@ export const Projects: React.FC = () => {
                         <Globe size={20} />
                       </div>
                       <div>
-                        <h3 className="text-sm font-bold text-white tracking-tight group-hover:text-brand-cyan transition-colors truncate max-w-[180px]">
-                          {target.hostname}
+                        <h3 className="text-sm font-bold text-white tracking-tight group-hover:text-brand-cyan transition-colors truncate max-w-[220px]">
+                          {getTargetDisplayName(target)}
                         </h3>
                         <span className="text-[10px] text-text-muted flex items-center gap-1">
                           <span className="w-1.5 h-1.5 rounded-full bg-emerald-400"></span> Verified Asset

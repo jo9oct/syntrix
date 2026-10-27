@@ -5,9 +5,10 @@ import {
   FileText, Settings, LogOut, Bell,
   ShieldCheck, ArrowRightLeft, RotateCcw, Search, Globe,
   Shield, Code, CreditCard, Menu, X, Sparkles, Network, Sliders, Trash2,
-  Users, Activity, ClipboardList, Layers
+  Users, Activity, ClipboardList, Layers, PanelLeftClose, PanelLeftOpen
 } from 'lucide-react';
 import { useAuthStore, type UserRole, useUserTier } from '../../store/authStore';
+import { UserProfileModal } from '../ui/UserProfileModal';
 
 interface NavItemDef {
   to: string;
@@ -61,8 +62,10 @@ export const AppShell: React.FC = () => {
   const { user, logout } = useAuthStore();
   const { tier: userTier } = useUserTier();
   const [showNotifications, setShowNotifications] = useState(false);
+  const [showProfileModal, setShowProfileModal] = useState(false);
   const [notifications, setNotifications] = useState(DEMO_NOTIFICATIONS);
   const [mobileSidebarOpen, setMobileSidebarOpen] = useState(false);
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
 
   React.useEffect(() => {
     useAuthStore.getState().fetchMe();
@@ -143,25 +146,26 @@ export const AppShell: React.FC = () => {
 
       {/* Sidebar (Desktop pinned, Mobile slide-in drawer) */}
       <aside
-        className={`fixed lg:static top-0 bottom-0 left-0 z-50 w-72 lg:w-64 shrink-0 flex flex-col border-r border-white/10 bg-background-darker/95 lg:bg-background/50 backdrop-blur-2xl transition-transform duration-300 ease-in-out ${
+        className={`fixed lg:static top-0 bottom-0 left-0 z-50 shrink-0 flex flex-col border-r border-white/10 bg-background-darker/95 lg:bg-background/50 backdrop-blur-2xl transition-all duration-300 ease-in-out ${
           mobileSidebarOpen ? 'translate-x-0 shadow-2xl' : '-translate-x-full lg:translate-x-0'
-        }`}
+        } ${sidebarCollapsed ? 'w-[4.5rem]' : 'w-72 lg:w-64'}`}
       >
         {/* Logo Header */}
-        <div className="flex items-center justify-between px-5 py-4 border-b border-white/10">
-          <Link to="/" className="flex items-center gap-2.5">
-            <img src="/logo.png" alt="Sentrix" className="w-8 h-8 rounded-lg object-contain shadow-md shadow-brand-cyan/20" />
-            <span className="text-lg font-bold text-white tracking-tight">Sentrix.</span>
+        <div className={`flex items-center border-b border-white/10 ${sidebarCollapsed ? 'justify-between px-2.5 py-3.5' : 'justify-between px-5 py-4'}`}>
+          <Link to="/dashboard" onClick={() => setMobileSidebarOpen(false)} title="Sentrix" className="flex items-center gap-2.5 shrink-0">
+            <img src="/logo.png" alt="Sentrix" className="w-7 h-7 rounded-lg object-contain shadow-md shadow-brand-cyan/20" />
+            {!sidebarCollapsed && <span className="text-lg font-bold text-white tracking-tight">Sentrix.</span>}
           </Link>
 
-          <div className="flex items-center gap-1">
-            <Link
-              to="/"
-              title="View Public Site"
-              className="p-1.5 rounded-lg text-text-muted hover:text-white hover:bg-white/5 transition-colors"
+          <div className="flex items-center gap-1 shrink-0">
+            {/* Collapse / Expand toggle — replaces the globe icon on desktop */}
+            <button
+              onClick={() => setSidebarCollapsed(prev => !prev)}
+              title={sidebarCollapsed ? 'Expand sidebar' : 'Collapse sidebar'}
+              className="hidden lg:flex p-1.5 rounded-lg text-text-muted hover:text-white hover:bg-white/5 transition-colors"
             >
-              <Globe size={16} />
-            </Link>
+              {sidebarCollapsed ? <PanelLeftOpen size={16} /> : <PanelLeftClose size={16} />}
+            </button>
 
             {/* Mobile close button */}
             <button
@@ -174,7 +178,7 @@ export const AppShell: React.FC = () => {
         </div>
 
         {/* Navigation Items - Dynamically rendered based on active mode & actor */}
-        <nav className="flex-1 overflow-y-auto px-3 py-4 space-y-4">
+        <nav className={`flex-1 overflow-y-auto ${sidebarCollapsed ? 'px-2 py-3' : 'px-3 py-4'} space-y-4`}>
           {isAdmin && isAdminSection ? (
             /* ADMIN OPERATIONS & DISPATCH CENTER NAVIGATION */
             <div className="space-y-4">
@@ -548,8 +552,9 @@ export const AppShell: React.FC = () => {
                   to={to}
                   end={end}
                   onClick={() => setMobileSidebarOpen(false)}
+                  title={sidebarCollapsed ? label : undefined}
                   className={({ isActive }: { isActive: boolean }) =>
-                    `flex items-center gap-3 px-3.5 py-2.5 rounded-xl text-xs sm:text-sm font-medium transition-all duration-150 ${
+                    `flex items-center ${sidebarCollapsed ? 'justify-center px-0 h-10' : 'gap-3 px-3.5 py-2.5'} rounded-xl text-xs sm:text-sm font-medium transition-all duration-150 ${
                       isActive
                         ? 'bg-brand-cyan/15 text-brand-cyan border border-brand-cyan/25 shadow-sm shadow-brand-cyan/10 font-semibold'
                         : 'text-text-muted hover:text-white hover:bg-white/5'
@@ -557,7 +562,7 @@ export const AppShell: React.FC = () => {
                   }
                 >
                   <Icon size={18} className="shrink-0" />
-                  <span className="truncate">{label}</span>
+                  {!sidebarCollapsed && <span className="truncate">{label}</span>}
                 </NavLink>
               ))}
             </div>
@@ -570,8 +575,9 @@ export const AppShell: React.FC = () => {
                   to={to}
                   end={end}
                   onClick={() => setMobileSidebarOpen(false)}
+                  title={sidebarCollapsed ? label : undefined}
                   className={({ isActive }: { isActive: boolean }) =>
-                    `flex items-center gap-3 px-3.5 py-2.5 rounded-xl text-xs sm:text-sm font-medium transition-all duration-150 ${
+                    `flex items-center ${sidebarCollapsed ? 'justify-center px-0 h-10' : 'gap-3 px-3.5 py-2.5'} rounded-xl text-xs sm:text-sm font-medium transition-all duration-150 ${
                       isActive
                         ? 'bg-brand-cyan/15 text-brand-cyan border border-brand-cyan/25 shadow-sm shadow-brand-cyan/10 font-semibold'
                         : 'text-text-muted hover:text-white hover:bg-white/5'
@@ -579,8 +585,8 @@ export const AppShell: React.FC = () => {
                   }
                 >
                   <Icon size={18} className="shrink-0" />
-                  <span className="truncate">{label}</span>
-                  {label === 'Billing & Plans' && (
+                  {!sidebarCollapsed && <span className="truncate">{label}</span>}
+                  {!sidebarCollapsed && label === 'Billing & Plans' && (
                     <span className="ml-auto text-[10px] font-bold px-1.5 py-0.5 rounded bg-brand-cyan/20 text-brand-cyan border border-brand-cyan/30">
                       Chapa
                     </span>
@@ -591,8 +597,8 @@ export const AppShell: React.FC = () => {
           )}
         </nav>
 
-        {/* Workspace Plan & Capacity Status - Shown ONLY for client users (NEVER for admin/specialists) */}
-        {!isSpecialistRole && (currentUser.role === 'client_owner' || currentUser.role === 'client_member') && (
+        {/* Workspace Plan & Capacity Status - Shown ONLY for client users when sidebar is expanded */}
+        {!sidebarCollapsed && !isSpecialistRole && (currentUser.role === 'client_owner' || currentUser.role === 'client_member') && (
           <div className="p-3 mx-3 mb-2 rounded-2xl bg-white/[0.03] border border-white/10 space-y-2">
             <div className="flex items-center justify-between">
               <span className="text-[10px] font-bold uppercase tracking-wider text-text-muted">Workspace Plan</span>
@@ -629,29 +635,45 @@ export const AppShell: React.FC = () => {
         )}
 
         {/* User profile & Sign Out */}
-        <div className="p-3 border-t border-white/10">
-          <div className="flex items-center gap-3 px-3 py-2.5 rounded-xl bg-white/[0.02] border border-white/5">
-            <div className="w-8 h-8 rounded-full bg-gradient-brand flex items-center justify-center text-xs font-bold text-white shadow-md shrink-0">
-              {currentUser.name.charAt(0).toUpperCase()}
-            </div>
-            <div className="flex-1 min-w-0">
-              <div className="text-xs font-semibold text-white truncate">{currentUser.name}</div>
-              <div className="flex items-center gap-1 text-[11px] text-brand-cyan capitalize truncate">
-                <span className="w-1.5 h-1.5 rounded-full bg-brand-cyan"></span>
-                {currentUser.role?.replace('_', ' ')}
-              </div>
-            </div>
+        <div className={`border-t border-white/10 ${sidebarCollapsed ? 'p-2 flex justify-center' : 'p-3'}`}>
+          {sidebarCollapsed ? (
             <button
-              onClick={() => {
-                logout();
-                navigate('/login');
-              }}
-              title="Sign Out"
-              className="p-1.5 rounded-lg text-text-muted hover:text-red-400 hover:bg-red-500/10 transition-colors"
+              onClick={() => setShowProfileModal(true)}
+              className="w-10 h-10 rounded-xl bg-gradient-brand flex items-center justify-center text-xs font-bold text-white shadow-md hover:ring-2 hover:ring-brand-cyan/50 transition-all cursor-pointer focus:outline-none"
+              title={`View Profile (${currentUser.name})`}
             >
-              <LogOut size={16} />
+              {currentUser.name.charAt(0).toUpperCase()}
             </button>
-          </div>
+          ) : (
+            <div className="flex items-center gap-3 px-3 py-2.5 rounded-xl bg-white/[0.02] border border-white/5 hover:border-brand-cyan/20 transition-all">
+              <button
+                onClick={() => setShowProfileModal(true)}
+                className="flex items-center gap-3 flex-1 min-w-0 text-left hover:opacity-85 transition-opacity group cursor-pointer focus:outline-none"
+                title="Click to view user profile"
+              >
+                <div className="w-8 h-8 rounded-full bg-gradient-brand flex items-center justify-center text-xs font-bold text-white shadow-md shrink-0 group-hover:ring-2 group-hover:ring-brand-cyan/50 transition-all">
+                  {currentUser.name.charAt(0).toUpperCase()}
+                </div>
+                <div className="flex-1 min-w-0">
+                  <div className="text-xs font-semibold text-white truncate group-hover:text-brand-cyan transition-colors">{currentUser.name}</div>
+                  <div className="flex items-center gap-1 text-[11px] text-brand-cyan capitalize truncate">
+                    <span className="w-1.5 h-1.5 rounded-full bg-brand-cyan"></span>
+                    {currentUser.role?.replace('_', ' ')}
+                  </div>
+                </div>
+              </button>
+              <button
+                onClick={() => {
+                  logout();
+                  navigate('/login');
+                }}
+                title="Sign Out"
+                className="p-1.5 rounded-lg text-text-muted hover:text-red-400 hover:bg-red-500/10 transition-colors"
+              >
+                <LogOut size={16} />
+              </button>
+            </div>
+          )}
         </div>
       </aside>
 
@@ -808,13 +830,19 @@ export const AppShell: React.FC = () => {
 
             {/* User pill & Sign Out */}
             <div className="flex items-center gap-2 pl-2 border-l border-white/10">
-              <div className="w-8 h-8 rounded-full bg-gradient-brand flex items-center justify-center text-xs font-bold text-white shadow-md">
-                {currentUser.name.charAt(0).toUpperCase()}
-              </div>
-              <div className="hidden xl:block text-left">
-                <div className="text-xs font-semibold text-white leading-tight">{currentUser.name}</div>
-                <div className="text-[10px] text-text-muted leading-tight">{currentUser.email}</div>
-              </div>
+              <button
+                onClick={() => setShowProfileModal(true)}
+                className="flex items-center gap-2 hover:opacity-85 transition-opacity group cursor-pointer text-left focus:outline-none"
+                title="Click to view user profile"
+              >
+                <div className="w-8 h-8 rounded-full bg-gradient-brand flex items-center justify-center text-xs font-bold text-white shadow-md group-hover:ring-2 group-hover:ring-brand-cyan/50 transition-all">
+                  {currentUser.name.charAt(0).toUpperCase()}
+                </div>
+                <div className="hidden xl:block text-left">
+                  <div className="text-xs font-semibold text-white leading-tight group-hover:text-brand-cyan transition-colors">{currentUser.name}</div>
+                  <div className="text-[10px] text-text-muted leading-tight">{currentUser.email}</div>
+                </div>
+              </button>
               <button
                 onClick={() => {
                   logout();
@@ -834,6 +862,12 @@ export const AppShell: React.FC = () => {
           <Outlet />
         </main>
       </div>
+
+      {/* User Profile Modal */}
+      <UserProfileModal
+        isOpen={showProfileModal}
+        onClose={() => setShowProfileModal(false)}
+      />
     </div>
   );
 };

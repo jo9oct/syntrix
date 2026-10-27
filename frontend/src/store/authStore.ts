@@ -102,7 +102,7 @@ export const DEMO_ACTORS: Record<UserRole, DemoActor> = {
     email: "member@acmecorp.local",
     role: "client_member",
     title: "Client Stakeholder",
-    defaultPath: "/dashboard/findings",
+    defaultPath: "/dashboard",
     description:
       "View reported findings and compliance reports for assigned organizational assets.",
     badgeColor: "bg-blue-500/15 text-blue-400 border-blue-500/30",
@@ -123,7 +123,7 @@ export const getRoleLandingPath = (role?: string): string => {
     case "client_owner":
       return "/dashboard/billing";
     case "client_member":
-      return "/dashboard/findings";
+      return "/dashboard";
     case "security_engineer":
       return "/dashboard/security";
     default:

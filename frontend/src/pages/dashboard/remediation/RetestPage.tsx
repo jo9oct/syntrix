@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { GlassCard } from '../../../components/ui/GlassCard';
 import type { Target, Scan } from '../../../types/sentrix';
 import api from '../../../lib/api';
+import { getTargetDisplayName } from '../../../lib/targetUtils';
 import {
   RotateCcw, CheckCircle2, AlertTriangle,
   Play, Terminal, ArrowRight, ShieldCheck, Globe,
@@ -550,7 +551,7 @@ export const RetestPage: React.FC = () => {
                         <Globe size={16} />
                       </div>
                       <h4 className="text-base font-bold text-white group-hover:text-brand-cyan transition-colors truncate">
-                        {target.hostname}
+                        {getTargetDisplayName(target)}
                       </h4>
                       <span className="font-mono text-[11px] px-2 py-0.5 rounded bg-white/5 border border-white/10 text-brand-cyan font-bold">
                         v{target.scanVersionCounter}

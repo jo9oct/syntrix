@@ -439,58 +439,76 @@ export const SecurityEngineer: React.FC = () => {
       {/* ========================================================================= */}
       {activeTab === 'overview' && (
         <div className="space-y-6 animate-fadeIn">
-          {/* Telemetry Metric Cards */}
+          {/* Telemetry Metric Cards - Layout inspired by reference */}
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-            <GlassCard className="p-4 border-brand-cyan/20 bg-brand-cyan/5">
-              <div className="flex items-center justify-between">
-                <span className="text-xs text-text-muted font-medium">Security Audit Workspaces</span>
-                <Layers size={18} className="text-brand-cyan" />
+            {/* Card 1: Security Audit Workspaces */}
+            <div className="p-4 sm:p-5 rounded-2xl bg-white/[0.02] border border-brand-cyan/25 hover:border-brand-cyan/40 transition-all shadow-lg shadow-brand-cyan/[0.02] flex flex-col justify-between">
+              <div className="flex items-center justify-between text-text-muted mb-2">
+                <span className="text-[10px] font-bold uppercase tracking-wider text-brand-cyan">Audit Workspaces</span>
+                <div className="w-8 h-8 rounded-xl bg-brand-cyan/15 border border-brand-cyan/30 flex items-center justify-center text-brand-cyan">
+                  <Layers size={16} />
+                </div>
               </div>
-              <div className="mt-2 text-2xl font-bold text-white">{activeProjectsCount}</div>
-              <div className="mt-1 flex items-center justify-between text-[11px]">
-                <span className="text-text-muted">Active Workbenches</span>
+              <div className="text-3xl font-black text-white font-mono">{activeProjectsCount}</div>
+              <div className="mt-3 pt-2 border-t border-white/5 flex items-center justify-between text-[11px]">
+                <span className="text-emerald-400 font-semibold">Active Workbenches</span>
                 <Link to="/dashboard/service-projects" className="text-brand-cyan hover:underline font-semibold flex items-center gap-0.5">
                   Open Hub <ChevronRight size={11} />
                 </Link>
               </div>
-            </GlassCard>
+            </div>
 
-            <GlassCard className="p-4 border-blue-500/20 bg-blue-500/5">
-              <div className="flex items-center justify-between">
-                <span className="text-xs text-text-muted font-medium">Orders Pending Review</span>
-                <ClipboardList size={18} className="text-blue-400" />
+            {/* Card 2: Orders Pending Review */}
+            <div className="p-4 sm:p-5 rounded-2xl bg-white/[0.02] border border-amber-500/25 hover:border-amber-500/40 transition-all shadow-lg shadow-amber-500/[0.02] flex flex-col justify-between">
+              <div className="flex items-center justify-between text-text-muted mb-2">
+                <span className="text-[10px] font-bold uppercase tracking-wider text-amber-400">Orders Pending Review</span>
+                <div className="w-8 h-8 rounded-xl bg-amber-500/15 border border-amber-500/30 flex items-center justify-center text-amber-400">
+                  <ClipboardList size={16} />
+                </div>
               </div>
-              <div className="mt-2 text-2xl font-bold text-white">{pendingAcceptanceCount}</div>
-              <div className="mt-1 flex items-center justify-between text-[11px]">
+              <div className="text-3xl font-black text-white font-mono">{pendingAcceptanceCount}</div>
+              <div className="mt-3 pt-2 border-t border-white/5 flex items-center justify-between text-[11px]">
                 <span className="text-text-muted">Awaiting Acceptance</span>
-                <button onClick={() => handleTabChange('orders')} className="text-blue-400 hover:underline font-semibold flex items-center gap-0.5">
+                <button onClick={() => handleTabChange('orders')} className="text-amber-400 hover:underline font-semibold flex items-center gap-0.5">
                   View Orders <ChevronRight size={11} />
                 </button>
               </div>
-            </GlassCard>
+            </div>
 
-            <GlassCard className="p-4 border-purple-500/20 bg-purple-500/5">
-              <div className="flex items-center justify-between">
-                <span className="text-xs text-text-muted font-medium">Active Penetration Tests</span>
-                <Clock size={18} className="text-purple-400" />
+            {/* Card 3: Active Pentests */}
+            <div className="p-4 sm:p-5 rounded-2xl bg-white/[0.02] border border-purple-500/25 hover:border-purple-500/40 transition-all shadow-lg shadow-purple-500/[0.02] flex flex-col justify-between">
+              <div className="flex items-center justify-between text-text-muted mb-2">
+                <span className="text-[10px] font-bold uppercase tracking-wider text-purple-400">Active Penetration Tests</span>
+                <div className="w-8 h-8 rounded-xl bg-purple-500/15 border border-purple-500/30 flex items-center justify-center text-purple-400">
+                  <Clock size={16} />
+                </div>
               </div>
-              <div className="mt-2 text-2xl font-bold text-white">{inProgressCount}</div>
-              <div className="mt-1 text-[11px] text-text-muted">Active target audits & fuzzing</div>
-            </GlassCard>
+              <div className="text-3xl font-black text-white font-mono">{inProgressCount}</div>
+              <div className="mt-3 pt-2 border-t border-white/5 text-[11px] text-text-muted font-mono truncate">
+                Active target audits & fuzzing
+              </div>
+            </div>
 
-            <GlassCard className="p-4 border-amber-500/20 bg-amber-500/5">
-              <div className="flex items-center justify-between">
-                <span className="text-xs text-text-muted font-medium">Retest Queue</span>
-                <RotateCcw size={18} className="text-amber-400" />
+            {/* Card 4: Retest Queue */}
+            <div className="p-4 sm:p-5 rounded-2xl bg-white/[0.02] border border-emerald-500/25 hover:border-emerald-500/40 transition-all shadow-lg shadow-emerald-500/[0.02] flex flex-col justify-between">
+              <div className="flex items-center justify-between text-text-muted mb-2">
+                <span className="text-[10px] font-bold uppercase tracking-wider text-emerald-400">Retest Queue</span>
+                <div className="w-8 h-8 rounded-xl bg-emerald-500/15 border border-emerald-500/30 flex items-center justify-center text-emerald-400">
+                  <RotateCcw size={16} />
+                </div>
               </div>
-              <div className="mt-2 text-2xl font-bold text-white">{retestCount > 0 ? `${retestCount} Audits` : 'Zero Backlog'}</div>
-              <div className="mt-1 flex items-center justify-between text-[11px]">
-                <span className="text-text-muted">{retestCount > 0 ? 'Fixes waiting audit' : 'All verified'}</span>
-                <Link to="/dashboard/retest" className="text-amber-400 hover:underline font-semibold flex items-center gap-0.5">
+              <div className="text-3xl font-black text-white font-mono">
+                {retestCount > 0 ? `${retestCount}` : '0'}
+              </div>
+              <div className="mt-3 pt-2 border-t border-white/5 flex items-center justify-between text-[11px]">
+                <span className={retestCount > 0 ? 'text-amber-400 font-semibold' : 'text-emerald-400 font-semibold'}>
+                  {retestCount > 0 ? `${retestCount} Fixes waiting audit` : 'Zero backlog'}
+                </span>
+                <Link to="/dashboard/retest" className="text-emerald-400 hover:underline font-semibold flex items-center gap-0.5">
                   Queue <ChevronRight size={11} />
                 </Link>
               </div>
-            </GlassCard>
+            </div>
           </div>
 
 

@@ -12,6 +12,12 @@ const targetSchema = new Schema(
       index: true,
     },
 
+    name: {
+      type: String,
+      trim: true,
+      default: null,
+    },
+
     url: {
       type: String,
       required: true,

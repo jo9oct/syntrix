@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { GlassCard } from '../../../components/ui/GlassCard';
 import type { Report, ReportFormat, Scan, Target } from '../../../types/sentrix';
 import api from '../../../lib/api';
+import { getTargetDisplayName } from '../../../lib/targetUtils';
 import {
   FileText, Download, Plus, CheckCircle2,
   AlertTriangle, Globe, ArrowLeft, ArrowRight,
@@ -380,10 +381,16 @@ export const Reports: React.FC = () => {
     }
   };
 
-  const filteredTargets = targets.filter(t =>
-    t.hostname.toLowerCase().includes(targetSearch.toLowerCase()) ||
-    t.url.toLowerCase().includes(targetSearch.toLowerCase())
-  );
+  const filteredTargets = targets.filter(t => {
+    const q = targetSearch.toLowerCase();
+    const displayName = getTargetDisplayName(t).toLowerCase();
+    return (
+      displayName.includes(q) ||
+      (t.name && t.name.toLowerCase().includes(q)) ||
+      (t.hostname && t.hostname.toLowerCase().includes(q)) ||
+      (t.url && t.url.toLowerCase().includes(q))
+    );
+  });
 
   return (
     <div className="p-8 space-y-8 max-w-7xl mx-auto font-sans">
@@ -403,7 +410,7 @@ export const Reports: React.FC = () => {
             </div>
           )}
           <h1 className="text-3xl font-bold text-white tracking-tight">
-            {selectedTarget ? selectedTarget.hostname : 'Security Assessment Reports'}
+            {selectedTarget ? getTargetDisplayName(selectedTarget) : 'Security Assessment Reports'}
           </h1>
           <p className="text-sm text-text-muted mt-1">
             {selectedTarget
@@ -457,6 +464,64 @@ export const Reports: React.FC = () => {
       {/* ================================================================ */}
       {!selectedTarget && (
         <div className="space-y-6 animate-fadeIn">
+          {/* 4 Core Hero Telemetry Cards - Layout inspired by reference */}
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+            {/* Card 1: Report Deliverables */}
+            <div className="p-4 sm:p-5 rounded-2xl bg-white/[0.02] border border-brand-cyan/25 hover:border-brand-cyan/40 transition-all shadow-lg shadow-brand-cyan/[0.02] flex flex-col justify-between">
+              <div className="flex items-center justify-between text-text-muted mb-2">
+                <span className="text-[10px] font-bold uppercase tracking-wider text-brand-cyan">Deliverable Formats</span>
+                <div className="w-8 h-8 rounded-xl bg-brand-cyan/15 border border-brand-cyan/30 flex items-center justify-center text-brand-cyan">
+                  <FileText size={16} />
+                </div>
+              </div>
+              <div className="text-3xl font-black text-white font-mono">3 Formats</div>
+              <div className="mt-3 pt-2 border-t border-white/5 flex items-center justify-between text-[11px] text-brand-cyan font-semibold">
+                <span>PDF • HTML • JSON</span>
+              </div>
+            </div>
+
+            {/* Card 2: Audited Target Assets */}
+            <div className="p-4 sm:p-5 rounded-2xl bg-white/[0.02] border border-emerald-500/25 hover:border-emerald-500/40 transition-all shadow-lg shadow-emerald-500/[0.02] flex flex-col justify-between">
+              <div className="flex items-center justify-between text-text-muted mb-2">
+                <span className="text-[10px] font-bold uppercase tracking-wider text-emerald-400">Audited Assets</span>
+                <div className="w-8 h-8 rounded-xl bg-emerald-500/15 border border-emerald-500/30 flex items-center justify-center text-emerald-400">
+                  <Globe size={16} />
+                </div>
+              </div>
+              <div className="text-3xl font-black text-emerald-400 font-mono">{targets.length}</div>
+              <div className="mt-3 pt-2 border-t border-white/5 text-[11px] text-emerald-400 font-medium">
+                Verified compliance targets
+              </div>
+            </div>
+
+            {/* Card 3: Executive Attestation */}
+            <div className="p-4 sm:p-5 rounded-2xl bg-white/[0.02] border border-brand-purple/25 hover:border-brand-purple/40 transition-all shadow-lg shadow-brand-purple/[0.02] flex flex-col justify-between">
+              <div className="flex items-center justify-between text-text-muted mb-2">
+                <span className="text-[10px] font-bold uppercase tracking-wider text-brand-purple">Executive Attestation</span>
+                <div className="w-8 h-8 rounded-xl bg-brand-purple/15 border border-brand-purple/30 flex items-center justify-center text-brand-purple">
+                  <ShieldCheck size={16} />
+                </div>
+              </div>
+              <div className="text-3xl font-black text-white font-mono">OWASP</div>
+              <div className="mt-3 pt-2 border-t border-white/5 text-[11px] text-brand-purple font-medium">
+                Top 10 & CWE mapped
+              </div>
+            </div>
+
+            {/* Card 4: Audit Velocity */}
+            <div className="p-4 sm:p-5 rounded-2xl bg-white/[0.02] border border-blue-500/25 hover:border-blue-500/40 transition-all shadow-lg shadow-blue-500/[0.02] flex flex-col justify-between">
+              <div className="flex items-center justify-between text-text-muted mb-2">
+                <span className="text-[10px] font-bold uppercase tracking-wider text-blue-400">Generation Engine</span>
+                <div className="w-8 h-8 rounded-xl bg-blue-500/15 border border-blue-500/30 flex items-center justify-center text-blue-400">
+                  <Clock size={16} />
+                </div>
+              </div>
+              <div className="text-3xl font-black text-white font-mono">Instant</div>
+              <div className="mt-3 pt-2 border-t border-white/5 text-[11px] text-sky-400 font-medium">
+                Automated report bundling
+              </div>
+            </div>
+          </div>
           {/* Target Search & Meta */}
           <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
             <div className="flex items-center gap-2 text-xs font-bold text-white uppercase tracking-wider">
@@ -506,7 +571,7 @@ export const Reports: React.FC = () => {
 
                     <div>
                       <h3 className="text-base font-bold text-white group-hover:text-brand-cyan transition-colors truncate">
-                        {tgt.hostname}
+                        {getTargetDisplayName(tgt)}
                       </h3>
                       <div className="text-xs font-mono text-text-muted truncate mt-0.5">
                         {tgt.url}
@@ -546,7 +611,7 @@ export const Reports: React.FC = () => {
                   <span className="text-xs text-text-muted font-mono">{selectedTarget.url}</span>
                 </div>
                 <h2 className="text-2xl font-bold text-white tracking-tight">
-                  {selectedTarget.hostname}
+                  {getTargetDisplayName(selectedTarget)}
                 </h2>
               </div>
 

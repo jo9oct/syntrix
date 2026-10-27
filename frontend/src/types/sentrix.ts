@@ -369,6 +369,7 @@ export interface CrawlDetails {
 // ==========================================
 export interface Target {
   _id: string;
+  name?: string;
   ownerId: string;
   url: string;
   normalizedUrl: string;

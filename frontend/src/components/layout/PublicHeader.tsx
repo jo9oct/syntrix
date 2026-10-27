@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
-import { ArrowRight, Menu, X } from 'lucide-react';
+import { ArrowRight, Menu, X, Shield } from 'lucide-react';
 import { useAuthStore } from '../../store/authStore';
 
 export const PublicHeader: React.FC = () => {
@@ -9,14 +9,22 @@ export const PublicHeader: React.FC = () => {
   const { isAuthenticated, user } = useAuthStore();
   const [mobileOpen, setMobileOpen] = useState(false);
   const [activeSection, setActiveSection] = useState<string>('');
+  const [scrolled, setScrolled] = useState(false);
 
   const navLinks = [
     { to: '#features', targetId: 'features', label: 'Features', isScroll: true },
     { to: '/analysis', targetId: '', label: 'Live Scanner', isScroll: false },
-    { to: '#pricing', targetId: 'pricing', label: 'Pricing & Plans', isScroll: true },
+    { to: '#pricing', targetId: 'pricing', label: 'Pricing', isScroll: true },
     { to: '#about', targetId: 'about', label: 'About', isScroll: true },
     { to: '#contact', targetId: 'contact', label: 'Contact', isScroll: true },
   ];
+
+  // Scroll depth for nav shadow change
+  useEffect(() => {
+    const onScroll = () => setScrolled(window.scrollY > 18);
+    window.addEventListener('scroll', onScroll, { passive: true });
+    return () => window.removeEventListener('scroll', onScroll);
+  }, []);
 
   // Track active section on scroll when on homepage
   useEffect(() => {
@@ -55,7 +63,6 @@ export const PublicHeader: React.FC = () => {
           setActiveSection(link.targetId);
         }
       } else {
-        // If from another page, navigate to homepage with hash
         e.preventDefault();
         navigate(`/#${link.targetId}`);
       }
@@ -64,10 +71,14 @@ export const PublicHeader: React.FC = () => {
   };
 
   return (
-    <header className="fixed top-0 left-0 right-0 z-50 p-3 sm:p-4 md:p-6 pointer-events-none">
-      <div className="max-w-7xl mx-auto glass-panel px-4 sm:px-6 py-3 sm:py-3.5 flex items-center justify-between pointer-events-auto shadow-2xl border border-white/10 backdrop-blur-2xl bg-background-darker/90 rounded-2xl">
+    <header className="fixed top-0 left-0 right-0 z-50 px-3 sm:px-4 pt-3 sm:pt-4 pointer-events-none">
+      <div
+        className={`max-w-7xl mx-auto nav-glass px-4 sm:px-5 py-2.5 sm:py-3 flex items-center justify-between pointer-events-auto transition-all duration-300 ${
+          scrolled ? 'shadow-[0_12px_40px_-4px_rgba(0,0,0,0.7)]' : ''
+        }`}
+      >
         {/* Brand Logo & Desktop Nav */}
-        <div className="flex items-center gap-6 lg:gap-8">
+        <div className="flex items-center gap-5 lg:gap-7">
           <Link
             to="/"
             onClick={(e) => {
@@ -78,13 +89,23 @@ export const PublicHeader: React.FC = () => {
                 setActiveSection('');
               }
             }}
-            className="flex items-center gap-2.5 group"
+            className="flex items-center gap-2.5 group shrink-0"
           >
-            <img src="/logo.png" alt="Sentrix" className="w-8 h-8 sm:w-9 sm:h-9 rounded-xl object-contain shadow-lg shadow-brand-cyan/20 group-hover:scale-105 transition-transform" />
-            <span className="text-lg sm:text-xl font-bold text-white tracking-tight">Sentrix.</span>
+            <div className="relative">
+              <div className="absolute inset-0 rounded-xl bg-brand-cyan/25 blur-sm group-hover:bg-brand-cyan/35 transition-all duration-300" />
+              <img
+                src="/logo.png"
+                alt="Sentrix"
+                className="relative w-8 h-8 sm:w-8 sm:h-8 rounded-xl object-contain transition-transform group-hover:scale-105 duration-300"
+              />
+            </div>
+            <span className="text-base sm:text-lg font-bold text-white tracking-tight">
+              Sentrix<span className="text-brand-cyan">.</span>
+            </span>
           </Link>
 
-          <nav className="hidden lg:flex items-center gap-5 text-sm">
+          {/* Desktop nav */}
+          <nav className="hidden lg:flex items-center gap-1 text-sm" aria-label="Main navigation">
             {navLinks.map((link) => {
               const isActive = link.isScroll
                 ? location.pathname === '/' && activeSection === link.targetId
@@ -95,11 +116,16 @@ export const PublicHeader: React.FC = () => {
                   key={link.label}
                   href={link.isScroll ? `/#${link.targetId}` : link.to}
                   onClick={(e) => handleNavClick(e, link)}
-                  className={`transition-colors font-medium cursor-pointer ${
-                    isActive ? 'text-brand-cyan font-semibold' : 'text-text-muted hover:text-white'
+                  className={`relative px-3 py-1.5 rounded-xl font-medium transition-all duration-200 cursor-pointer focus-visible:outline focus-visible:outline-2 focus-visible:outline-brand-cyan ${
+                    isActive
+                      ? 'text-brand-cyan bg-brand-cyan/10'
+                      : 'text-text-muted hover:text-white hover:bg-white/5'
                   }`}
                 >
                   {link.label}
+                  {isActive && (
+                    <span className="absolute bottom-0.5 left-1/2 -translate-x-1/2 w-4 h-0.5 rounded-full bg-brand-cyan opacity-70" />
+                  )}
                 </a>
               );
             })}
@@ -107,27 +133,27 @@ export const PublicHeader: React.FC = () => {
         </div>
 
         {/* Right Desktop CTAs */}
-        <div className="hidden sm:flex items-center gap-3">
+        <div className="hidden sm:flex items-center gap-2.5">
           {isAuthenticated && user ? (
             <Link
               to="/dashboard"
-              className="btn-primary text-xs flex items-center gap-2 px-4 py-2"
+              className="btn-primary text-xs flex items-center gap-1.5 px-4 py-2 rounded-xl"
             >
-              Workspace ({user?.name ? user.name.split(' ')[0] : 'User'}) <ArrowRight size={14} />
+              Workspace ({user?.name ? user.name.split(' ')[0] : 'User'}) <ArrowRight size={13} />
             </Link>
           ) : (
             <>
               <Link
                 to="/login"
-                className="text-xs sm:text-sm font-medium text-text-muted hover:text-white px-2.5 py-2 transition-colors"
+                className="text-xs sm:text-sm font-medium text-text-muted hover:text-white px-3 py-2 rounded-xl hover:bg-white/5 transition-all focus-visible:outline focus-visible:outline-2 focus-visible:outline-brand-cyan"
               >
                 Sign in
               </Link>
               <Link
                 to="/register"
-                className="btn-primary text-xs flex items-center gap-1.5 px-3.5 py-2"
+                className="btn-primary text-xs flex items-center gap-1.5 px-3.5 py-2 rounded-xl"
               >
-                Get started <ArrowRight size={14} />
+                Get started <ArrowRight size={13} />
               </Link>
             </>
           )}
@@ -137,18 +163,19 @@ export const PublicHeader: React.FC = () => {
         <div className="flex sm:hidden items-center gap-2">
           <button
             onClick={() => setMobileOpen(!mobileOpen)}
-            className="p-2 rounded-xl bg-white/5 hover:bg-white/10 text-white border border-white/10 transition-colors"
+            className="p-2 rounded-xl bg-white/5 hover:bg-white/10 text-white border border-white/10 transition-colors focus-visible:outline focus-visible:outline-2 focus-visible:outline-brand-cyan"
             aria-label="Toggle Navigation"
+            aria-expanded={mobileOpen}
           >
-            {mobileOpen ? <X size={20} /> : <Menu size={20} />}
+            {mobileOpen ? <X size={18} /> : <Menu size={18} />}
           </button>
         </div>
       </div>
 
       {/* Mobile Slide-down Drawer */}
       {mobileOpen && (
-        <div className="sm:hidden mt-2 p-4 rounded-2xl glass-card border border-white/15 bg-background-darker/95 backdrop-blur-2xl pointer-events-auto space-y-3 shadow-2xl animate-in fade-in slide-in-from-top-2 duration-150">
-          <div className="flex flex-col space-y-1 pb-3 border-b border-white/10">
+        <div className="sm:hidden mt-2 mx-3 p-3 rounded-2xl glass-elevated border border-white/10 pointer-events-auto space-y-2 shadow-2xl animate-slide-down">
+          <nav className="flex flex-col gap-0.5 pb-2.5 border-b border-white/8" aria-label="Mobile navigation">
             {navLinks.map((link) => {
               const isActive = link.isScroll
                 ? location.pathname === '/' && activeSection === link.targetId
@@ -159,17 +186,19 @@ export const PublicHeader: React.FC = () => {
                   key={link.label}
                   href={link.isScroll ? `/#${link.targetId}` : link.to}
                   onClick={(e) => handleNavClick(e, link)}
-                  className={`px-3 py-2 rounded-xl text-sm font-medium transition-colors cursor-pointer ${
-                    isActive ? 'bg-brand-cyan/15 text-brand-cyan font-bold' : 'text-text-muted hover:text-white hover:bg-white/5'
+                  className={`px-3 py-2.5 rounded-xl text-sm font-medium transition-colors cursor-pointer focus-visible:outline focus-visible:outline-2 focus-visible:outline-brand-cyan ${
+                    isActive
+                      ? 'bg-brand-cyan/12 text-brand-cyan'
+                      : 'text-text-muted hover:text-white hover:bg-white/5'
                   }`}
                 >
                   {link.label}
                 </a>
               );
             })}
-          </div>
+          </nav>
 
-          <div className="pt-1 flex flex-col gap-2">
+          <div className="pt-0.5 flex flex-col gap-2">
             {isAuthenticated && user ? (
               <Link
                 to="/dashboard"
@@ -179,18 +208,18 @@ export const PublicHeader: React.FC = () => {
                 Go to Workspace ({user?.name ? user.name.split(' ')[0] : 'User'}) <ArrowRight size={14} />
               </Link>
             ) : (
-              <div className="grid grid-cols-2 gap-2 pt-1">
+              <div className="grid grid-cols-2 gap-2">
                 <Link
                   to="/login"
                   onClick={() => setMobileOpen(false)}
-                  className="py-2.5 rounded-xl text-xs font-semibold bg-white/5 border border-white/10 text-white text-center"
+                  className="py-2.5 rounded-xl text-xs font-semibold bg-white/5 border border-white/10 text-white text-center hover:bg-white/10 transition-colors focus-visible:outline focus-visible:outline-2 focus-visible:outline-brand-cyan"
                 >
                   Sign in
                 </Link>
                 <Link
                   to="/register"
                   onClick={() => setMobileOpen(false)}
-                  className="btn-primary py-2.5 rounded-xl text-xs font-semibold text-center flex items-center justify-center gap-1"
+                  className="btn-primary py-2.5 rounded-xl text-xs font-bold text-center flex items-center justify-center gap-1"
                 >
                   Get started <ArrowRight size={12} />
                 </Link>

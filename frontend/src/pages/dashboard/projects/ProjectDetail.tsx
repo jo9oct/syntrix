@@ -4,6 +4,7 @@ import { GlassCard } from '../../../components/ui/GlassCard';
 import { SeverityBadge, StatusBadge } from '../../../components/ui/Badge';
 import type { Target, Scan, TargetSecurityTrends, ScanComparisonResult } from '../../../types/sentrix';
 import api from '../../../lib/api';
+import { getTargetDisplayName } from '../../../lib/targetUtils';
 import {
   Globe, ArrowLeft, ShieldCheck, Activity, Clock,
   TrendingUp, ArrowRightLeft, FileText, CheckCircle2,
@@ -197,7 +198,7 @@ export const ProjectDetail: React.FC = () => {
           <ArrowLeft size={13} /> Targets
         </Link>
         <span>/</span>
-        <span className="text-white font-medium">{target.hostname}</span>
+        <span className="text-white font-medium">{getTargetDisplayName(target)}</span>
       </div>
 
       {/* Target Title Banner */}
@@ -208,7 +209,7 @@ export const ProjectDetail: React.FC = () => {
           </div>
           <div>
             <div className="flex items-center gap-2 flex-wrap">
-              <h1 className="text-2xl font-bold text-white tracking-tight">{target.hostname}</h1>
+              <h1 className="text-2xl font-bold text-white tracking-tight">{getTargetDisplayName(target)}</h1>
               <span className="px-2.5 py-0.5 rounded-full bg-emerald-500/10 text-emerald-400 border border-emerald-500/25 text-[10px] font-semibold">
                 Active Target Asset
               </span>

@@ -846,99 +846,113 @@ export const Admin: React.FC = () => {
       {/* ========================================================================= */}
       {activeTab === 'overview' && (
         <div className="space-y-6">
-          {/* Primary KPI Metrics Summary Bar (Only in Overview) */}
+          {/* Primary KPI Metrics Summary Bar (Only in Overview) - Layout inspired by reference */}
           <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3 sm:gap-4">
-            <GlassCard className="p-4 border-amber-500/30">
+            <div className="p-4 rounded-2xl bg-white/[0.02] border border-amber-500/25 hover:border-amber-500/40 transition-all shadow-lg shadow-amber-500/[0.02] flex flex-col justify-between">
               <div className="flex items-center justify-between text-text-muted mb-2">
-                <span className="text-[11px] font-semibold uppercase tracking-wider">Pending Orders</span>
-                <Clock size={16} className="text-amber-400" />
+                <span className="text-[10px] font-bold uppercase tracking-wider text-amber-400">Pending Orders</span>
+                <div className="w-7 h-7 rounded-xl bg-amber-500/15 border border-amber-500/30 flex items-center justify-center text-amber-400">
+                  <Clock size={14} />
+                </div>
               </div>
-              <div className="text-2xl font-black text-amber-400">{pendingCount}</div>
-              <div className="text-[10px] text-text-muted mt-1">Needs admin review</div>
-            </GlassCard>
+              <div className="text-2xl font-black text-amber-400 font-mono">{pendingCount}</div>
+              <div className="text-[10px] text-text-muted mt-2 pt-1 border-t border-white/5">Needs review</div>
+            </div>
 
-            <GlassCard className="p-4 border-brand-cyan/30">
+            <div className="p-4 rounded-2xl bg-white/[0.02] border border-brand-cyan/25 hover:border-brand-cyan/40 transition-all shadow-lg shadow-brand-cyan/[0.02] flex flex-col justify-between">
               <div className="flex items-center justify-between text-text-muted mb-2">
-                <span className="text-[11px] font-semibold uppercase tracking-wider">Platform Users</span>
-                <Users size={16} className="text-brand-cyan" />
+                <span className="text-[10px] font-bold uppercase tracking-wider text-brand-cyan">Platform Users</span>
+                <div className="w-7 h-7 rounded-xl bg-brand-cyan/15 border border-brand-cyan/30 flex items-center justify-center text-brand-cyan">
+                  <Users size={14} />
+                </div>
               </div>
-              <div className="text-2xl font-black text-brand-cyan">
+              <div className="text-2xl font-black text-brand-cyan font-mono">
                 {dashboardStats?.overview?.totalUsers ?? users.length}
               </div>
-              <div className="text-[10px] text-text-muted mt-1">
+              <div className="text-[10px] text-text-muted mt-2 pt-1 border-t border-white/5">
                 {dashboardStats?.users?.active ?? users.length} Active Accounts
               </div>
-            </GlassCard>
+            </div>
 
-            <GlassCard className="p-4 border-emerald-500/30">
+            <div className="p-4 rounded-2xl bg-white/[0.02] border border-emerald-500/25 hover:border-emerald-500/40 transition-all shadow-lg shadow-emerald-500/[0.02] flex flex-col justify-between">
               <div className="flex items-center justify-between text-text-muted mb-2">
-                <span className="text-[11px] font-semibold uppercase tracking-wider">Monitored Targets</span>
-                <Globe size={16} className="text-emerald-400" />
+                <span className="text-[10px] font-bold uppercase tracking-wider text-emerald-400">Monitored Targets</span>
+                <div className="w-7 h-7 rounded-xl bg-emerald-500/15 border border-emerald-500/30 flex items-center justify-center text-emerald-400">
+                  <Globe size={14} />
+                </div>
               </div>
-              <div className="text-2xl font-black text-emerald-400">
+              <div className="text-2xl font-black text-emerald-400 font-mono">
                 {dashboardStats?.overview?.totalTargets ?? 30}
               </div>
-              <div className="text-[10px] text-emerald-400 mt-1">Assets Protected</div>
-            </GlassCard>
+              <div className="text-[10px] text-emerald-400 mt-2 pt-1 border-t border-white/5 font-medium">Assets Protected</div>
+            </div>
 
-            <GlassCard className="p-4 border-brand-purple/30">
+            <div className="p-4 rounded-2xl bg-white/[0.02] border border-brand-purple/25 hover:border-brand-purple/40 transition-all shadow-lg shadow-brand-purple/[0.02] flex flex-col justify-between">
               <div className="flex items-center justify-between text-text-muted mb-2">
-                <span className="text-[11px] font-semibold uppercase tracking-wider">Security Scans</span>
-                <Activity size={16} className="text-brand-purple" />
+                <span className="text-[10px] font-bold uppercase tracking-wider text-brand-purple">Security Scans</span>
+                <div className="w-7 h-7 rounded-xl bg-brand-purple/15 border border-brand-purple/30 flex items-center justify-center text-brand-purple">
+                  <Activity size={14} />
+                </div>
               </div>
-              <div className="text-2xl font-black text-brand-purple">
+              <div className="text-2xl font-black text-brand-purple font-mono">
                 {dashboardStats?.overview?.totalSiteScans ?? 126}
               </div>
-              <div className="text-[10px] text-text-muted mt-1">
-                {dashboardStats?.scans?.byStatus?.completed ?? 120} Completed
+              <div className="text-[10px] text-text-muted mt-2 pt-1 border-t border-white/5 font-mono">
+                {dashboardStats?.scans?.byStatus?.completed ?? 120} Done
               </div>
-            </GlassCard>
+            </div>
 
-            <GlassCard className="p-4 border-red-500/30">
+            <div className="p-4 rounded-2xl bg-white/[0.02] border border-red-500/25 hover:border-red-500/40 transition-all shadow-lg shadow-red-500/[0.02] flex flex-col justify-between">
               <div className="flex items-center justify-between text-text-muted mb-2">
-                <span className="text-[11px] font-semibold uppercase tracking-wider">Vulnerabilities</span>
-                <ShieldAlert size={16} className="text-red-400" />
+                <span className="text-[10px] font-bold uppercase tracking-wider text-red-400">Vulnerabilities</span>
+                <div className="w-7 h-7 rounded-xl bg-red-500/15 border border-red-500/30 flex items-center justify-center text-red-400">
+                  <ShieldAlert size={14} />
+                </div>
               </div>
-              <div className="text-2xl font-black text-white">
+              <div className="text-2xl font-black text-white font-mono">
                 {dashboardStats?.overview?.totalFindings ?? 310}
               </div>
-              <div className="text-[10px] text-red-400 mt-1">
-                {dashboardStats?.findings?.bySeverity?.critical ?? 4} Critical • {dashboardStats?.findings?.bySeverity?.high ?? 18} High
+              <div className="text-[10px] text-red-400 mt-2 pt-1 border-t border-white/5 font-mono truncate">
+                {dashboardStats?.findings?.bySeverity?.critical ?? 4} Crit • {dashboardStats?.findings?.bySeverity?.high ?? 18} High
               </div>
-            </GlassCard>
+            </div>
 
-            <GlassCard className="p-4 border-brand-magenta/30">
+            <div className="p-4 rounded-2xl bg-white/[0.02] border border-brand-magenta/25 hover:border-brand-magenta/40 transition-all shadow-lg shadow-brand-magenta/[0.02] flex flex-col justify-between">
               <div className="flex items-center justify-between text-text-muted mb-2">
-                <span className="text-[11px] font-semibold uppercase tracking-wider">Platform Revenue</span>
-                <Zap size={16} className="text-brand-magenta" />
+                <span className="text-[10px] font-bold uppercase tracking-wider text-brand-magenta">Platform Revenue</span>
+                <div className="w-7 h-7 rounded-xl bg-brand-magenta/15 border border-brand-magenta/30 flex items-center justify-center text-brand-magenta">
+                  <Zap size={14} />
+                </div>
               </div>
-              <div className="text-xl font-black text-white truncate">
+              <div className="text-xl font-black text-white truncate font-mono">
                 {(dashboardStats?.subscriptions?.totalRevenue ?? totalValue).toLocaleString()} ETB
               </div>
-              <div className="text-[10px] text-brand-magenta mt-1">
-                {dashboardStats?.subscriptions?.successfulTransactions ?? 14} Settled via Chapa
+              <div className="text-[10px] text-brand-magenta mt-2 pt-1 border-t border-white/5">
+                {dashboardStats?.subscriptions?.successfulTransactions ?? 14} Settled Chapa
               </div>
-            </GlassCard>
+            </div>
           </div>
 
           {/* Top Comparative Visual Bar Graphs */}
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
             {/* Subscription Tier Distribution */}
-            <GlassCard className="p-5 border-white/10 space-y-4">
+            <div className="p-5 rounded-2xl bg-white/[0.03] border border-white/10 space-y-4 shadow-xl">
               <div className="flex items-center justify-between">
                 <div className="flex items-center gap-2">
-                  <Sparkles size={16} className="text-brand-purple" />
+                  <div className="w-7 h-7 rounded-lg bg-brand-purple/15 text-brand-purple flex items-center justify-center border border-brand-purple/30">
+                    <Sparkles size={14} />
+                  </div>
                   <h3 className="text-xs font-bold text-white uppercase tracking-wider">
                     Subscription Tier Distribution
                   </h3>
                 </div>
-                <span className="text-xs font-mono text-text-muted">
+                <span className="text-xs font-mono text-text-muted bg-white/5 px-2 py-0.5 rounded-full border border-white/5">
                   {dashboardStats?.overview?.totalUsers ?? users.length} Total Accounts
                 </span>
               </div>
 
               {/* Visual Segmented Bar */}
-              <div className="w-full h-4 rounded-full overflow-hidden flex bg-white/10 shadow-inner">
+              <div className="w-full h-3.5 rounded-full overflow-hidden flex bg-white/10 shadow-inner p-0.5">
                 {(() => {
                   const total = dashboardStats?.overview?.totalUsers || users.length || 1;
                   const ent = dashboardStats?.overview?.totalEnterpriseUsers ?? 2;
@@ -950,64 +964,66 @@ export const Admin: React.FC = () => {
 
                   return (
                     <>
-                      <div style={{ width: `${entPct}%` }} className="bg-brand-purple" title={`Enterprise: ${ent}`} />
-                      <div style={{ width: `${proPct}%` }} className="bg-brand-cyan" title={`Pro: ${pro}`} />
-                      <div style={{ width: `${freePct}%` }} className="bg-slate-500" title={`Community Free: ${free}`} />
+                      <div style={{ width: `${entPct}%` }} className="bg-brand-purple rounded-l-full shadow-[0_0_8px_rgba(168,85,247,0.5)] transition-all" title={`Enterprise: ${ent}`} />
+                      <div style={{ width: `${proPct}%` }} className="bg-brand-cyan shadow-[0_0_8px_rgba(6,182,212,0.5)] transition-all" title={`Pro: ${pro}`} />
+                      <div style={{ width: `${freePct}%` }} className="bg-slate-500 rounded-r-full transition-all" title={`Community Free: ${free}`} />
                     </>
                   );
                 })()}
               </div>
 
               {/* Legends */}
-              <div className="grid grid-cols-3 gap-2 pt-2 border-t border-white/5 text-xs font-mono">
-                <div className="p-2.5 rounded-xl bg-brand-purple/10 border border-brand-purple/20">
-                  <div className="text-[10px] text-brand-purple uppercase font-bold flex items-center gap-1">
+              <div className="grid grid-cols-3 gap-2.5 pt-2 border-t border-white/5 text-xs font-mono">
+                <div className="p-3 rounded-xl bg-brand-purple/10 border border-brand-purple/20 flex flex-col justify-between">
+                  <div className="text-[10px] text-brand-purple uppercase font-bold flex items-center gap-1.5">
                     <span className="w-2 h-2 rounded-full bg-brand-purple" /> Enterprise
                   </div>
-                  <div className="text-lg font-black text-white mt-1">
+                  <div className="text-xl font-black text-white mt-1">
                     {dashboardStats?.overview?.totalEnterpriseUsers ?? 2}
                   </div>
-                  <div className="text-[10px] text-text-muted">Full Sovereign Lab</div>
+                  <div className="text-[10px] text-text-muted mt-0.5">Full Sovereign Lab</div>
                 </div>
 
-                <div className="p-2.5 rounded-xl bg-brand-cyan/10 border border-brand-cyan/20">
-                  <div className="text-[10px] text-brand-cyan uppercase font-bold flex items-center gap-1">
+                <div className="p-3 rounded-xl bg-brand-cyan/10 border border-brand-cyan/20 flex flex-col justify-between">
+                  <div className="text-[10px] text-brand-cyan uppercase font-bold flex items-center gap-1.5">
                     <span className="w-2 h-2 rounded-full bg-brand-cyan" /> Pro SecOps
                   </div>
-                  <div className="text-lg font-black text-white mt-1">
+                  <div className="text-xl font-black text-white mt-1">
                     {dashboardStats?.overview?.totalProUsers ?? 1}
                   </div>
-                  <div className="text-[10px] text-text-muted">Unlimited Retests</div>
+                  <div className="text-[10px] text-text-muted mt-0.5">Unlimited Retests</div>
                 </div>
 
-                <div className="p-2.5 rounded-xl bg-white/5 border border-white/10">
-                  <div className="text-[10px] text-slate-300 uppercase font-bold flex items-center gap-1">
+                <div className="p-3 rounded-xl bg-white/5 border border-white/10 flex flex-col justify-between">
+                  <div className="text-[10px] text-slate-300 uppercase font-bold flex items-center gap-1.5">
                     <span className="w-2 h-2 rounded-full bg-slate-400" /> Community
                   </div>
-                  <div className="text-lg font-black text-white mt-1">
+                  <div className="text-xl font-black text-white mt-1">
                     {dashboardStats?.overview?.totalFreeUsers ?? 6}
                   </div>
-                  <div className="text-[10px] text-text-muted">Free Community Tier</div>
+                  <div className="text-[10px] text-text-muted mt-0.5">Community Tier</div>
                 </div>
               </div>
-            </GlassCard>
+            </div>
 
             {/* Global Vulnerability Severity Distribution */}
-            <GlassCard className="p-5 border-white/10 space-y-4">
+            <div className="p-5 rounded-2xl bg-white/[0.03] border border-white/10 space-y-4 shadow-xl">
               <div className="flex items-center justify-between">
                 <div className="flex items-center gap-2">
-                  <ShieldAlert size={16} className="text-red-400" />
+                  <div className="w-7 h-7 rounded-lg bg-red-500/15 text-red-400 flex items-center justify-center border border-red-500/30">
+                    <ShieldAlert size={14} />
+                  </div>
                   <h3 className="text-xs font-bold text-white uppercase tracking-wider">
                     Global Finding Severity Distribution
                   </h3>
                 </div>
-                <span className="text-xs font-mono text-text-muted">
-                  {dashboardStats?.overview?.totalFindings ?? 310} Total Vulnerabilities
+                <span className="text-xs font-mono text-text-muted bg-white/5 px-2 py-0.5 rounded-full border border-white/5">
+                  {dashboardStats?.overview?.totalFindings ?? 310} Total Findings
                 </span>
               </div>
 
               {/* Visual Segmented Severity Bar */}
-              <div className="w-full h-4 rounded-full overflow-hidden flex bg-white/10 shadow-inner">
+              <div className="w-full h-3.5 rounded-full overflow-hidden flex bg-white/10 shadow-inner p-0.5">
                 {(() => {
                   const total = dashboardStats?.overview?.totalFindings || 310;
                   const crit = dashboardStats?.findings?.bySeverity?.critical ?? 4;
@@ -1022,10 +1038,10 @@ export const Admin: React.FC = () => {
 
                   return (
                     <>
-                      <div style={{ width: `${critPct}%` }} className="bg-red-500" title={`Critical: ${crit}`} />
-                      <div style={{ width: `${highPct}%` }} className="bg-orange-500" title={`High: ${high}`} />
-                      <div style={{ width: `${medPct}%` }} className="bg-amber-400" title={`Medium: ${med}`} />
-                      <div style={{ width: `${lowPct}%` }} className="bg-brand-cyan" title={`Low: ${low}`} />
+                      <div style={{ width: `${critPct}%` }} className="bg-red-500 rounded-l-full shadow-[0_0_8px_rgba(239,68,68,0.5)] transition-all" title={`Critical: ${crit}`} />
+                      <div style={{ width: `${highPct}%` }} className="bg-orange-500 shadow-[0_0_8px_rgba(249,115,22,0.5)] transition-all" title={`High: ${high}`} />
+                      <div style={{ width: `${medPct}%` }} className="bg-amber-400 shadow-[0_0_8px_rgba(251,191,36,0.5)] transition-all" title={`Medium: ${med}`} />
+                      <div style={{ width: `${lowPct}%` }} className="bg-brand-cyan rounded-r-full shadow-[0_0_8px_rgba(6,182,212,0.5)] transition-all" title={`Low: ${low}`} />
                     </>
                   );
                 })()}
@@ -1033,35 +1049,35 @@ export const Admin: React.FC = () => {
 
               {/* Legends */}
               <div className="grid grid-cols-4 gap-2 pt-2 border-t border-white/5 text-xs font-mono">
-                <div className="p-2 rounded-xl bg-red-500/10 border border-red-500/20">
+                <div className="p-2.5 rounded-xl bg-red-500/10 border border-red-500/20 flex flex-col justify-between">
                   <div className="text-[10px] text-red-400 font-bold uppercase">Critical</div>
-                  <div className="text-base font-black text-white mt-0.5">
+                  <div className="text-lg font-black text-white mt-0.5">
                     {dashboardStats?.findings?.bySeverity?.critical ?? 4}
                   </div>
                 </div>
 
-                <div className="p-2 rounded-xl bg-orange-500/10 border border-orange-500/20">
+                <div className="p-2.5 rounded-xl bg-orange-500/10 border border-orange-500/20 flex flex-col justify-between">
                   <div className="text-[10px] text-orange-400 font-bold uppercase">High</div>
-                  <div className="text-base font-black text-white mt-0.5">
+                  <div className="text-lg font-black text-white mt-0.5">
                     {dashboardStats?.findings?.bySeverity?.high ?? 18}
                   </div>
                 </div>
 
-                <div className="p-2 rounded-xl bg-amber-500/10 border border-amber-500/20">
+                <div className="p-2.5 rounded-xl bg-amber-500/10 border border-amber-500/20 flex flex-col justify-between">
                   <div className="text-[10px] text-amber-300 font-bold uppercase">Medium</div>
-                  <div className="text-base font-black text-white mt-0.5">
+                  <div className="text-lg font-black text-white mt-0.5">
                     {dashboardStats?.findings?.bySeverity?.medium ?? 120}
                   </div>
                 </div>
 
-                <div className="p-2 rounded-xl bg-brand-cyan/10 border border-brand-cyan/20">
+                <div className="p-2.5 rounded-xl bg-brand-cyan/10 border border-brand-cyan/20 flex flex-col justify-between">
                   <div className="text-[10px] text-brand-cyan font-bold uppercase">Low</div>
-                  <div className="text-base font-black text-white mt-0.5">
+                  <div className="text-lg font-black text-white mt-0.5">
                     {dashboardStats?.findings?.bySeverity?.low ?? 168}
                   </div>
                 </div>
               </div>
-            </GlassCard>
+            </div>
           </div>
 
           {/* User Role Allocation Matrix */}

@@ -5,6 +5,7 @@ import type {
   Scan, Finding, CrawlDetails, CrawledPage, DiscoveredInput, Evidence, Report, ReportFormat
 } from '../../../types/sentrix';
 import api from '../../../lib/api';
+import { getTargetDisplayName } from '../../../lib/targetUtils';
 import { EvidenceViewer } from '../../../components/ui/EvidenceViewer';
 import {
   ShieldCheck, AlertTriangle, ArrowRight, FileText,
@@ -554,7 +555,7 @@ export const ScanResults: React.FC = () => {
             Security Assessment Findings & Telemetry
           </h1>
           <p className="text-xs text-text-muted mt-0.5">
-            Target: <span className="font-mono text-white">{effectiveScan.targetUrl}</span> • Status: <span className="text-emerald-400 font-bold capitalize">{effectiveScan.status}</span>
+            Target: <span className="font-semibold text-white">{getTargetDisplayName((effectiveScan as any).targetHostname || effectiveScan.targetUrl)}</span> <span className="font-mono text-text-muted text-[11px]">({effectiveScan.targetUrl})</span> • Status: <span className="text-emerald-400 font-bold capitalize">{effectiveScan.status}</span>
           </p>
         </div>
 

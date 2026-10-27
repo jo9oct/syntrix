@@ -12,6 +12,7 @@ import { useAuthStore, useUserTier } from '../../store/authStore';
 import type { Target, Scan, Finding, AvailableScannersResponse, Evidence } from '../../types/sentrix';
 import api from '../../lib/api';
 import { EvidenceViewer } from '../../components/ui/EvidenceViewer';
+import { getTargetDisplayName } from '../../lib/targetUtils';
 
 interface UserDashboardData {
   user: {
@@ -49,6 +50,7 @@ interface UserDashboardData {
     items: Array<{
       id: string;
       _id: string;
+      name?: string;
       url: string;
       hostname: string;
       isActive: boolean;
@@ -127,9 +129,9 @@ interface UserDashboardData {
   };
 }
 
-// Circular Risk Posture Gauge
+// Circular Risk Posture Gauge with modern glow & SVG arc
 const PostureGauge: React.FC<{ score: number; level: string }> = ({ score, level }) => {
-  const radius = 38;
+  const radius = 34;
   const circumference = 2 * Math.PI * radius;
   const validScore = Math.min(100, Math.max(0, score));
   const strokeDashoffset = circumference - (validScore / 100) * circumference;
@@ -139,48 +141,48 @@ const PostureGauge: React.FC<{ score: number; level: string }> = ({ score, level
 
   return (
     <div className="flex items-center gap-4">
-      <div className="relative w-24 h-24 shrink-0 flex items-center justify-center">
-        <svg className="w-full h-full -rotate-90" viewBox="0 0 96 96">
+      <div className="relative w-20 h-20 shrink-0 flex items-center justify-center">
+        <svg className="w-full h-full -rotate-90" viewBox="0 0 88 88">
           <circle
-            cx="48"
-            cy="48"
+            cx="44"
+            cy="44"
             r={radius}
             stroke="currentColor"
-            strokeWidth="8"
+            strokeWidth="7"
             fill="transparent"
-            className="text-white/10"
+            className="text-white/[0.07]"
           />
           <circle
-            cx="48"
-            cy="48"
+            cx="44"
+            cy="44"
             r={radius}
             stroke={color}
-            strokeWidth="8"
+            strokeWidth="7"
             strokeDasharray={circumference}
             strokeDashoffset={strokeDashoffset}
             strokeLinecap="round"
             fill="transparent"
-            className="transition-all duration-1000 ease-out"
+            className="transition-all duration-1000 ease-out drop-shadow-[0_0_8px_rgba(6,182,212,0.3)]"
           />
         </svg>
         <div className="absolute flex flex-col items-center justify-center text-center">
-          <span className="text-2xl font-black text-white leading-none">{validScore}</span>
-          <span className="text-[9px] font-mono text-text-muted mt-0.5">/ 100</span>
+          <span className="text-xl font-black text-white leading-none">{validScore}</span>
+          <span className="text-[8px] font-mono text-text-muted mt-0.5">/ 100</span>
         </div>
       </div>
-      <div>
-        <div className="text-[11px] font-mono uppercase tracking-wider text-text-muted">Target Posture Score</div>
-        <div className="text-sm font-bold text-white mt-0.5">{level}</div>
-        <div className="flex items-center gap-1.5 mt-2 text-[11px] font-medium" style={{ color }}>
-          <Shield size={13} />
-          <span>{validScore <= 35 ? 'Controlled Exposure' : validScore <= 65 ? 'Action Required' : 'Critical Risk'}</span>
+      <div className="min-w-0">
+        <div className="text-[10px] font-mono uppercase tracking-wider text-text-muted">Target Posture Score</div>
+        <div className="text-xs sm:text-sm font-bold text-white mt-0.5 truncate">{level}</div>
+        <div className="flex items-center gap-1.5 mt-1.5 text-[10px] font-semibold" style={{ color }}>
+          <Shield size={12} className="shrink-0" />
+          <span>{validScore <= 35 ? 'Controlled Exposure' : validScore <= 65 ? 'Action Required' : 'Critical Exposure'}</span>
         </div>
       </div>
     </div>
   );
 };
 
-// Vulnerability Severity Breakdown Bar
+// Vulnerability Severity Breakdown Bar with interactive percentages & badges
 const SeverityBreakdownBar: React.FC<{
   critical: number;
   high: number;
@@ -191,8 +193,9 @@ const SeverityBreakdownBar: React.FC<{
 }> = ({ critical, high, medium, low, info, total }) => {
   if (total === 0) {
     return (
-      <div className="py-2 text-center text-xs text-text-muted bg-white/[0.02] rounded-xl border border-white/5">
-        No active vulnerabilities detected across monitored targets
+      <div className="py-4 text-center text-xs text-text-muted bg-white/[0.02] rounded-xl border border-white/5 flex items-center justify-center gap-2">
+        <CheckCircle2 size={15} className="text-emerald-400" />
+        <span>No active vulnerabilities detected across monitored targets</span>
       </div>
     );
   }
@@ -204,19 +207,31 @@ const SeverityBreakdownBar: React.FC<{
   const infoPct = (info / total) * 100;
 
   return (
-    <div className="space-y-2">
-      <div className="w-full h-3 rounded-full overflow-hidden flex bg-white/10 shadow-inner">
-        {critPct > 0 && <div style={{ width: `${critPct}%` }} className="bg-red-500 transition-all" title={`Critical: ${critical}`} />}
-        {highPct > 0 && <div style={{ width: `${highPct}%` }} className="bg-orange-500 transition-all" title={`High: ${high}`} />}
-        {medPct > 0 && <div style={{ width: `${medPct}%` }} className="bg-amber-400 transition-all" title={`Medium: ${medium}`} />}
-        {lowPct > 0 && <div style={{ width: `${lowPct}%` }} className="bg-brand-cyan transition-all" title={`Low: ${low}`} />}
-        {infoPct > 0 && <div style={{ width: `${infoPct}%` }} className="bg-slate-400 transition-all" title={`Info: ${info}`} />}
+    <div className="space-y-3">
+      <div className="w-full h-3 rounded-full overflow-hidden flex bg-white/10 shadow-inner p-0.5">
+        {critPct > 0 && <div style={{ width: `${critPct}%` }} className="bg-red-500 rounded-l-full transition-all shadow-[0_0_8px_rgba(239,68,68,0.5)]" title={`Critical: ${critical}`} />}
+        {highPct > 0 && <div style={{ width: `${highPct}%` }} className="bg-orange-500 transition-all shadow-[0_0_8px_rgba(249,115,22,0.5)]" title={`High: ${high}`} />}
+        {medPct > 0 && <div style={{ width: `${medPct}%` }} className="bg-amber-400 transition-all shadow-[0_0_8px_rgba(251,191,36,0.5)]" title={`Medium: ${medium}`} />}
+        {lowPct > 0 && <div style={{ width: `${lowPct}%` }} className="bg-brand-cyan transition-all shadow-[0_0_8px_rgba(6,182,212,0.5)]" title={`Low: ${low}`} />}
+        {infoPct > 0 && <div style={{ width: `${infoPct}%` }} className="bg-slate-400 rounded-r-full transition-all" title={`Info: ${info}`} />}
       </div>
-      <div className="flex items-center justify-between text-[11px] font-mono text-text-muted flex-wrap gap-2 pt-1">
-        <span className="flex items-center gap-1.5 text-red-400 font-semibold"><span className="w-2 h-2 rounded-full bg-red-500" /> {critical} Critical</span>
-        <span className="flex items-center gap-1.5 text-orange-400 font-semibold"><span className="w-2 h-2 rounded-full bg-orange-500" /> {high} High</span>
-        <span className="flex items-center gap-1.5 text-amber-300 font-semibold"><span className="w-2 h-2 rounded-full bg-amber-400" /> {medium} Medium</span>
-        <span className="flex items-center gap-1.5 text-brand-cyan font-semibold"><span className="w-2 h-2 rounded-full bg-brand-cyan" /> {low} Low</span>
+      <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 text-[11px] font-mono">
+        <div className="flex items-center justify-between p-2 rounded-xl bg-red-500/10 border border-red-500/20 text-red-300">
+          <span className="flex items-center gap-1.5"><span className="w-2 h-2 rounded-full bg-red-500" /> Critical</span>
+          <span className="font-bold">{critical}</span>
+        </div>
+        <div className="flex items-center justify-between p-2 rounded-xl bg-orange-500/10 border border-orange-500/20 text-orange-300">
+          <span className="flex items-center gap-1.5"><span className="w-2 h-2 rounded-full bg-orange-500" /> High</span>
+          <span className="font-bold">{high}</span>
+        </div>
+        <div className="flex items-center justify-between p-2 rounded-xl bg-amber-500/10 border border-amber-500/20 text-amber-300">
+          <span className="flex items-center gap-1.5"><span className="w-2 h-2 rounded-full bg-amber-400" /> Medium</span>
+          <span className="font-bold">{medium}</span>
+        </div>
+        <div className="flex items-center justify-between p-2 rounded-xl bg-brand-cyan/10 border border-brand-cyan/20 text-brand-cyan">
+          <span className="flex items-center gap-1.5"><span className="w-2 h-2 rounded-full bg-brand-cyan" /> Low</span>
+          <span className="font-bold">{low}</span>
+        </div>
       </div>
     </div>
   );
@@ -226,6 +241,9 @@ export const DashboardHome: React.FC = () => {
   const navigate = useNavigate();
   const { user } = useAuthStore();
   const { tier: userTier, isFree } = useUserTier();
+
+  const isClientOwner = user?.role === 'client_owner';
+  const isClientMember = user?.role === 'client_member';
 
   const [dashboardData, setDashboardData] = useState<UserDashboardData | null>(null);
   const [loading, setLoading] = useState(true);
@@ -267,6 +285,27 @@ export const DashboardHome: React.FC = () => {
   const scans = dashboardData?.scans?.items || [];
   const findings = dashboardData?.findings?.items || [];
   const scanners = dashboardData?.scanners;
+  const quota = dashboardData?.quotaAndLimits;
+
+  // Intelligently select and display only the top 3 newest items in the dashboard
+  const displayedTargets = [...targets]
+    .sort((a, b) => new Date(b.createdAt || 0).getTime() - new Date(a.createdAt || 0).getTime())
+    .slice(0, 3);
+
+  const displayedScans = [...scans]
+    .sort((a, b) => new Date(b.createdAt || 0).getTime() - new Date(a.createdAt || 0).getTime())
+    .slice(0, 3);
+
+  const displayedFindings = [...findings]
+    .sort((a, b) => new Date(b.createdAt || 0).getTime() - new Date(a.createdAt || 0).getTime())
+    .slice(0, 3);
+
+  // Calculation for resolution rate
+  const resolvedCount = overview?.resolvedFindings ?? 0;
+  const totalFindingsCount = overview?.totalFindings ?? findings.length;
+  const resolutionRate = totalFindingsCount > 0 
+    ? Math.round((resolvedCount / totalFindingsCount) * 100) 
+    : 100;
 
   return (
     <div className="p-4 sm:p-6 lg:p-8 space-y-6 max-w-7xl mx-auto font-sans">
@@ -274,8 +313,8 @@ export const DashboardHome: React.FC = () => {
       <EvidenceViewer evidence={selectedEvidence} onClose={() => setSelectedEvidence(null)} />
 
       {/* Free Tier Workspace Banner Notice (Shown only for client_owner who has billing authority) */}
-      {user?.role === 'client_owner' && isFree && (
-        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 p-5 rounded-2xl bg-amber-500/10 border border-amber-500/30 shadow-lg shadow-amber-500/5">
+      {isClientOwner && isFree && (
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 p-4 sm:p-5 rounded-2xl bg-amber-500/[0.07] border border-amber-500/25 shadow-lg shadow-amber-500/5 backdrop-blur-sm">
           <div className="flex items-center gap-3.5">
             <div className="w-10 h-10 rounded-xl bg-amber-500/20 border border-amber-500/30 flex items-center justify-center text-amber-400 shrink-0">
               <AlertTriangle size={20} />
@@ -287,8 +326,8 @@ export const DashboardHome: React.FC = () => {
                   1 Target Asset Limit
                 </span>
               </div>
-              <div className="text-xs text-text-muted mt-0.5">
-                Your workspace is currently operating on the community tier. Upgrade to Pro for automated API security fuzzing, unlimited target projects, and verification retesting.
+              <div className="text-xs text-text-muted mt-0.5 leading-relaxed">
+                Operating on community tier. Upgrade to Pro for automated fuzzing, unlimited targets, and verification retesting.
               </div>
             </div>
           </div>
@@ -301,18 +340,20 @@ export const DashboardHome: React.FC = () => {
         </div>
       )}
 
-      {/* Top Welcome & Action Header */}
+      {/* Top Welcome & Action Header with Role-Specific Context */}
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
         <div>
           <div className="flex items-center gap-2 text-xs font-semibold text-brand-cyan uppercase tracking-wider mb-1">
             <span className="w-2 h-2 rounded-full bg-brand-cyan animate-pulse"></span>
-            Sentrix Autonomous Engine: Operational & Compliant
+            {isClientMember ? 'Team Workspace • Asset Vulnerability Monitor' : 'Executive Security Command • Attack Surface Telemetry'}
           </div>
           <h1 className="text-2xl sm:text-3xl font-extrabold text-white tracking-tight">
-            Security Command Center
+            {isClientMember ? 'Organization Security Monitor' : 'Security Command Center'}
           </h1>
           <p className="text-xs sm:text-sm text-text-muted mt-1">
-            Real-time vulnerability telemetry, monitored target environments, and automated security scans.
+            {isClientMember
+              ? 'Real-time vulnerability findings, scan execution telemetry, and verified evidence for your assigned assets.'
+              : 'Holistic risk score analysis, target environment controls, and autonomous assessment execution.'}
           </p>
         </div>
 
@@ -346,63 +387,71 @@ export const DashboardHome: React.FC = () => {
         </div>
       </div>
 
-      {/* 4 Core Hero Telemetry Cards */}
+      {/* 4 Core Hero Telemetry Cards - Styled with layout inspired by reference */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-        {/* Posture Score Meter */}
-        <GlassCard className="p-5 border-white/10 flex flex-col justify-between">
+        {/* Card 1: Posture Score */}
+        <div className="p-4 sm:p-5 rounded-2xl bg-white/[0.03] border border-brand-cyan/25 hover:border-brand-cyan/40 transition-all flex flex-col justify-between shadow-lg shadow-brand-cyan/[0.03]">
           <PostureGauge
             score={overview?.riskScore ?? 21}
             level={overview?.postureLevel ?? 'Controlled Exposure Level'}
           />
-        </GlassCard>
+        </div>
 
-        {/* Monitored Targets */}
-        <GlassCard className="p-5 border-white/10 flex flex-col justify-between">
+        {/* Card 2: Monitored Targets */}
+        <div className="p-4 sm:p-5 rounded-2xl bg-white/[0.03] border border-blue-500/25 hover:border-blue-500/40 transition-all flex flex-col justify-between shadow-lg shadow-blue-500/[0.03]">
           <div>
             <div className="flex items-center justify-between text-text-muted mb-2">
-              <span className="text-[11px] font-bold uppercase tracking-wider">Monitored Targets</span>
-              <Globe size={18} className="text-brand-cyan" />
+              <span className="text-[10px] font-bold uppercase tracking-wider text-blue-400">Monitored Targets</span>
+              <div className="w-8 h-8 rounded-xl bg-blue-500/15 border border-blue-500/30 flex items-center justify-center text-blue-400">
+                <Globe size={16} />
+              </div>
             </div>
             <div className="text-3xl font-black text-white mt-1">
               {overview?.totalTargets ?? targets.length}
-              {isFree && <span className="text-xs text-amber-400 font-bold ml-1.5 font-mono">/ 1 Max</span>}
+              {isClientOwner && isFree && (
+                <span className="text-xs text-amber-400 font-bold ml-1.5 font-mono">/ 1 Max</span>
+              )}
             </div>
           </div>
           <div className="text-[11px] text-text-muted mt-3 flex items-center justify-between pt-2 border-t border-white/5">
-            <span className="text-green-400 font-semibold">{overview?.activeTargets ?? targets.length} Active Targets</span>
-            <Link to="/dashboard/projects" className="text-brand-cyan hover:underline text-[11px]">
+            <span className="text-emerald-400 font-semibold">{overview?.activeTargets ?? targets.length} Active Targets</span>
+            <Link to="/dashboard/projects" className="text-brand-cyan hover:underline text-[11px] font-medium">
               Inventory &rarr;
             </Link>
           </div>
-        </GlassCard>
+        </div>
 
-        {/* Total Scans & Activity */}
-        <GlassCard className="p-5 border-white/10 flex flex-col justify-between">
+        {/* Card 3: Security Scans */}
+        <div className="p-4 sm:p-5 rounded-2xl bg-white/[0.03] border border-emerald-500/25 hover:border-emerald-500/40 transition-all flex flex-col justify-between shadow-lg shadow-emerald-500/[0.03]">
           <div>
             <div className="flex items-center justify-between text-text-muted mb-2">
-              <span className="text-[11px] font-bold uppercase tracking-wider">Security Scans</span>
-              <Activity size={18} className="text-green-400" />
+              <span className="text-[10px] font-bold uppercase tracking-wider text-emerald-400">Security Scans</span>
+              <div className="w-8 h-8 rounded-xl bg-emerald-500/15 border border-emerald-500/30 flex items-center justify-center text-emerald-400">
+                <Activity size={16} />
+              </div>
             </div>
             <div className="text-3xl font-black text-white mt-1">
               {overview?.totalScans ?? scans.length}
             </div>
           </div>
           <div className="text-[11px] text-text-muted mt-3 flex items-center justify-between pt-2 border-t border-white/5 font-mono">
-            <span className="text-green-400">{overview?.completedScans ?? scans.length} Completed</span>
+            <span className="text-emerald-400 font-semibold">{overview?.completedScans ?? scans.length} Completed</span>
             {overview?.runningScans ? (
-              <span className="text-amber-400 animate-pulse">{overview.runningScans} Running</span>
+              <span className="text-amber-400 animate-pulse font-bold">{overview.runningScans} Running</span>
             ) : (
               <span className="text-text-muted">0 Active</span>
             )}
           </div>
-        </GlassCard>
+        </div>
 
-        {/* Active Vulnerabilities */}
-        <GlassCard className="p-5 border-white/10 flex flex-col justify-between">
+        {/* Card 4: Active Vulnerabilities */}
+        <div className="p-4 sm:p-5 rounded-2xl bg-white/[0.03] border border-red-500/25 hover:border-red-500/40 transition-all flex flex-col justify-between shadow-lg shadow-red-500/[0.03]">
           <div>
             <div className="flex items-center justify-between text-text-muted mb-2">
-              <span className="text-[11px] font-bold uppercase tracking-wider">Active Findings</span>
-              <ShieldAlert size={18} className="text-red-400" />
+              <span className="text-[10px] font-bold uppercase tracking-wider text-red-400">Active Findings</span>
+              <div className="w-8 h-8 rounded-xl bg-red-500/15 border border-red-500/30 flex items-center justify-center text-red-400">
+                <ShieldAlert size={16} />
+              </div>
             </div>
             <div className="text-3xl font-black text-white mt-1">
               {overview?.totalFindings ?? findings.length}
@@ -414,31 +463,67 @@ export const DashboardHome: React.FC = () => {
             <span className="text-amber-300 font-semibold">{overview?.mediumFindings ?? 0} Med</span>
             <span className="text-brand-cyan font-semibold">{overview?.lowFindings ?? 0} Low</span>
           </div>
-        </GlassCard>
+        </div>
       </div>
 
-      {/* Vulnerability Severity Stacked Progress Visual Card */}
-      <GlassCard className="p-5 border-white/10 space-y-3">
-        <div className="flex items-center justify-between">
-          <div className="flex items-center gap-2">
-            <ShieldCheck size={16} className="text-brand-cyan" />
-            <h3 className="text-xs font-bold text-white uppercase tracking-wider">
-              Vulnerability Risk Distribution across Assets
-            </h3>
+      {/* Dual Analytics Row: Vulnerability Exposure & Remediation Resolution */}
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
+        {/* Vulnerability Severity Stacked Progress (2 cols) */}
+        <div className="lg:col-span-2 p-5 rounded-2xl bg-white/[0.03] border border-white/10 space-y-3">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-2">
+              <ShieldCheck size={16} className="text-brand-cyan" />
+              <h3 className="text-xs font-bold text-white uppercase tracking-wider">
+                Vulnerability Risk Distribution across Assets
+              </h3>
+            </div>
+            <span className="text-xs font-mono text-text-muted">
+              {overview?.totalFindings ?? findings.length} Total Findings Recorded
+            </span>
           </div>
-          <span className="text-xs font-mono text-text-muted">
-            {overview?.totalFindings ?? findings.length} Total Findings Recorded
-          </span>
+          <SeverityBreakdownBar
+            critical={overview?.criticalFindings ?? 0}
+            high={overview?.highFindings ?? 0}
+            medium={overview?.mediumFindings ?? 0}
+            low={overview?.lowFindings ?? 0}
+            info={overview?.infoFindings ?? 0}
+            total={overview?.totalFindings ?? findings.length}
+          />
         </div>
-        <SeverityBreakdownBar
-          critical={overview?.criticalFindings ?? 0}
-          high={overview?.highFindings ?? 0}
-          medium={overview?.mediumFindings ?? 0}
-          low={overview?.lowFindings ?? 0}
-          info={overview?.infoFindings ?? 0}
-          total={overview?.totalFindings ?? findings.length}
-        />
-      </GlassCard>
+
+        {/* Remediation & Verification Resolution Metric (1 col) */}
+        <div className="p-5 rounded-2xl bg-white/[0.03] border border-white/10 flex flex-col justify-between space-y-3">
+          <div className="flex items-center justify-between">
+            <span className="text-xs font-bold text-white uppercase tracking-wider flex items-center gap-1.5">
+              <CheckCircle2 size={15} className="text-emerald-400" /> Remediation Rate
+            </span>
+            <span className="text-xs font-mono font-bold text-emerald-400">
+              {resolutionRate}%
+            </span>
+          </div>
+
+          <div className="space-y-2">
+            <div className="w-full bg-white/10 h-2.5 rounded-full overflow-hidden">
+              <div 
+                className="bg-emerald-500 h-full rounded-full transition-all duration-1000 shadow-[0_0_8px_rgba(16,185,129,0.5)]" 
+                style={{ width: `${Math.max(5, resolutionRate)}%` }} 
+              />
+            </div>
+            <div className="flex items-center justify-between text-[11px] font-mono text-text-muted pt-1">
+              <span className="text-emerald-400 font-semibold">{resolvedCount} Resolved</span>
+              <span className="text-amber-400 font-semibold">{overview?.detectedFindings ?? 0} In Backlog</span>
+            </div>
+          </div>
+
+          <Link
+            to="/dashboard/remediation"
+            className="w-full py-1.5 px-3 rounded-xl bg-white/5 hover:bg-white/10 text-xs font-semibold text-white border border-white/10 flex items-center justify-center gap-1.5 transition-colors"
+          >
+            <span>Open Remediation Board</span>
+            <ArrowRight size={13} />
+          </Link>
+        </div>
+      </div>
 
       {/* Main Grid: Active Targets (Left) and Assessments & Findings (Right) */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
@@ -467,7 +552,7 @@ export const DashboardHome: React.FC = () => {
                 </button>
               </GlassCard>
             ) : (
-              targets.slice(0, 4).map((tgt) => (
+              displayedTargets.map((tgt) => (
                 <GlassCard
                   key={tgt.id || tgt._id}
                   className="p-4 border-white/10 hover:border-brand-cyan/40 transition-all cursor-pointer group"
@@ -476,10 +561,10 @@ export const DashboardHome: React.FC = () => {
                   <div className="flex items-start justify-between">
                     <div className="space-y-0.5 min-w-0 pr-2">
                       <div className="font-bold text-xs text-white truncate group-hover:text-brand-cyan transition-colors">
-                        {tgt.hostname}
+                        {getTargetDisplayName(tgt)}
                       </div>
                       <div className="text-[10px] font-mono text-text-muted truncate">
-                        {tgt.url}
+                        {tgt.url || tgt.hostname}
                       </div>
                     </div>
                     <span className="font-mono text-[11px] px-2 py-0.5 rounded bg-brand-cyan/10 border border-brand-cyan/20 text-brand-cyan font-bold shrink-0">
@@ -547,14 +632,16 @@ export const DashboardHome: React.FC = () => {
                   </button>
                 </GlassCard>
               ) : (
-                scans.slice(0, 4).map((scan) => (
+                displayedScans.map((scan) => (
                   <GlassCard
                     key={scan.id || scan._id}
                     className="p-4 border-white/10 hover:border-white/20 transition-all flex flex-col sm:flex-row sm:items-center justify-between gap-3"
                   >
                     <div className="space-y-1 min-w-0">
                       <div className="flex items-center gap-2">
-                        <span className="font-mono text-xs font-bold text-white">Assessment Run</span>
+                        <span className="font-bold text-xs text-white truncate max-w-[220px]">
+                          {getTargetDisplayName(scan.targetHostname || scan.targetUrl)}
+                        </span>
                         <span
                           className={`px-2 py-0.5 rounded text-[10px] font-bold uppercase border ${
                             scan.status === 'completed'
@@ -613,7 +700,7 @@ export const DashboardHome: React.FC = () => {
                   <p className="text-xs">No unresolved vulnerabilities detected on monitored targets.</p>
                 </GlassCard>
               ) : (
-                findings.slice(0, 3).map((f) => (
+                displayedFindings.map((f) => (
                   <GlassCard key={f.id || f._id} className="p-4 border-white/10 space-y-2">
                     <div className="flex items-start justify-between gap-3">
                       <div className="min-w-0">

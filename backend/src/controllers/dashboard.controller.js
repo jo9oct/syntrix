@@ -171,6 +171,7 @@ export const getUserDashboardStats = async (req, res) => {
     const recentTargets = userTargets.slice(0, 5).map((t) => ({
       id: String(t._id),
       _id: String(t._id),
+      name: t.name || null,
       url: t.url,
       hostname: t.hostname,
       isActive: Boolean(t.isActive),
