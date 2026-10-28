@@ -1,8 +1,13 @@
 import React from 'react';
-import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
+import { BrowserRouter, Routes, Route, Navigate, useLocation } from 'react-router-dom';
 import { Home } from './pages/public/Home';
 import { Login } from './pages/auth/Login';
 import { Register } from './pages/auth/Register';
+import { ForgotPassword } from './pages/auth/ForgotPassword';
+import { ResetPassword } from './pages/auth/ResetPassword';
+import { VerifyEmail } from './pages/auth/VerifyEmail';
+import { AuthCallback } from './pages/auth/AuthCallback';
+import { Onboarding } from './pages/auth/Onboarding';
 import { Features } from './pages/public/Features';
 import { Analysis } from './pages/public/Analysis';
 import { About } from './pages/public/About';
@@ -33,10 +38,18 @@ import { ServiceProjectDetail } from './pages/dashboard/service-projects/Service
 import { useAuthStore, getRoleLandingPath, type UserRole } from './store/authStore';
 
 const ProtectedRoute: React.FC<{ children: React.ReactNode }> = ({ children }) => {
-  const { isAuthenticated } = useAuthStore();
+  const { isAuthenticated, user } = useAuthStore();
+  const location = useLocation();
+  const searchParams = new URLSearchParams(location.search);
+  const token = searchParams.get('token') || searchParams.get('refreshToken');
+
   if (!isAuthenticated) {
+    if (token) {
+      return <Navigate to={`/auth/callback${location.search}`} replace />;
+    }
     return <Navigate to="/login" replace />;
   }
+
   return <>{children}</>;
 };
 
@@ -78,6 +91,14 @@ function App() {
         <Route path="/contact" element={<PublicRoute><Contact /></PublicRoute>} />
         <Route path="/login" element={<PublicRoute><Login /></PublicRoute>} />
         <Route path="/register" element={<PublicRoute><Register /></PublicRoute>} />
+        <Route path="/forgot-password" element={<PublicRoute><ForgotPassword /></PublicRoute>} />
+        <Route path="/forget-password" element={<PublicRoute><ForgotPassword /></PublicRoute>} />
+        <Route path="/reset-password/:token" element={<PublicRoute><ResetPassword /></PublicRoute>} />
+        <Route path="/user/Reset-Password/:token" element={<PublicRoute><ResetPassword /></PublicRoute>} />
+        <Route path="/verify" element={<PublicRoute><VerifyEmail /></PublicRoute>} />
+        <Route path="/auth/callback" element={<AuthCallback />} />
+        <Route path="/onboarding" element={<ProtectedRoute><Onboarding /></ProtectedRoute>} />
+        <Route path="/auth/onboarding" element={<ProtectedRoute><Onboarding /></ProtectedRoute>} />
 
         {/* Authenticated routes strictly protected & role-guarded */}
         <Route path="/dashboard" element={<ProtectedRoute><AppShell /></ProtectedRoute>}>

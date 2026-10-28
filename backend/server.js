@@ -13,9 +13,12 @@ import { createRateLimiter } from "./src/middleware/rateLimit.middleware.js";
 import { notFoundMiddleware } from "./src/middleware/notFound.middleware.js";
 import { errorMiddleware } from "./src/middleware/error.middleware.js";
 import corsMiddleware from "./src/config/cors.js";
+import cookieParser from "cookie-parser";
+import passport from "passport";
 
 //auth
-import authRoutes from "./src/routes/auth.routes.js";
+import authRoutes from "./src/routes/auth.route.js";
+import googleAuthRoute from "./src/routes/google-auth.route.js";
 import adminRoutes from "./src/routes/admin.routes.js";
 import dashboardRoutes from "./src/routes/dashboard.routes.js";
 import serviceOrderRoutes from "./src/routes/serviceOrder.routes.js";
@@ -126,6 +129,9 @@ app.use(
   }),
 );
 
+app.use(cookieParser());
+app.use(passport.initialize());
+
 // Preserve the first server's root response.
 app.get("/", (request, response) => {
   response.status(200).json({
@@ -152,8 +158,13 @@ app.use("/api/v1/reports", reportRoutes);
 app.use("/api/v1/ai-analysis", aiAnalysisRoutes);
 app.use("/api/v1/ai", aiAnalysisRoutes);
 
-// Authentication routes
+// Authentication routes (ZIP implementation architecture)
+app.use("/api/auth", authRoutes);
 app.use("/api/v1/auth", authRoutes);
+app.use("/api/v1/auth/google", googleAuthRoute);
+app.use("/api/auth/google", googleAuthRoute);
+app.use("/auth/google", googleAuthRoute);
+app.use("/auth", googleAuthRoute);
 
 // Dashboard routes (User Dashboard /dashboard/user and adaptive /dashboard)
 app.use("/api/v1/dashboard", dashboardRoutes);

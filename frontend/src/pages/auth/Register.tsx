@@ -36,24 +36,53 @@ export const Register: React.FC = () => {
     email: '',
     password: '',
     organization: '',
-    isOwner: true,
     isSecurityResponsible: true,
-    employees: '50-250',
-    platformUsers: '5-20',
   });
 
   // Real-time password requirement checks for checklist
   const hasMinLength = formData.password.length >= 8;
   const hasNumberOrSymbol = /[0-9!@#$%^&*()_+\-=\[\]{};':"\\|,.<>\/?]/.test(formData.password);
   const hasUpperAndLower = /[a-z]/.test(formData.password) && /[A-Z]/.test(formData.password);
+  const isPasswordValid = hasMinLength && hasNumberOrSymbol && hasUpperAndLower;
 
   // Field validation checks for visual green checkmarks
-  const isNameValid = formData.name.trim().length >= 2;
+  const isNameValid = formData.name.trim().length >= 3;
   const isEmailValid = /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(formData.email.trim());
 
   const handleNext = (e: React.FormEvent) => {
     e.preventDefault();
     setError(null);
+
+    if (step === 1) {
+      if (!isNameValid) {
+        setError('Please enter a valid full name (at least 3 characters).');
+        return;
+      }
+      if (!isEmailValid) {
+        setError('Please enter a valid email address.');
+        return;
+      }
+      if (!hasMinLength) {
+        setError('Password must be at least 8 characters long.');
+        return;
+      }
+      if (!hasNumberOrSymbol) {
+        setError('Password must contain at least one number (0–9) or a symbol.');
+        return;
+      }
+      if (!hasUpperAndLower) {
+        setError('Password must contain both lowercase (a–z) and uppercase (A–Z) letters.');
+        return;
+      }
+    }
+
+    if (step === 2) {
+      if (!hasNoOrganization && !formData.organization.trim()) {
+        setError('Please enter your company or organization name, or check Independent Practitioner.');
+        return;
+      }
+    }
+
     if (step < 3) {
       setStep(step + 1);
     } else {
@@ -70,17 +99,14 @@ export const Register: React.FC = () => {
         email: formData.email,
         password: formData.password,
         organization: hasNoOrganization ? '' : formData.organization,
-        isOwner: !hasNoOrganization && formData.isOwner,
         isSecurityResponsible: formData.isSecurityResponsible,
-        employees: hasNoOrganization ? null : formData.employees,
-        platformUsers: hasNoOrganization ? null : formData.platformUsers,
       });
 
       useAuthStore.getState().logout();
-      navigate('/login', {
+      navigate('/verify', {
         state: {
-          message: 'Workspace created successfully! Please sign in with your credentials to access your console.',
-          prefillEmail: formData.email,
+          message: 'Workspace created successfully! Please check your email for the 6-digit verification code.',
+          email: formData.email,
         },
       });
     } catch (err: any) {
@@ -190,6 +216,7 @@ export const Register: React.FC = () => {
                       className="w-full bg-white/[0.03] border-b-2 border-white/10 focus:border-brand-cyan hover:border-white/20 rounded-t-xl py-3 pl-12 pr-11 text-white text-sm focus:outline-none transition-all placeholder:text-text-muted/40 font-medium"
                       placeholder="Daniel Ahmadi"
                       required
+                      minLength={3}
                       autoFocus
                     />
                     {isNameValid && (
@@ -287,7 +314,7 @@ export const Register: React.FC = () => {
                           const checked = e.target.checked;
                           setHasNoOrganization(checked);
                           if (checked) {
-                            setFormData((prev) => ({ ...prev, organization: '', isOwner: false }));
+                            setFormData((prev) => ({ ...prev, organization: '' }));
                           }
                         }}
                         className="rounded accent-brand-cyan w-3.5 h-3.5"
@@ -318,57 +345,7 @@ export const Register: React.FC = () => {
                   </div>
                 </div>
 
-                {!hasNoOrganization && (
-                  <div className="grid grid-cols-2 gap-3">
-                    <div>
-                      <label className="block text-xs font-bold text-text-muted uppercase tracking-wider mb-1.5">
-                        Company Size
-                      </label>
-                      <select
-                        value={formData.employees}
-                        onChange={(e) => setFormData({ ...formData, employees: e.target.value })}
-                        className="w-full bg-[#0a1222] border border-white/10 rounded-xl py-2 px-3 text-white text-xs outline-none focus:border-brand-cyan transition-all"
-                      >
-                        <option value="1-10">1-10 staff</option>
-                        <option value="11-50">11-50 staff</option>
-                        <option value="50-250">50-250 staff</option>
-                        <option value="250+">250+ enterprise</option>
-                      </select>
-                    </div>
-
-                    <div>
-                      <label className="block text-xs font-bold text-text-muted uppercase tracking-wider mb-1.5">
-                        Security Users
-                      </label>
-                      <select
-                        value={formData.platformUsers}
-                        onChange={(e) => setFormData({ ...formData, platformUsers: e.target.value })}
-                        className="w-full bg-[#0a1222] border border-white/10 rounded-xl py-2 px-3 text-white text-xs outline-none focus:border-brand-cyan transition-all"
-                      >
-                        <option value="1-5">1-5 operators</option>
-                        <option value="5-20">5-20 operators</option>
-                        <option value="20+">20+ operators</option>
-                      </select>
-                    </div>
-                  </div>
-                )}
-
                 <div className="space-y-2 pt-1">
-                  {!hasNoOrganization && (
-                    <label className="flex items-start gap-2.5 p-2.5 bg-white/[0.02] rounded-xl border border-white/8 cursor-pointer hover:bg-white/[0.05] transition-colors select-none">
-                      <input
-                        type="checkbox"
-                        checked={formData.isOwner}
-                        onChange={(e) => setFormData({ ...formData, isOwner: e.target.checked })}
-                        className="rounded accent-brand-cyan w-4 h-4 mt-0.5 shrink-0"
-                      />
-                      <div className="text-xs">
-                        <div className="font-bold text-white">Organization owner or primary security lead</div>
-                        <div className="text-text-muted text-[11px]">Grants Client Owner permissions to manage projects and teams.</div>
-                      </div>
-                    </label>
-                  )}
-
                   <label className="flex items-start gap-2.5 p-2.5 bg-white/[0.02] rounded-xl border border-white/8 cursor-pointer hover:bg-white/[0.05] transition-colors select-none">
                     <input
                       type="checkbox"
@@ -395,9 +372,11 @@ export const Register: React.FC = () => {
                   </div>
                   <div className="grid grid-cols-2 gap-2 text-xs pt-1 border-t border-brand-cyan/20">
                     <div>
-                      <span className="text-text-muted block text-[11px]">Role:</span>
+                      <span className="text-text-muted block text-[11px]">Assigned Role:</span>
                       <span className="text-white font-bold">
-                        {hasNoOrganization ? 'Client Member (Independent)' : formData.isOwner ? 'Client Owner' : 'Client Member'}
+                        {hasNoOrganization
+                          ? 'Client Member (Independent)'
+                          : 'Auto-assigned (Owner for new company, Member for existing)'}
                       </span>
                     </div>
                     <div>
@@ -428,7 +407,7 @@ export const Register: React.FC = () => {
             )}
 
             {/* Navigation Buttons (Pill Style) */}
-            <div className="flex items-center gap-3 pt-3">
+            <div className="flex flex-wrap items-center gap-3 pt-3">
               {step > 1 && (
                 <button
                   type="button"
@@ -461,6 +440,37 @@ export const Register: React.FC = () => {
                   </>
                 )}
               </button>
+
+              {step === 1 && (
+                <div className="flex items-center gap-3 ml-1">
+                  <span className="text-xs text-text-muted/60 font-medium">Or</span>
+                  <a
+                    href={`${import.meta.env.VITE_API_URL?.replace('/api/v1', '') || 'http://localhost:3001'}/api/v1/auth/google`}
+                    className="w-10 h-10 rounded-full border border-white/10 bg-white/5 hover:bg-white/10 hover:border-white/20 flex items-center justify-center text-white transition-all shadow-sm cursor-pointer"
+                    title="Sign up with Google"
+                    aria-label="Sign up with Google"
+                  >
+                    <svg className="w-4 h-4" viewBox="0 0 24 24">
+                      <path
+                        fill="#EA4335"
+                        d="M12 5c1.6 0 3 .6 4.1 1.7l3.1-3.1C17.3 1.8 14.8 1 12 1 7.5 1 3.7 3.6 1.9 7.3l3.7 2.9C6.5 7.4 9 5 12 5z"
+                      />
+                      <path
+                        fill="#4285F4"
+                        d="M23.5 12.3c0-.8-.1-1.7-.2-2.3H12v4.6h6.5c-.3 1.5-1.1 2.8-2.4 3.7l3.7 2.9c2.2-2 3.7-5.1 3.7-8.9z"
+                      />
+                      <path
+                        fill="#FBBC05"
+                        d="M5.6 14.8c-.2-.7-.4-1.5-.4-2.8s.2-2.1.4-2.8L1.9 6.3C.7 8.7 0 10.3 0 12s.7 3.3 1.9 5.7l3.7-2.9z"
+                      />
+                      <path
+                        fill="#34A853"
+                        d="M12 23c3.2 0 6-1.1 8-3l-3.7-2.9c-1.1.7-2.5 1.2-4.3 1.2-3 0-5.5-2.4-6.4-5.2L1.9 16C3.7 19.7 7.5 23 12 23z"
+                      />
+                    </svg>
+                  </a>
+                </div>
+              )}
             </div>
           </form>
 

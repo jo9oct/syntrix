@@ -3,20 +3,16 @@
 
 import { Router } from "express";
 import {
+  getAllUser,
   getUsers,
+  updateUser,
   createUser,
-  toggleUserStatus,
-  updateUserRole,
   getClientPortalStatus,
   updateClientPortalStatus,
 } from "../controllers/admin.controller.js";
 import { protect, authorize } from "../middleware/auth.js";
 import { validate } from "../middleware/validation.middleware.js";
-import {
-  createUserSchema,
-  updateUserRoleSchema,
-  userIdParamSchema,
-} from "../validators/admin.validator.js";
+import { createUserSchema } from "../validators/admin.validator.js";
 
 const router = Router();
 
@@ -24,30 +20,18 @@ const router = Router();
 router.use(protect);
 router.use(authorize("admin"));
 
-// User Management APIs
+// User Management APIs - Get All Users & Create User
 router
   .route("/users")
-  .get(getUsers)
+  .get(getAllUser)
   .post(validate(createUserSchema, "body"), createUser);
 
-// User Status Toggle API
-router
-  .route("/users/:id/status")
-  .put(validate(userIdParamSchema, "params"), toggleUserStatus);
+// Get All Users endpoint
+router.get("/get-all-user", getAllUser);
 
-// User Role Update APIs (PUT & PATCH)
-router
-  .route("/users/:id/role")
-  .put(
-    validate(userIdParamSchema, "params"),
-    validate(updateUserRoleSchema, "body"),
-    updateUserRole,
-  )
-  .patch(
-    validate(userIdParamSchema, "params"),
-    validate(updateUserRoleSchema, "body"),
-    updateUserRole,
-  );
+// Update User (Role / Status) endpoints
+router.put("/update-user/:id", updateUser);
+router.put("/update-user/:_id", updateUser);
 
 // Client Portal Services Availability Toggle API
 router

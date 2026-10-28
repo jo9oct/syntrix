@@ -109,7 +109,10 @@ export const removeCookie = (name: string): void => {
  */
 export const getAuthToken = (): string | null => {
   // 1. Direct dedicated auth cookie
-  const directToken = getCookie(AUTH_COOKIE_NAME);
+  const directToken =
+    getCookie(AUTH_COOKIE_NAME) ||
+    getCookie("token") ||
+    getCookie("refreshToken");
   if (directToken) {
     if (directToken === "sentrix_demo_auth_token") {
       removeCookie(AUTH_COOKIE_NAME);

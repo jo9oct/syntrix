@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   Mail,
   Lock,
@@ -25,15 +25,22 @@ export const Login: React.FC = () => {
 
   const successMessage = (location.state as any)?.message;
   const prefillEmail = (location.state as any)?.prefillEmail || '';
+  const queryError = new URLSearchParams(location.search).get('error');
 
   const [email, setEmail] = useState(prefillEmail);
   const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
   const [loading, setLoading] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(queryError);
 
-  // Simple email validity check for visual green indicator
-  const isEmailValid = /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email.trim());
+  useEffect(() => {
+    if (queryError) {
+      setError(queryError);
+    }
+  }, [queryError]);
+
+  // Check for visual green indicator (valid email or username)
+  const isInputValid = email.trim().length >= 3;
 
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -122,7 +129,7 @@ export const Login: React.FC = () => {
 
           {/* Authentication Form */}
           <form onSubmit={handleLogin} className="space-y-5">
-            {/* Email Address Input */}
+            {/* Email Address or Username Input */}
             <div>
               <div className="relative group">
                 <Mail
@@ -130,15 +137,15 @@ export const Login: React.FC = () => {
                   size={18}
                 />
                 <input
-                  type="email"
+                  type="text"
                   value={email}
                   onChange={(e) => setEmail(e.target.value)}
                   className="w-full bg-white/[0.03] border-b-2 border-white/10 focus:border-brand-cyan hover:border-white/20 rounded-t-xl py-3 pl-12 pr-11 text-white text-sm focus:outline-none transition-all placeholder:text-text-muted/40 font-medium"
-                  placeholder="analyst@company.com"
+                  placeholder="Email or username"
                   required
-                  autoComplete="email"
+                  autoComplete="username email"
                 />
-                {isEmailValid && (
+                {isInputValid && (
                   <CheckCircle2
                     size={16}
                     className="absolute right-4 top-1/2 -translate-y-1/2 text-emerald-400 animate-fadeIn"
@@ -174,8 +181,18 @@ export const Login: React.FC = () => {
               </div>
             </div>
 
-            {/* Submit Action Button */}
-            <div className="pt-2">
+            {/* Forgot Password Link */}
+            <div className="flex justify-end -mt-1">
+              <Link
+                to="/forgot-password"
+                className="text-xs text-text-muted hover:text-brand-cyan transition-colors underline decoration-brand-cyan/30 hover:decoration-brand-cyan font-medium"
+              >
+                Forgot password?
+              </Link>
+            </div>
+
+            {/* Submit Action Button & Social Login */}
+            <div className="pt-2 flex flex-col sm:flex-row sm:items-center gap-4">
               <button
                 type="submit"
                 disabled={loading}
@@ -193,6 +210,35 @@ export const Login: React.FC = () => {
                   </>
                 )}
               </button>
+
+              <div className="flex items-center gap-3 justify-center sm:justify-start">
+                <span className="text-xs text-text-muted/60 font-medium">Or</span>
+                <a
+                  href={`${import.meta.env.VITE_API_URL?.replace('/api/v1', '') || 'http://localhost:3001'}/api/v1/auth/google`}
+                  className="w-10 h-10 rounded-full border border-white/10 bg-white/5 hover:bg-white/10 hover:border-white/20 flex items-center justify-center text-white transition-all shadow-sm cursor-pointer"
+                  title="Sign in with Google"
+                  aria-label="Sign in with Google"
+                >
+                  <svg className="w-4 h-4" viewBox="0 0 24 24">
+                    <path
+                      fill="#EA4335"
+                      d="M12 5c1.6 0 3 .6 4.1 1.7l3.1-3.1C17.3 1.8 14.8 1 12 1 7.5 1 3.7 3.6 1.9 7.3l3.7 2.9C6.5 7.4 9 5 12 5z"
+                    />
+                    <path
+                      fill="#4285F4"
+                      d="M23.5 12.3c0-.8-.1-1.7-.2-2.3H12v4.6h6.5c-.3 1.5-1.1 2.8-2.4 3.7l3.7 2.9c2.2-2 3.7-5.1 3.7-8.9z"
+                    />
+                    <path
+                      fill="#FBBC05"
+                      d="M5.6 14.8c-.2-.7-.4-1.5-.4-2.8s.2-2.1.4-2.8L1.9 6.3C.7 8.7 0 10.3 0 12s.7 3.3 1.9 5.7l3.7-2.9z"
+                    />
+                    <path
+                      fill="#34A853"
+                      d="M12 23c3.2 0 6-1.1 8-3l-3.7-2.9c-1.1.7-2.5 1.2-4.3 1.2-3 0-5.5-2.4-6.4-5.2L1.9 16C3.7 19.7 7.5 23 12 23z"
+                    />
+                  </svg>
+                </a>
+              </div>
             </div>
           </form>
 

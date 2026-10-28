@@ -31,7 +31,12 @@ export interface User {
   name: string;
   email: string;
   role: UserRole;
+  organization?: string;
   organizationId?: string;
+  isOwner?: boolean;
+  organizationOnboarded?: boolean;
+  hasPassword?: boolean;
+  provider?: string;
   subscriptionTier?: "free" | "pro" | "enterprise";
   subscriptionStatus?: "active" | "trial" | "canceled";
 }
@@ -137,7 +142,7 @@ interface AuthState {
   isAuthenticated: boolean;
   isLoading: boolean;
   error: string | null;
-  login: (email: string, password: string) => Promise<User>;
+  login: (identifier: string, password: string) => Promise<User>;
   switchRole: (role: UserRole) => User;
   register: (data: {
     name: string;
@@ -145,8 +150,22 @@ interface AuthState {
     password: string;
     organization?: string;
     [key: string]: any;
-  }) => Promise<void>;
+  }) => Promise<any>;
+  forgotPassword: (email: string) => Promise<any>;
+  resetPassword: (token: string, password: string) => Promise<any>;
+  verifyEmail: (verificationToken: string) => Promise<any>;
+  resendVerification: (email?: string) => Promise<any>;
+  updateProfile: (id: string, data: { name?: string; userName?: string; organization?: string }) => Promise<any>;
+  changePassword: (id: string, passwords: { oldPassword?: string; newPassword?: string; password?: string }) => Promise<any>;
+  deleteAccount: () => Promise<any>;
+  checkAuth: () => Promise<any>;
   fetchMe: () => Promise<User | null>;
+  handleOAuthToken: (token: string) => Promise<User | null>;
+  completeOnboarding: (data: {
+    organization?: string;
+    hasNoOrganization?: boolean;
+    isSecurityResponsible?: boolean;
+  }) => Promise<User | null>;
   logout: () => void;
   clearError: () => void;
 }
@@ -160,12 +179,20 @@ export const useAuthStore = create<AuthState>()(
       isLoading: false,
       error: null,
 
-      login: async (email: string, password: string) => {
+      login: async (identifier: string, password: string) => {
         set({ isLoading: true, error: null });
         try {
-          const { data } = await api.post("/auth/login", { email, password });
-          const { token, user } = data.data;
-          api.defaults.headers.common["Authorization"] = `Bearer ${token}`;
+          const { data } = await api.post("/auth/login", {
+            email: identifier,
+            userName: identifier,
+            identifier,
+            password,
+          });
+          const token = data.token || data.data?.token;
+          const user = data.user || data.data?.user;
+          if (token) {
+            api.defaults.headers.common["Authorization"] = `Bearer ${token}`;
+          }
 
           let profile = user;
           let tier = user?.subscriptionTier || "free";
@@ -181,12 +208,18 @@ export const useAuthStore = create<AuthState>()(
               if (raw.subscriptionStatus) status = raw.subscriptionStatus;
 
               profile = {
-                id: raw._id || raw.id || user.id,
-                name: raw.name || user.name,
-                email: raw.email || user.email,
-                role: raw.role || user.role,
+                id: raw._id || raw.id || user?._id || user?.id,
+                name: raw.name || user?.name || raw.userName || user?.userName,
+                email: raw.email || user?.email,
+                role: raw.role || user?.role || "user",
+                organization: raw.organization || user?.organization || "",
                 organizationId:
-                  raw.organizationId ?? user.organizationId ?? null,
+                  raw.organizationId ?? user?.organizationId ?? null,
+                isOwner: raw.isOwner ?? user?.isOwner ?? false,
+                organizationOnboarded:
+                  raw.organizationOnboarded ?? user?.organizationOnboarded ?? true,
+                hasPassword: raw.hasPassword ?? user?.hasPassword ?? true,
+                provider: raw.provider || user?.provider || "local",
                 subscriptionTier: tier,
                 subscriptionStatus: status,
               };
@@ -212,19 +245,21 @@ export const useAuthStore = create<AuthState>()(
             // Subscription fallback
           }
 
-          setAuthToken(token);
+          if (token) {
+            setAuthToken(token);
+          }
           set({
             user: profile,
             token,
-            isAuthenticated: true,
+            isAuthenticated: !!token,
             isLoading: false,
             error: null,
           });
           return profile;
         } catch (err: any) {
           const msg =
-            err.response?.data?.error ||
             err.response?.data?.message ||
+            err.response?.data?.error ||
             err.message ||
             "Login failed. Please check your credentials.";
           set({ error: msg, isLoading: false });
@@ -264,7 +299,15 @@ export const useAuthStore = create<AuthState>()(
               name: raw.name,
               email: raw.email,
               role: raw.role,
+              organization: raw.organization || "",
               organizationId: raw.organizationId ?? null,
+              isOwner: raw.isOwner ?? false,
+              organizationOnboarded: raw.organizationOnboarded ?? true,
+              hasPassword:
+                raw.hasPassword !== undefined
+                  ? Boolean(raw.hasPassword)
+                  : raw.provider !== "google",
+              provider: raw.provider || "local",
               subscriptionTier: tier,
               subscriptionStatus: status,
             };
@@ -280,6 +323,127 @@ export const useAuthStore = create<AuthState>()(
         } catch (err: any) {
           set({ isLoading: false });
           return null;
+        }
+      },
+
+      handleOAuthToken: async (token: string) => {
+        set({ isLoading: true, error: null });
+        try {
+          setAuthToken(token);
+          api.defaults.headers.common["Authorization"] = `Bearer ${token}`;
+          if (typeof window !== "undefined") {
+            (window as any).__SENTRIX_AUTH_TOKEN__ = token;
+          }
+
+          const { data } = await api.get("/auth/me", {
+            headers: { Authorization: `Bearer ${token}` },
+          });
+
+          if (data?.data) {
+            const raw = data.data;
+            let tier: "free" | "pro" | "enterprise" =
+              raw.subscriptionTier || "free";
+            let status: "active" | "trial" | "canceled" =
+              raw.subscriptionStatus || "active";
+
+            try {
+              const subRes = await api.get("/payment/subscription", {
+                headers: { Authorization: `Bearer ${token}` },
+              });
+              if (subRes.data?.data?.tier) {
+                tier = subRes.data.data.tier;
+                status = subRes.data.data.status || status;
+              }
+            } catch {
+              // Ignore fallback
+            }
+
+            const updatedUser: User = {
+              id: raw._id || raw.id,
+              name: raw.name || raw.userName || "User",
+              email: raw.email,
+              role: raw.role || "client_member",
+              organization: raw.organization || "",
+              organizationId: raw.organizationId ?? null,
+              isOwner: raw.isOwner ?? false,
+              organizationOnboarded: raw.organizationOnboarded ?? true,
+              hasPassword:
+                raw.hasPassword !== undefined
+                  ? Boolean(raw.hasPassword)
+                  : raw.provider !== "google",
+              provider: raw.provider || "local",
+              subscriptionTier: tier,
+              subscriptionStatus: status,
+            };
+
+            set({
+              user: updatedUser,
+              token,
+              isAuthenticated: true,
+              isLoading: false,
+              error: null,
+            });
+            return updatedUser;
+          }
+          set({ isLoading: false });
+          return null;
+        } catch (err: any) {
+          const msg =
+            err.response?.data?.message ||
+            err.response?.data?.error ||
+            "Failed to complete OAuth sign-in.";
+          set({ isLoading: false, error: msg });
+          throw new Error(msg);
+        }
+      },
+
+      completeOnboarding: async (data: {
+        organization?: string;
+        hasNoOrganization?: boolean;
+        isSecurityResponsible?: boolean;
+      }) => {
+        set({ isLoading: true, error: null });
+        try {
+          const res = await api.post("/auth/onboarding", data);
+          const raw = res.data?.data || res.data?.user;
+          if (raw) {
+            const currentUser = useAuthStore.getState().user;
+            let tier: "free" | "pro" | "enterprise" =
+              raw.subscriptionTier || currentUser?.subscriptionTier || "free";
+            let status: "active" | "trial" | "canceled" =
+              raw.subscriptionStatus || currentUser?.subscriptionStatus || "active";
+
+            const updatedUser: User = {
+              id: raw._id || raw.id || currentUser?.id || "",
+              name: raw.name || currentUser?.name || "User",
+              email: raw.email || currentUser?.email || "",
+              role: raw.role || currentUser?.role || "client_member",
+              organization: raw.organization || "",
+              organizationId: raw.organizationId ?? null,
+              isOwner: raw.isOwner ?? false,
+              organizationOnboarded: true,
+              hasPassword: raw.hasPassword ?? currentUser?.hasPassword ?? false,
+              provider: raw.provider || currentUser?.provider || "local",
+              subscriptionTier: tier,
+              subscriptionStatus: status,
+            };
+
+            set({
+              user: updatedUser,
+              isLoading: false,
+              error: null,
+            });
+            return updatedUser;
+          }
+          set({ isLoading: false });
+          return null;
+        } catch (err: any) {
+          const msg =
+            err.response?.data?.message ||
+            err.response?.data?.error ||
+            "Failed to complete workspace organization setup.";
+          set({ isLoading: false, error: msg });
+          throw new Error(msg);
         }
       },
 
@@ -307,17 +471,178 @@ export const useAuthStore = create<AuthState>()(
       register: async (formData: any) => {
         set({ isLoading: true, error: null });
         try {
-          const { data } = await api.post("/auth/register", formData);
-          const { token, user } = data.data;
-          setAuthToken(token);
-          api.defaults.headers.common["Authorization"] = `Bearer ${token}`;
-          set({ user, token, isAuthenticated: true, isLoading: false });
+          const payload = {
+            ...formData,
+            userName: formData.userName || formData.name || formData.email?.split("@")[0],
+          };
+          const { data } = await api.post("/auth/register", payload);
+          const token = data.token || data.data?.token;
+          const user = data.user || data.data?.user;
+          if (token) {
+            setAuthToken(token);
+            api.defaults.headers.common["Authorization"] = `Bearer ${token}`;
+          }
+          set({
+            user: user || null,
+            token: token || null,
+            isAuthenticated: !!token,
+            isLoading: false,
+          });
+          return data;
         } catch (err: any) {
           const msg =
+            err.response?.data?.message ||
             err.response?.data?.error ||
             "Registration failed. Please try again.";
           set({ error: msg, isLoading: false });
           throw new Error(msg);
+        }
+      },
+
+      forgotPassword: async (email: string) => {
+        set({ isLoading: true, error: null });
+        try {
+          const { data } = await api.post("/auth/forgot-password", { email });
+          set({ isLoading: false });
+          return data;
+        } catch (err: any) {
+          const msg =
+            err.response?.data?.message ||
+            err.response?.data?.error ||
+            "Failed to send password reset email.";
+          set({ error: msg, isLoading: false });
+          throw new Error(msg);
+        }
+      },
+
+      resetPassword: async (token: string, password: string) => {
+        set({ isLoading: true, error: null });
+        try {
+          const { data } = await api.post(`/auth/reset-password/${token}`, { password });
+          set({ isLoading: false });
+          return data;
+        } catch (err: any) {
+          const msg =
+            err.response?.data?.message ||
+            err.response?.data?.error ||
+            "Failed to reset password.";
+          set({ error: msg, isLoading: false });
+          throw new Error(msg);
+        }
+      },
+
+      verifyEmail: async (verificationToken: string) => {
+        set({ isLoading: true, error: null });
+        try {
+          const { data } = await api.post("/auth/verify", { verificationToken });
+          const token = data.token || data.data?.token;
+          const user = data.user || data.data?.user;
+          if (token) {
+            setAuthToken(token);
+            api.defaults.headers.common["Authorization"] = `Bearer ${token}`;
+          }
+          set({
+            user: user || null,
+            token: token || null,
+            isAuthenticated: !!token,
+            isLoading: false,
+          });
+          return data;
+        } catch (err: any) {
+          const msg =
+            err.response?.data?.message ||
+            err.response?.data?.error ||
+            "Invalid or expired verification code.";
+          set({ error: msg, isLoading: false });
+          throw new Error(msg);
+        }
+      },
+
+      resendVerification: async (email?: string) => {
+        try {
+          const { data } = await api.post(
+            "/auth/resend-verification-code",
+            email ? { email } : {}
+          );
+          return data;
+        } catch (err: any) {
+          const msg =
+            err.response?.data?.message ||
+            err.response?.data?.error ||
+            "Failed to resend verification code.";
+          throw new Error(msg);
+        }
+      },
+
+      updateProfile: async (id: string, updateData: any) => {
+        set({ isLoading: true, error: null });
+        try {
+          const { data } = await api.put(`/auth/update-profile/${id}`, updateData);
+          if (data?.user) {
+            set((state: any) => ({
+              user: state.user ? { ...state.user, ...data.user } : data.user,
+              isLoading: false,
+            }));
+          } else {
+            set({ isLoading: false });
+          }
+          return data;
+        } catch (err: any) {
+          const msg =
+            err.response?.data?.message ||
+            err.response?.data?.error ||
+            "Failed to update profile.";
+          set({ error: msg, isLoading: false });
+          throw new Error(msg);
+        }
+      },
+
+      changePassword: async (id: string, passwords: any) => {
+        set({ isLoading: true, error: null });
+        try {
+          const { data } = await api.post(`/auth/change-password/${id}`, passwords);
+          set({ isLoading: false });
+          return data;
+        } catch (err: any) {
+          const msg =
+            err.response?.data?.message ||
+            err.response?.data?.error ||
+            "Failed to change password.";
+          set({ error: msg, isLoading: false });
+          throw new Error(msg);
+        }
+      },
+
+      deleteAccount: async () => {
+        set({ isLoading: true, error: null });
+        try {
+          const { data } = await api.delete("/auth/remove-account");
+          removeAuthToken();
+          delete api.defaults.headers.common["Authorization"];
+          set({ user: null, token: null, isAuthenticated: false, isLoading: false });
+          return data;
+        } catch (err: any) {
+          const msg =
+            err.response?.data?.message ||
+            err.response?.data?.error ||
+            "Failed to delete account.";
+          set({ error: msg, isLoading: false });
+          throw new Error(msg);
+        }
+      },
+
+      checkAuth: async () => {
+        try {
+          const { data } = await api.get("/auth/check-auth");
+          if (data?.user) {
+            set((state: any) => ({
+              user: state.user ? { ...state.user, ...data.user } : data.user,
+              isAuthenticated: true,
+            }));
+          }
+          return data;
+        } catch {
+          return null;
         }
       },
 

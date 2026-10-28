@@ -2,6 +2,7 @@
 // FILE: src/controllers/admin.controller.js
 
 import bcrypt from "bcryptjs";
+import Auth from "../models/auth.model.js";
 import { User } from "../models/User.js";
 import { Organization } from "../models/Organization.js";
 import { Project } from "../models/Project.js";
@@ -14,6 +15,7 @@ import { SystemSetting } from "../models/SystemSetting.js";
 import Scan from "../database/models/scan.model.js";
 import Finding from "../database/models/finding.model.js";
 import Target from "../database/models/target.model.js";
+import { sanitizeObject } from "../utils/sanitize.utils.js";
 
 const ALLOWED_ROLES = [
   "admin",
@@ -24,30 +26,45 @@ const ALLOWED_ROLES = [
   "client_member",
 ];
 
-export const getUsers = async (req, res) => {
+export const getAllUser = async (req, res) => {
   try {
-    const users = await User.find()
+    if (req.user?.role !== "admin") {
+      return res
+        .status(403)
+        .json({ success: false, message: "Access denied. Admins only." });
+    }
+
+    const foundAllUser = await Auth.find({})
       .populate("organizationId", "name")
       .sort({ createdAt: -1 });
 
-    const formatted = users.map((user) => ({
-      id: String(user._id),
-      name: user.name,
-      email: user.email,
-      role: user.role,
-      subscriptionTier: user.subscriptionTier || "free",
-      subscriptionStatus: user.subscriptionStatus || "active",
-      org: user.organizationId?.name || "Sentrix Operations",
-      status: user.isActive ? "active" : "suspended",
-      lastLogin: user.lastLogin
-        ? new Date(user.lastLogin).toLocaleDateString()
-        : "Never",
-      createdAt: user.createdAt,
-    }));
+    const formatted = foundAllUser.map((user) => {
+      const u = user.toObject ? user.toObject() : { ...user };
+      delete u.password;
+      delete u.resetPasswordToken;
+      delete u.verificationToken;
+
+      return {
+        ...u,
+        id: String(user._id),
+        name: user.name || user.userName || "User",
+        email: user.email,
+        role: user.role,
+        subscriptionTier: user.subscriptionTier || "free",
+        subscriptionStatus: user.subscriptionStatus || "active",
+        org: user.organization || user.organizationId?.name || "Sentrix Operations",
+        status: user.status || (user.isActive ? "active" : "suspended"),
+        lastLogin: user.lastLogin
+          ? new Date(user.lastLogin).toLocaleDateString()
+          : "Never",
+        createdAt: user.createdAt,
+      };
+    });
 
     return res.status(200).json({
       success: true,
       count: formatted.length,
+      users: formatted,
       data: formatted,
     });
   } catch (err) {
@@ -55,10 +72,13 @@ export const getUsers = async (req, res) => {
 
     return res.status(500).json({
       success: false,
+      message: "Server Error",
       error: "Failed to retrieve users",
     });
   }
 };
+
+export const getUsers = getAllUser;
 
 export const createUser = async (req, res) => {
   try {
@@ -150,100 +170,127 @@ export const createUser = async (req, res) => {
   }
 };
 
-export const toggleUserStatus = async (req, res) => {
+export const updateUser = async (req, res) => {
   try {
-    const user = await User.findById(req.params.id);
-
-    if (!user) {
-      return res.status(404).json({
-        success: false,
-        error: "User not found",
-      });
+    if (req.user?.role !== "admin") {
+      return res
+        .status(403)
+        .json({ success: false, message: "Access denied. Admins only." });
     }
 
-    if (user.role === "admin") {
-      return res.status(403).json({
-        success: false,
-        error: "Administrator accounts cannot be suspended or deactivated.",
-      });
+    const userId = req.params.id || req.params._id;
+    if (!userId) {
+      return res
+        .status(400)
+        .json({ success: false, message: "User ID is required" });
     }
 
-    user.isActive = !user.isActive;
-    await user.save();
+    const targetUser = await Auth.findById(userId);
+    if (!targetUser) {
+      return res
+        .status(404)
+        .json({ success: false, message: "User Not Found" });
+    }
 
-    return res.status(200).json({
-      success: true,
-      data: {
-        id: String(user._id),
-        status: user.isActive ? "active" : "suspended",
-      },
-    });
-  } catch (err) {
-    console.error("[Admin] Failed to update user status:", err);
+    const sanitizedData = sanitizeObject(req.body || {});
+    let { role, status } = sanitizedData;
 
-    return res.status(500).json({
-      success: false,
-      error: "Failed to update user status",
-    });
-  }
-};
+    const validRoles = [
+      "user",
+      "admin",
+      "superAdmin",
+      "client_owner",
+      "client_member",
+      "security_engineer",
+      "developer",
+      "malware_analyst",
+    ];
+    const validStatus = ["inactive", "active", "suspended", "disabled"];
 
-/**
- * Update a user's role (admin only).
- * Valid roles: admin, security_engineer, developer, malware_analyst, client_owner, client_member
- */
-export const updateUserRole = async (req, res) => {
-  try {
-    const { id } = req.params;
-    const { role } = req.body;
+    // Validate role
+    if (role) {
+      const normalizedRole =
+        typeof role === "string"
+          ? role.trim().toLowerCase().replace(/\s+/g, "_")
+          : role;
+      if (!validRoles.includes(normalizedRole)) {
+        return res
+          .status(400)
+          .json({ success: false, message: `Invalid role: ${role}` });
+      }
+      if (targetUser.role === "admin" && normalizedRole !== "admin") {
+        return res.status(403).json({
+          success: false,
+          message: "Administrator accounts cannot be changed to another role.",
+        });
+      }
+      role = normalizedRole;
+    }
 
-    const normalizedRole = typeof role === "string" ? role.trim().toLowerCase().replace(/\s+/g, "_") : null;
+    // Validate status
+    if (status) {
+      const normalizedStatus =
+        typeof status === "string" ? status.trim().toLowerCase() : status;
+      if (!validStatus.includes(normalizedStatus)) {
+        return res
+          .status(400)
+          .json({ success: false, message: `Invalid status: ${status}` });
+      }
+      if (targetUser.role === "admin" && normalizedStatus !== "active") {
+        return res.status(403).json({
+          success: false,
+          message:
+            "Administrator accounts cannot be suspended or deactivated.",
+        });
+      }
+      status = normalizedStatus;
+    }
 
-    if (!normalizedRole || !ALLOWED_ROLES.includes(normalizedRole)) {
+    if (!role && !status) {
       return res.status(400).json({
         success: false,
-        error: `Role must be one of: ${ALLOWED_ROLES.join(", ")}`,
+        message:
+          "At least one field (role or status) must be provided to update",
       });
     }
 
-    const user = await User.findById(id);
-
-    if (!user) {
-      return res.status(404).json({
-        success: false,
-        error: "User not found",
-      });
+    const updateFields = {};
+    if (role) updateFields.role = role;
+    if (status) {
+      updateFields.status = status;
+      updateFields.isActive = status === "active";
     }
 
-    if (user.role === "admin" && normalizedRole !== "admin") {
-      return res.status(403).json({
-        success: false,
-        error: "Administrator accounts cannot be changed to another role.",
-      });
-    }
+    const updatedUser = await Auth.findByIdAndUpdate(
+      userId,
+      { $set: updateFields },
+      { new: true }
+    );
 
-    user.role = normalizedRole;
-    await user.save();
+    const safeUser = updatedUser.toObject
+      ? updatedUser.toObject()
+      : { ...updatedUser };
+    delete safeUser.password;
+    delete safeUser.resetPasswordToken;
+    delete safeUser.verificationToken;
+
+    const formatted = {
+      ...safeUser,
+      id: String(updatedUser._id),
+      status:
+        updatedUser.status || (updatedUser.isActive ? "active" : "suspended"),
+      isActive: updatedUser.isActive,
+    };
 
     return res.status(200).json({
       success: true,
-      message: `User role updated successfully to ${normalizedRole}`,
-      data: {
-        id: String(user._id),
-        name: user.name,
-        email: user.email,
-        role: user.role,
-        status: user.isActive ? "active" : "suspended",
-        updatedAt: user.updatedAt,
-      },
+      message: "User Updated Successfully",
+      data: formatted,
+      user: formatted,
     });
-  } catch (err) {
-    console.error("[Admin] Failed to update user role:", err);
-
-    return res.status(500).json({
-      success: false,
-      error: "Failed to update user role",
-    });
+  } catch (error) {
+    console.error("[Admin] Failed to update user:", error);
+    return res.status(500).json({ success: false, message: "Server Error" });
   }
 };
 

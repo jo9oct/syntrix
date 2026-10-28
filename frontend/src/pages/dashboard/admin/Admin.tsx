@@ -606,7 +606,7 @@ export const Admin: React.FC = () => {
     }
   };
 
-  // 6. User Status Toggle (PUT /api/v1/users/:id/status)
+  // 6. User Status Toggle (PUT /api/v1/update-user/:id)
   const toggleUserStatus = async (userId: string) => {
     const target = users.find(u => u.id === userId);
     if (target?.role === 'admin') {
@@ -614,22 +614,23 @@ export const Admin: React.FC = () => {
       return;
     }
 
+    const nextStatus = target?.status === 'active' ? 'suspended' : 'active';
     setStatusUpdatingId(userId);
     try {
-      const { data } = await api.put(`/users/${userId}/status`);
-      const newStatus = data?.data?.status || 'active';
+      const { data } = await api.put(`/update-user/${userId}`, { status: nextStatus });
+      const newStatus = data?.data?.status || nextStatus;
       setUsers(prev =>
         prev.map(u => (u.id === userId ? { ...u, status: newStatus } : u))
       );
       showNotification(`User status updated to ${newStatus}.`);
     } catch (err: any) {
-      showNotification(err?.response?.data?.error || 'Failed to update user status.');
+      showNotification(err?.response?.data?.error || err?.response?.data?.message || 'Failed to update user status.');
     } finally {
       setStatusUpdatingId(null);
     }
   };
 
-  // 7. Role Change Handlers (PUT /api/v1/users/:id/role)
+  // 7. Role Change Handlers (PUT /api/v1/update-user/:id)
   const openRoleModal = (u: UserRecord) => {
     if (u.role === 'admin') {
       showNotification('Administrator role cannot be changed to another role.');
@@ -644,7 +645,7 @@ export const Admin: React.FC = () => {
     if (!roleModalUser) return;
     setRoleUpdating(true);
     try {
-      const { data } = await api.put(`/users/${roleModalUser.id}/role`, {
+      const { data } = await api.put(`/update-user/${roleModalUser.id}`, {
         role: newSelectedRole,
       });
       const updatedRole = (data?.data?.role || newSelectedRole) as UserRole;
@@ -654,7 +655,7 @@ export const Admin: React.FC = () => {
       showNotification(`User role updated to ${updatedRole.replace('_', ' ')}.`);
       setRoleModalUser(null);
     } catch (err: any) {
-      showNotification(err?.response?.data?.error || 'Failed to update user role.');
+      showNotification(err?.response?.data?.error || err?.response?.data?.message || 'Failed to update user role.');
     } finally {
       setRoleUpdating(false);
     }
@@ -663,14 +664,14 @@ export const Admin: React.FC = () => {
   // Quick Inline Role Update (if select used)
   const handleUpdateRole = async (userId: string, newRole: UserRole) => {
     try {
-      const { data } = await api.put(`/users/${userId}/role`, { role: newRole });
+      const { data } = await api.put(`/update-user/${userId}`, { role: newRole });
       const updatedRole = (data?.data?.role || newRole) as UserRole;
       setUsers(prev =>
         prev.map(u => (u.id === userId ? { ...u, role: updatedRole } : u))
       );
       showNotification(`User role updated to ${updatedRole.replace('_', ' ')}.`);
     } catch (err: any) {
-      showNotification(err?.response?.data?.error || 'Failed to update user role.');
+      showNotification(err?.response?.data?.error || err?.response?.data?.message || 'Failed to update user role.');
     }
   };
 
@@ -1610,7 +1611,7 @@ export const Admin: React.FC = () => {
                               <button
                                 onClick={() => openRoleModal(u)}
                                 className="px-2.5 py-1.5 rounded-lg bg-brand-cyan/15 hover:bg-brand-cyan/25 text-brand-cyan border border-brand-cyan/30 text-xs font-semibold flex items-center gap-1.5 transition-colors shadow-sm"
-                                title="Update user role via PUT /api/v1/users/:id/role"
+                                title="Update user role via PUT /api/v1/update-user/:id"
                               >
                                 <Shield size={13} />
                                 <span>Change Role</span>
@@ -1625,7 +1626,7 @@ export const Admin: React.FC = () => {
                                     ? 'bg-red-500/10 hover:bg-red-500/20 text-red-400 border-red-500/30'
                                     : 'bg-green-500/10 hover:bg-green-500/20 text-green-400 border-green-500/30'
                                 }`}
-                                title="Toggle user active status via PUT /api/v1/users/:id/status"
+                                title="Toggle user active status via PUT /api/v1/update-user/:id"
                               >
                                 {statusUpdatingId === u.id ? (
                                   <RefreshCw size={12} className="animate-spin" />
@@ -2503,7 +2504,7 @@ export const Admin: React.FC = () => {
               </div>
 
               <div className="p-3 rounded-xl bg-brand-cyan/5 border border-brand-cyan/20 text-[11px] text-text-muted">
-                Updating role calls backend API: <code className="text-brand-cyan font-mono">PUT /api/v1/users/{roleModalUser.id}/role</code>
+                Updating role calls backend API: <code className="text-brand-cyan font-mono">PUT /api/v1/update-user/{roleModalUser.id}</code>
               </div>
 
               <div className="flex items-center justify-end gap-2 pt-2 border-t border-white/10">

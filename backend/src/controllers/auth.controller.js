@@ -1,335 +1,881 @@
-/*
- * STATUS: UPDATED
- * File: src/controllers/auth.controller.js
- */
-
-import jwt from "jsonwebtoken";
 import bcrypt from "bcryptjs";
-import { User } from "../models/User.js";
+import crypto from "crypto";
+import Auth from "../models/auth.model.js";
 import { Organization } from "../models/Organization.js";
+import {
+  registerSchema,
+  loginSchema,
+  forgotPasswordSchema,
+  changePasswordSchema,
+  resetPasswordSchema,
+  validatePasswordComplexity,
+} from "../validators/auth.validation.js";
+import generateTokenAndSetCookie from "../utils/token.utils.js";
+import { sanitizeObject } from "../utils/sanitize.utils.js";
+import {
+  sendVerificationEmail,
+  sendWelcomeEmail,
+  sendPasswordResetEmail,
+  sendResetSuccessEmail,
+} from "../email/emails.js";
 
-const signToken = (id) => {
-  const secret = process.env.JWT_SECRET;
+export const AuthRegister = async (req, res) => {
+  // Sanitize all input fields using sanitizeObject
+  const sanitizedData = sanitizeObject(req.body);
+  const name = sanitizedData.name || sanitizedData.userName;
+  let userName =
+    sanitizedData.userName ||
+    (sanitizedData.name
+      ? sanitizedData.name.trim().replace(/\s+/g, "_").toLowerCase()
+      : null) ||
+    sanitizedData.email?.split("@")[0];
+  const email = sanitizedData.email?.toLowerCase().trim();
+  const password = sanitizedData.password;
 
-  if (!secret) {
-    throw new Error("JWT_SECRET is not configured");
-  }
-
-  return jwt.sign({ id }, secret, {
-    expiresIn: "7d",
+  // Validate sanitized input with Joi
+  const { error } = registerSchema.validate({
+    ...sanitizedData,
+    userName,
+    name,
+    email,
+    password,
   });
-};
 
-const normalizeOrganizationName = (value) => {
-  if (typeof value !== "string") {
-    return null;
+  if (error) {
+    const errorMsg = error.details?.[0]?.message || error.message;
+    console.error("Validation error:", errorMsg);
+    return res.status(400).json({ success: false, message: errorMsg });
   }
-
-  const normalized = value.trim();
-
-  if (!normalized || normalized.toLowerCase() === "null") {
-    return null;
-  }
-
-  return normalized;
-};
-
-const escapeRegex = (value) => value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-
-const setAuthCookie = (res, token) => {
-  const isProduction = process.env.NODE_ENV === "production";
-  res.cookie("sentrix_token", token, {
-    httpOnly: false,
-    secure: isProduction,
-    sameSite: "lax",
-    maxAge: 7 * 24 * 60 * 60 * 1000,
-    path: "/",
-  });
-};
-
-const createAuthResponse = (user, statusCode, res) => {
-  const token = signToken(String(user._id));
-
-  setAuthCookie(res, token);
-
-  return res.status(statusCode).json({
-    success: true,
-    data: {
-      token,
-      user: {
-        id: user._id,
-        name: user.name,
-        email: user.email,
-        role: user.role,
-        organizationId: user.organizationId ?? null,
-      },
-    },
-  });
-};
-
-export const register = async (req, res) => {
-  let createdUserId = null;
 
   try {
-    const { name, email, password, organization, role } = req.body;
+    const exitingUser = await Auth.findOne({ email });
 
-    if (
-      typeof name !== "string" ||
-      !name.trim() ||
-      typeof email !== "string" ||
-      !email.trim() ||
-      typeof password !== "string" ||
-      !password
-    ) {
-      return res.status(400).json({
-        success: false,
-        error: "Please provide name, email, and password",
-      });
+    if (exitingUser) {
+      return res
+        .status(400)
+        .json({ success: false, message: "User already exists" });
     }
 
-    const normalizedName = name.trim();
-    const normalizedEmail = email.trim().toLowerCase();
-    const organizationName = normalizeOrganizationName(organization);
-
-    const validRoles = [
-      "admin",
-      "security_engineer",
-      "developer",
-      "malware_analyst",
-      "client_owner",
-      "client_member",
-    ];
-    const normalizedRole =
-      typeof role === "string"
-        ? role.trim().toLowerCase().replace(/\s+/g, "_")
-        : null;
-    const requestedRole = validRoles.includes(normalizedRole)
-      ? normalizedRole
-      : null;
-
-    const existingUser = await User.findOne({
-      email: normalizedEmail,
-    });
-
-    if (existingUser) {
-      return res.status(400).json({
-        success: false,
-        error: "Email already registered",
-      });
-    }
-
-    const hashedPassword = await bcrypt.hash(password, 12);
-
-    // No company: register as a member without an organization.
-    if (!organizationName) {
-      const user = await User.create({
-        name: normalizedName,
-        email: normalizedEmail,
-        password: hashedPassword,
-        role: requestedRole || "client_member",
-        isActive: true,
-      });
-
-      createdUserId = user._id;
-
-      return createAuthResponse(user, 201, res);
-    }
-
-    // Match existing organization names without case sensitivity.
-    const organizationRegex = new RegExp(
-      `^${escapeRegex(organizationName)}$`,
-      "i",
-    );
-
-    let org = await Organization.findOne({
-      name: organizationRegex,
-    });
-
-    // Existing company: register as a member.
-    if (org) {
-      const user = await User.create({
-        name: normalizedName,
-        email: normalizedEmail,
-        password: hashedPassword,
-        role: requestedRole || "client_member",
-        organizationId: org._id,
-        isActive: true,
-      });
-
-      createdUserId = user._id;
-
-      try {
-        if (!Array.isArray(org.members)) {
-          org.members = [];
-        }
-
-        org.members.push({
-          userId: user._id,
-          role: "member",
-        });
-
-        await org.save();
-      } catch (error) {
-        await User.deleteOne({ _id: user._id });
-        createdUserId = null;
-        throw error;
+    if (!sanitizedData.userName) {
+      const exitingUserName = await Auth.findOne({ userName });
+      if (exitingUserName) {
+        userName = `${userName}_${Math.floor(1000 + Math.random() * 9000)}`;
       }
-
-      return createAuthResponse(user, 201, res);
+    } else {
+      const exitingUserName = await Auth.findOne({ userName });
+      if (exitingUserName) {
+        return res
+          .status(400)
+          .json({ success: false, message: "UserName already taken" });
+      }
     }
 
-    // New company: create the user as its owner.
-    const owner = await User.create({
-      name: normalizedName,
-      email: normalizedEmail,
+    // Role and owner status determined strictly by company / organization name:
+    // - No company name entered -> client_member (isOwner: false)
+    // - Company name entered and already registered before -> client_member (isOwner: false)
+    // - Company name entered and NOT registered before -> client_owner (isOwner: true)
+    const rawOrg =
+      sanitizedData.organization ||
+      sanitizedData.company ||
+      sanitizedData.companyName ||
+      "";
+    const orgName = typeof rawOrg === "string" ? rawOrg.trim() : "";
+
+    let role = "client_member";
+    let isOwner = false;
+    let organizationId = null;
+    let finalOrgName = orgName;
+
+    if (orgName) {
+      const safeOrgRegex = new RegExp(
+        `^${orgName.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}$`,
+        "i"
+      );
+
+      const existingOrg = await Organization.findOne({ name: safeOrgRegex });
+      const existingAuthWithOrg = await Auth.findOne({
+        organization: safeOrgRegex,
+      });
+
+      if (!existingOrg && !existingAuthWithOrg) {
+        // Company name not registered before -> Take as client_owner
+        role = "client_owner";
+        isOwner = true;
+      } else {
+        // Company name is already registered before -> Take as client_member
+        role = "client_member";
+        isOwner = false;
+        if (existingOrg) {
+          organizationId = existingOrg._id;
+          finalOrgName = existingOrg.name;
+        }
+      }
+    } else {
+      // No company name provided -> client_member
+      role = "client_member";
+      isOwner = false;
+      finalOrgName = "";
+    }
+
+    const verificationToken = Math.floor(
+      100000 + Math.random() * 900000
+    ).toString();
+    console.log("DEV VERIFICATION TOKEN:", verificationToken); // For testing without email
+    const verificationTokenExpiresAt = new Date(
+      Date.now() + 1 * 60 * 60 * 1000
+    );
+    const hashedPassword = await bcrypt.hash(password, 10);
+
+    const newAuth = new Auth({
+      userName,
+      name,
+      email,
       password: hashedPassword,
-      role: requestedRole || "client_owner",
-      isActive: true,
+      role,
+      organization: finalOrgName,
+      organizationId,
+      isOwner,
+      organizationOnboarded: true,
+      isSecurityResponsible: Boolean(sanitizedData.isSecurityResponsible),
+      status: "active",
+      verificationToken,
+      verificationTokenExpiresAt,
     });
 
-    createdUserId = owner._id;
+    await newAuth.save();
+
+    // If new organization was registered, create Organization document
+    if (isOwner && finalOrgName) {
+      try {
+        const createdOrg = await Organization.create({
+          name: finalOrgName,
+          ownerId: newAuth._id,
+          members: [
+            {
+              userId: newAuth._id,
+              role: "client_owner",
+              joinedAt: new Date(),
+            },
+          ],
+        });
+        newAuth.organizationId = createdOrg._id;
+        await newAuth.save();
+      } catch (orgErr) {
+        console.warn("Organization auto-create note:", orgErr.message);
+      }
+    } else if (organizationId) {
+      // If user joined an existing organization, attach them to the organization members
+      try {
+        await Organization.findByIdAndUpdate(organizationId, {
+          $addToSet: {
+            members: {
+              userId: newAuth._id,
+              role: "client_member",
+              joinedAt: new Date(),
+            },
+          },
+        });
+      } catch (orgMemberErr) {
+        console.warn("Organization member add note:", orgMemberErr.message);
+      }
+    }
+
+    const Token = generateTokenAndSetCookie(res, newAuth._id);
+    newAuth.sessionToken = Token;
+
+    await newAuth.save();
+
+    const Support_Email = "jops7326@gmail.com";
+    const year = new Date().getFullYear();
+    const explore_link = `${process.env.FRONTEND_BASE_URL || process.env.FRONT_END_BASE_URL || "http://localhost:5174"}/verify`;
+    let emailSent = true;
+    try {
+      await sendVerificationEmail(
+        email,
+        verificationToken,
+        explore_link,
+        userName,
+        Support_Email,
+        year
+      );
+    } catch (err) {
+      console.log("Email Send Failed: " + (err.message || err));
+      emailSent = false;
+    }
+
+    const { password: _, verificationToken: __, ...safeUser } =
+      newAuth.toObject();
+    safeUser.hasPassword = true;
+    safeUser.provider = "local";
+
+    res.status(201).json({
+      success: true,
+      message: emailSent
+        ? "Registration successful. Verification email sent."
+        : "Registration successful. But Failed To Send Verification Email.",
+      token: Token,
+      user: safeUser,
+      data: {
+        token: Token,
+        user: safeUser,
+      },
+    });
+  } catch (err) {
+    console.error("Error during registration:", err);
+    res.status(500).json({ success: false, message: "Internal server error" });
+  }
+};
+
+export const VerifyAuth = async (req, res) => {
+  const { verificationToken } = req.body;
+
+  try {
+    const findUser = await Auth.findOne({
+      verificationToken,
+      verificationTokenExpiresAt: { $gt: Date.now() },
+    });
+
+    if (!findUser) {
+      return res.status(400).json({
+        success: false,
+        message: "Invalid or expired verification code.",
+      });
+    }
+
+    findUser.status = "active";
+    findUser.verificationToken = undefined;
+    findUser.verificationTokenExpiresAt = undefined;
+
+    const Token = generateTokenAndSetCookie(res, findUser._id);
+    findUser.sessionToken = Token;
+
+    await findUser.save();
+
+    const logo = "../public/My-Logo.png";
+    const explore_link = `${process.env.FRONTEND_BASE_URL || process.env.FRONT_END_BASE_URL || "http://localhost:5174"}/dashboard`;
+    const support_email = "yohannishailye2039@gmail.com";
+    const year = new Date().getFullYear();
 
     try {
-      org = await Organization.create({
-        name: organizationName,
-        ownerId: owner._id,
-        members: [
-          {
-            userId: owner._id,
-            role: "owner",
-          },
-        ],
-      });
-
-      owner.organizationId = org._id;
-      await owner.save();
-    } catch (error) {
-      await Organization.deleteOne({
-        ownerId: owner._id,
-        _id: org?._id,
-      }).catch(() => {});
-
-      await User.deleteOne({ _id: owner._id });
-      createdUserId = null;
-
-      throw error;
+      await sendWelcomeEmail(
+        findUser.email,
+        findUser.userName,
+        logo,
+        explore_link,
+        support_email,
+        year
+      );
+    } catch (emailErr) {
+      console.error("Warning: Failed to send welcome email:", emailErr);
     }
 
-    return createAuthResponse(owner, 201, res);
-  } catch (error) {
-    console.error("[Auth] Registration failed:", error);
+    const { password, ...User } = findUser.toObject();
 
-    // Clean up a user left behind by an unexpected registration failure.
-    if (createdUserId) {
-      await User.deleteOne({ _id: createdUserId }).catch(() => {});
+    res.status(200).json({
+      success: true,
+      message: "Email verified successfully. You are now logged in.",
+      token: Token,
+      user: User,
+      data: {
+        token: Token,
+        user: User,
+      },
+    });
+  } catch (err) {
+    console.log("Server Error: " + err);
+    res.status(500).json({ success: false, message: "Server Error" });
+  }
+};
+
+export const AuthLogin = async (req, res) => {
+  // Sanitize all input fields using sanitizeObject
+  const sanitizedData = sanitizeObject(req.body);
+  const identifier = (
+    sanitizedData.email ||
+    sanitizedData.userName ||
+    sanitizedData.identifier ||
+    ""
+  ).trim();
+  const { password } = sanitizedData;
+
+  // Validate sanitized input with Joi
+  const { error } = loginSchema.validate(sanitizedData);
+  if (error) {
+    const errorMsg = error.details?.[0]?.message || error.message;
+    console.error("Validation error:", errorMsg);
+    return res.status(400).json({ success: false, message: errorMsg });
+  }
+
+  if (!identifier) {
+    return res
+      .status(400)
+      .json({ success: false, message: "Email or username is required" });
+  }
+
+  try {
+    const exitingUser = await Auth.findOne({
+      $or: [
+        { email: identifier.toLowerCase() },
+        { userName: identifier },
+      ],
+    });
+
+    if (!exitingUser) {
+      return res
+        .status(400)
+        .json({ success: false, message: "Invalid email or username" });
     }
 
-    if (error?.code === 11000) {
-      return res.status(409).json({
-        success: false,
-        error: "Email or organization already exists",
-      });
+    const isMatch = await bcrypt.compare(password, exitingUser.password);
+
+    if (!isMatch) {
+      return res
+        .status(400)
+        .json({ success: false, message: "Invalid password" });
     }
 
-    return res.status(500).json({
+    const Token = generateTokenAndSetCookie(res, exitingUser._id);
+    if (!Token) {
+      return res
+        .status(401)
+        .json({ success: false, message: "token not created" });
+    }
+
+    exitingUser.sessionToken = Token;
+    exitingUser.lastLogin = new Date();
+
+    await exitingUser.save();
+
+    const { password: _, ...User } = exitingUser.toObject();
+    User.hasPassword = true;
+
+    res.status(200).json({
+      success: true,
+      message: "User login successfully",
+      token: Token,
+      user: User,
+      data: {
+        token: Token,
+        user: User,
+      },
+    });
+  } catch (err) {
+    console.error("Error during login:", err);
+    res.status(500).json({ success: false, message: "Internal server error" });
+  }
+};
+
+export const checkAuth = async (req, res) => {
+  try {
+    const dbUser = await Auth.findById(req.user._id).select("+password provider googleId organizationOnboarded organization");
+    const hasPassword = Boolean(dbUser?.password && dbUser.password.length > 0);
+    const userObj = req.user.toObject ? req.user.toObject() : req.user;
+    const { password, ...userWithoutPassword } = userObj;
+    userWithoutPassword.hasPassword = hasPassword;
+    userWithoutPassword.provider = dbUser?.provider || (dbUser?.googleId ? "google" : "local");
+    userWithoutPassword.organizationOnboarded =
+      dbUser?.organizationOnboarded !== undefined
+        ? Boolean(dbUser.organizationOnboarded)
+        : true;
+    userWithoutPassword.organization = dbUser?.organization || "";
+
+    res.status(200).json({
+      success: true,
+      user: userWithoutPassword,
+      data: userWithoutPassword,
+    });
+  } catch (err) {
+    console.error("Error in checkAuth:", err);
+    res.status(500).json({
       success: false,
-      error: "Registration failed",
+      message: "Server error. Please try again later.",
+      error: err.message,
     });
   }
 };
 
-export const login = async (req, res) => {
-  try {
-    const { email, password } = req.body;
+export const Logout = async (req, res) => {
+  res.clearCookie("refreshToken");
+  res.clearCookie("token");
+  res.status(200).json({ success: true, message: "Logged out successfully." });
+};
 
-    if (
-      typeof email !== "string" ||
-      !email.trim() ||
-      typeof password !== "string" ||
-      !password
-    ) {
+export const deleteAccount = async (req, res) => {
+  try {
+    const { password } = req.body;
+
+    if (!password) {
       return res.status(400).json({
         success: false,
-        error: "Please provide email and password",
+        message: "Password is required to delete account",
       });
     }
 
-    const normalizedEmail = email.trim().toLowerCase();
-
-    const user = await User.findOne({
-      email: normalizedEmail,
-    }).select("+password");
-
-    if (!user || !user.password) {
-      return res.status(401).json({
-        success: false,
-        error: "Invalid credentials",
-      });
-    }
-
-    if (!user.isActive) {
-      return res.status(403).json({
-        success: false,
-        error: "Account is suspended",
-      });
-    }
-
-    const isMatch = await bcrypt.compare(password, user.password);
-
+    const userPassword = req.user.password || req.user.Password;
+    const isMatch = await bcrypt.compare(password, userPassword);
     if (!isMatch) {
-      return res.status(401).json({
+      return res
+        .status(401)
+        .json({ success: false, message: "Incorrect password" });
+    }
+
+    // Delete user
+    await req.user.deleteOne();
+
+    // Clear auth token cookie
+    res.clearCookie("token", {
+      httpOnly: true,
+      secure: process.env.NODE_ENV === "production",
+      sameSite: "Strict",
+    });
+    res.clearCookie("refreshToken");
+
+    return res
+      .status(200)
+      .json({ success: true, message: "Account deleted successfully" });
+  } catch (err) {
+    console.error("Error deleting account:", err.message);
+    return res.status(500).json({ success: false, message: "Server error" });
+  }
+};
+
+export const resendVerificationEmail = async (req, res) => {
+  try {
+    const email = req.body?.email?.toLowerCase().trim();
+    let user = null;
+
+    if (req.user?._id) {
+      user = await Auth.findById(req.user._id);
+    }
+    if (!user && email) {
+      user = await Auth.findOne({ email });
+    }
+
+    if (!user) {
+      return res
+        .status(404)
+        .json({ success: false, message: "User not found" });
+    }
+
+    user.verificationToken = Math.floor(
+      100000 + Math.random() * 900000
+    ).toString();
+    console.log("DEV RESEND VERIFICATION TOKEN:", user.verificationToken);
+    user.verificationTokenExpiresAt = new Date(
+      Date.now() + 24 * 60 * 60 * 1000
+    );
+    await user.save();
+
+    const Support_Email = "jops7326@gmail.com";
+    const year = new Date().getFullYear();
+    const explore_link = `${process.env.FRONTEND_BASE_URL || process.env.FRONT_END_BASE_URL || "http://localhost:5174"}/verify`;
+    let emailSent = true;
+    try {
+      await sendVerificationEmail(
+        user.email,
+        user.verificationToken,
+        explore_link,
+        user.userName || user.name,
+        Support_Email,
+        year
+      );
+    } catch (emailErr) {
+      console.warn("Email sending failed:", emailErr.message || emailErr);
+      emailSent = false;
+    }
+
+    res.status(200).json({
+      success: true,
+      message: emailSent
+        ? "Verification email resent successfully."
+        : "Verification code generated successfully.",
+      verificationToken: user.verificationToken,
+    });
+  } catch (error) {
+    console.error("Resend verification error:", error);
+    res.status(500).json({ success: false, message: "Server error" });
+  }
+};
+
+export const forgotPassword = async (req, res) => {
+  // Sanitize all input fields using sanitizeObject
+  const sanitizedData = sanitizeObject(req.body);
+  const { email } = sanitizedData;
+
+  // Validate sanitized input with Joi
+  const { error } = forgotPasswordSchema.validate(sanitizedData);
+  if (error) {
+    const errorMsg = error.details?.[0]?.message || error.message;
+    console.error("Validation error:", errorMsg);
+    return res.status(400).json({ success: false, message: errorMsg });
+  }
+
+  try {
+    const user = await Auth.findOne({ email });
+
+    if (!user) {
+      return res.status(400).json({
         success: false,
-        error: "Invalid credentials",
+        message: "email not exists",
       });
     }
 
-    user.lastLogin = new Date();
-    await user.save({ validateBeforeSave: false });
+    const resetToken = crypto.randomBytes(20).toString("hex");
+    const resetTokenExpiresAt = new Date(Date.now() + 1 * 60 * 60 * 1000); // 1 hour
 
-    const token = signToken(String(user._id));
+    user.resetPasswordToken = resetToken;
+    user.resetpasswordExpiresAt = resetTokenExpiresAt;
 
-    setAuthCookie(res, token);
+    await user.save();
+
+    const logo = "../public/My-Logo.png";
+    const support_email = "yohannishailye2039@gmail.com";
+    const year = new Date().getFullYear();
+    const resetLink = `${process.env.FRONTEND_BASE_URL || process.env.FRONT_END_BASE_URL || "http://localhost:5174"}/reset-password/${resetToken}`;
+
+    try {
+      await sendPasswordResetEmail(
+        user.email,
+        resetLink,
+        user.userName || user.name,
+        logo,
+        support_email,
+        year
+      );
+    } catch (emailErr) {
+      console.log("Email Send Failed: " + (emailErr.message || emailErr));
+    }
+
+    res
+      .status(200)
+      .json({ success: true, message: "Password reset email sent." });
+  } catch (err) {
+    console.error("Error in forgotPassword:", err);
+    return res.status(500).json({
+      success: false,
+      message: "Server error. Please try again later.",
+      error: err.message,
+    });
+  }
+};
+
+export const resetPassword = async (req, res) => {
+  try {
+    const { token } = req.params;
+
+    // Sanitize all input fields using sanitizeObject
+    const sanitizedData = sanitizeObject(req.body);
+    const { password } = sanitizedData;
+
+    // Validate sanitized input with Joi
+    const { error } = resetPasswordSchema.validate(sanitizedData);
+    if (error) {
+      const errorMsg = error.details?.[0]?.message || error.message;
+      console.error("Validation error:", errorMsg);
+      return res.status(400).json({ success: false, message: errorMsg });
+    }
+
+    if (!password) {
+      return res.status(400).json({
+        success: false,
+        message: "New password is required.",
+      });
+    }
+
+    const user = await Auth.findOne({
+      resetPasswordToken: token,
+      resetpasswordExpiresAt: { $gt: Date.now() },
+    });
+
+    if (!user) {
+      console.log("Invalid or expired reset token attempt:", token);
+      return res.status(400).json({
+        success: false,
+        message: "Invalid or expired reset token.",
+      });
+    }
+
+    const hashedPassword = await bcrypt.hash(password, 10);
+
+    user.password = hashedPassword;
+    user.resetPasswordToken = undefined;
+    user.resetpasswordExpiresAt = undefined;
+    await user.save();
+
+    const logo = "../public/My-Logo.png";
+    const login_link = `${process.env.FRONTEND_BASE_URL || process.env.FRONT_END_BASE_URL || "http://localhost:5174"}/login`;
+    const support_email = "yohannishailye2039@gmail.com";
+    const year = new Date().getFullYear();
+    try {
+      await sendResetSuccessEmail(
+        user.email,
+        logo,
+        user.userName || user.name,
+        login_link,
+        support_email,
+        year
+      );
+    } catch (emailError) {
+      console.error("Failed to send reset success email:", emailError);
+    }
 
     return res.status(200).json({
       success: true,
-      data: {
-        token,
-        user: {
-          id: user._id,
-          name: user.name,
-          email: user.email,
-          role: user.role,
-          organizationId: user.organizationId ?? null,
-        },
-      },
+      message: "Password reset successfully.",
     });
-  } catch (error) {
-    console.error("[Auth] Login failed:", error);
-
+  } catch (err) {
+    console.error("Error in resetPassword:", err);
     return res.status(500).json({
       success: false,
-      error: "Login failed",
+      message: "Server error. Please try again later.",
+      error: err.message,
     });
   }
 };
 
-export const logout = async (req, res) => {
-  const isProduction = process.env.NODE_ENV === "production";
-  res.clearCookie("sentrix_token", {
-    path: "/",
-    secure: isProduction,
-    sameSite: "lax",
-  });
+export const updateProfile = async (req, res) => {
+  const _id = req.params._id || req.params.id || req.user?._id;
 
-  return res.status(200).json({
-    success: true,
-    message: "Logged out successfully",
-  });
+  // Sanitize all input fields using sanitizeObject
+  const sanitizedData = sanitizeObject(req.body);
+  delete sanitizedData.password;
+  delete sanitizedData.role; // Role updates handled exclusively by admin
+
+  if (sanitizedData.name !== undefined && sanitizedData.name.trim().length < 3) {
+    return res
+      .status(400)
+      .json({ success: false, message: "Name must be at least 3 characters long" });
+  }
+
+  if (sanitizedData.userName !== undefined && sanitizedData.userName.trim().length < 3) {
+    return res
+      .status(400)
+      .json({ success: false, message: "Username must be at least 3 characters long" });
+  }
+
+  try {
+    const foundUser = await Auth.findByIdAndUpdate(
+      _id,
+      { ...sanitizedData },
+      { new: true }
+    ).select("-password");
+    if (!foundUser) {
+      return res
+        .status(404)
+        .json({ success: false, message: "User Not Found" });
+    }
+    res.status(200).json({
+      success: true,
+      message: "Profile Updated Successfully",
+      user: foundUser,
+      data: foundUser,
+    });
+  } catch (error) {
+    console.log("Error:", error.message);
+    res.status(500).json({ success: false, message: "Server Error" });
+  }
 };
 
-export const getMe = async (req, res) => {
-  return res.status(200).json({
-    success: true,
-    data: req.user,
-  });
+export const changePassword = async (req, res) => {
+  const _id = req.params._id || req.params.id || req.user?._id;
+
+  // sanitize all input fields using sanitizeObject
+  const sanitizedData = sanitizeObject(req.body);
+  const targetNewPassword = sanitizedData.newPassword || sanitizedData.password;
+  const oldPassword = sanitizedData.oldPassword;
+
+  // validate input data using joi
+  const { error } = changePasswordSchema.validate(sanitizedData);
+  if (error) {
+    const errorMsg = error.details?.[0]?.message || error.message;
+    console.error("Validation error:", errorMsg);
+    return res.status(400).json({ success: false, message: errorMsg });
+  }
+
+  if (!targetNewPassword) {
+    return res
+      .status(400)
+      .json({ success: false, message: "New password is required" });
+  }
+
+  // Validate new password complexity
+  const complexityResult = validatePasswordComplexity(targetNewPassword);
+  if (!complexityResult.valid) {
+    return res
+      .status(400)
+      .json({ success: false, message: complexityResult.message });
+  }
+
+  try {
+    const foundUser = await Auth.findById(_id);
+    if (!foundUser) {
+      return res
+        .status(404)
+        .json({ success: false, message: "User Not Found" });
+    }
+
+    const hasExistingPassword = Boolean(foundUser.password);
+
+    if (hasExistingPassword) {
+      if (!oldPassword) {
+        return res.status(400).json({
+          success: false,
+          message: "Current password is required to change your password.",
+        });
+      }
+
+      const isMatch = await bcrypt.compare(oldPassword, foundUser.password);
+      if (!isMatch) {
+        return res
+          .status(400)
+          .json({ success: false, message: "Invalid current password" });
+      }
+    }
+
+    const hashedPassword = await bcrypt.hash(targetNewPassword, 10);
+    foundUser.password = hashedPassword;
+    await foundUser.save();
+
+    res.status(200).json({
+      success: true,
+      message: hasExistingPassword
+        ? "Password Changed Successfully"
+        : "Password Created Successfully",
+      hasPassword: true,
+    });
+  } catch (error) {
+    console.log("Error:", error.message);
+    res.status(500).json({ success: false, message: "Server Error" });
+  }
 };
+
+export const completeOnboarding = async (req, res) => {
+  const userId = req.user?._id;
+  if (!userId) {
+    return res.status(401).json({ success: false, message: "Unauthorized" });
+  }
+
+  const sanitizedData = sanitizeObject(req.body);
+  const rawOrg =
+    sanitizedData.organization ||
+    sanitizedData.company ||
+    sanitizedData.companyName ||
+    "";
+  const hasNoOrganization = Boolean(sanitizedData.hasNoOrganization);
+  const orgName =
+    hasNoOrganization || typeof rawOrg !== "string" ? "" : rawOrg.trim();
+
+  try {
+    const user = await Auth.findById(userId);
+    if (!user) {
+      return res
+        .status(404)
+        .json({ success: false, message: "User not found" });
+    }
+
+    let role = "client_member";
+    let isOwner = false;
+    let organizationId = null;
+    let finalOrgName = orgName;
+
+    if (orgName) {
+      const safeOrgRegex = new RegExp(
+        "^" + orgName.replace(/[.*+?^${}()|[\]\\]/g, "\\$&") + "$",
+        "i"
+      );
+
+      const existingOrg = await Organization.findOne({ name: safeOrgRegex });
+      const existingAuthWithOrg = await Auth.findOne({
+        organization: safeOrgRegex,
+        _id: { $ne: user._id },
+      });
+
+      if (!existingOrg && !existingAuthWithOrg) {
+        // Company name not registered before -> Take as client_owner
+        role = "client_owner";
+        isOwner = true;
+      } else {
+        // Company name is already registered before -> Take as client_member
+        role = "client_member";
+        isOwner = false;
+        if (existingOrg) {
+          organizationId = existingOrg._id;
+          finalOrgName = existingOrg.name;
+        }
+      }
+    } else {
+      // No company name provided -> client_member
+      role = "client_member";
+      isOwner = false;
+      finalOrgName = "";
+    }
+
+    user.organization = finalOrgName;
+    user.organizationId = organizationId;
+    user.isOwner = isOwner;
+    user.role = role;
+    user.isSecurityResponsible = Boolean(sanitizedData.isSecurityResponsible);
+    user.organizationOnboarded = true;
+
+    await user.save();
+
+    // If new organization was registered, create Organization document
+    if (isOwner && finalOrgName) {
+      try {
+        const createdOrg = await Organization.create({
+          name: finalOrgName,
+          ownerId: user._id,
+          members: [
+            {
+              userId: user._id,
+              role: "client_owner",
+              joinedAt: new Date(),
+            },
+          ],
+        });
+        user.organizationId = createdOrg._id;
+        await user.save();
+      } catch (orgErr) {
+        console.warn(
+          "Organization auto-create note in onboarding:",
+          orgErr.message
+        );
+      }
+    } else if (organizationId) {
+      try {
+        await Organization.findByIdAndUpdate(organizationId, {
+          $addToSet: {
+            members: {
+              userId: user._id,
+              role: "client_member",
+              joinedAt: new Date(),
+            },
+          },
+        });
+      } catch (orgMemberErr) {
+        console.warn(
+          "Organization member add note in onboarding:",
+          orgMemberErr.message
+        );
+      }
+    }
+
+    const userObj = user.toObject ? user.toObject() : user;
+    const { password, ...userWithoutPassword } = userObj;
+
+    return res.status(200).json({
+      success: true,
+      message: "Organization profile configured successfully.",
+      user: userWithoutPassword,
+      data: userWithoutPassword,
+    });
+  } catch (err) {
+    console.error("Error in completeOnboarding:", err);
+    return res.status(500).json({
+      success: false,
+      message: "Server error during onboarding setup.",
+      error: err.message,
+    });
+  }
+};
+

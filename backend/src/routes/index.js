@@ -1,5 +1,5 @@
 import { Router } from "express";
-import authRoutes from "./auth.routes.js";
+import authRoutes from "./auth.route.js";
 import paymentRoutes from "./payment.routes.js";
 import adminRoutes from "./admin.routes.js";
 

@@ -1,5 +1,6 @@
 import jwt from "jsonwebtoken";
 import { User } from "../models/User.js";
+import Auth from "../models/auth.model.js";
 
 const parseCookies = (cookieHeader) => {
   if (typeof cookieHeader !== "string" || !cookieHeader.trim()) {
@@ -30,7 +31,7 @@ export const protect = async (req, res, next) => {
 
   if (!token && req.headers.cookie) {
     const cookies = parseCookies(req.headers.cookie);
-    token = cookies.sentrix_token || cookies.token || cookies.jwt || null;
+    token = cookies.refreshToken || cookies.sentrix_token || cookies.token || cookies.jwt || null;
   }
 
   if (!token) {
@@ -58,14 +59,19 @@ export const protect = async (req, res, next) => {
       ? roleClean
       : "client_member";
 
-    let user = await User.findOne({ role: targetRole, isActive: true });
+    let user = await Auth.findOne({ role: targetRole, status: "active" });
     if (!user) {
-      user = await User.create({
+      user = await User.findOne({ role: targetRole, isActive: true });
+    }
+    if (!user) {
+      user = await Auth.create({
+        userName: targetRole,
         name: targetRole
           .replace(/_/g, " ")
           .replace(/\b\w/g, (c) => c.toUpperCase()),
         email: `${targetRole}@sentrix.local`,
         role: targetRole,
+        status: "active",
         isActive: true,
       });
     }
@@ -73,28 +79,28 @@ export const protect = async (req, res, next) => {
     return next();
   }
 
-  const secret = process.env.JWT_SECRET;
-
-  if (!secret) {
-    console.error("[Auth] JWT_SECRET is not configured.");
-
-    return res.status(500).json({
-      success: false,
-      error: "Authentication service is not configured",
-    });
-  }
+  const secret = process.env.Refresh_Secret_Key || process.env.JWT_SECRET || "Car-Rental-Secret-Key-123@";
 
   try {
-    const decoded = jwt.verify(token, secret);
+    let decoded;
+    try {
+      decoded = jwt.verify(token, secret);
+    } catch {
+      decoded = jwt.verify(token, process.env.JWT_SECRET || "super-secret-development-key-change-in-production");
+    }
 
-    if (typeof decoded !== "object" || !decoded.id) {
+    const userId = decoded.userID || decoded.id;
+    if (!userId) {
       return res.status(401).json({
         success: false,
         error: "Not authorized to access this route",
       });
     }
 
-    const user = await User.findById(decoded.id);
+    let user = await Auth.findById(userId);
+    if (!user) {
+      user = await User.findById(userId);
+    }
 
     if (!user) {
       return res.status(401).json({
@@ -103,15 +109,7 @@ export const protect = async (req, res, next) => {
       });
     }
 
-    if (!user.isActive) {
-      return res.status(403).json({
-        success: false,
-        error: "Account is suspended",
-      });
-    }
-
     req.user = user;
-
     return next();
   } catch {
     return res.status(401).json({
@@ -129,7 +127,7 @@ export const optionalProtect = async (req, res, next) => {
 
   if (!token && req.headers.cookie) {
     const cookies = parseCookies(req.headers.cookie);
-    token = cookies.sentrix_token || cookies.token || cookies.jwt || null;
+    token = cookies.refreshToken || cookies.sentrix_token || cookies.token || cookies.jwt || null;
   }
 
   if (!token) {
@@ -157,14 +155,19 @@ export const optionalProtect = async (req, res, next) => {
       : "client_member";
 
     try {
-      let user = await User.findOne({ role: targetRole, isActive: true });
+      let user = await Auth.findOne({ role: targetRole, status: "active" });
       if (!user) {
-        user = await User.create({
+        user = await User.findOne({ role: targetRole, isActive: true });
+      }
+      if (!user) {
+        user = await Auth.create({
+          userName: targetRole,
           name: targetRole
             .replace(/_/g, " ")
             .replace(/\b\w/g, (c) => c.toUpperCase()),
           email: `${targetRole}@sentrix.local`,
           role: targetRole,
+          status: "active",
           isActive: true,
         });
       }
@@ -177,18 +180,23 @@ export const optionalProtect = async (req, res, next) => {
     }
   }
 
-  const secret = process.env.JWT_SECRET;
-  if (!secret) {
-    req.user = null;
-    delete req.headers.authorization;
-    return next();
-  }
+  const secret = process.env.Refresh_Secret_Key || process.env.JWT_SECRET || "Car-Rental-Secret-Key-123@";
 
   try {
-    const decoded = jwt.verify(token, secret);
-    if (typeof decoded === "object" && decoded.id) {
-      const user = await User.findById(decoded.id);
-      if (user && user.isActive) {
+    let decoded;
+    try {
+      decoded = jwt.verify(token, secret);
+    } catch {
+      decoded = jwt.verify(token, process.env.JWT_SECRET || "super-secret-development-key-change-in-production");
+    }
+
+    const userId = decoded.userID || decoded.id;
+    if (userId) {
+      let user = await Auth.findById(userId);
+      if (!user) {
+        user = await User.findById(userId);
+      }
+      if (user && (user.isActive || user.status === "active")) {
         req.user = user;
         return next();
       }
