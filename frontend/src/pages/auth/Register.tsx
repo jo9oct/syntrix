@@ -94,7 +94,7 @@ export const Register: React.FC = () => {
     setLoading(true);
     setError(null);
     try {
-      await register({
+      const res = await register({
         name: formData.name,
         email: formData.email,
         password: formData.password,

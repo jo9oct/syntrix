@@ -91,11 +91,12 @@ function App() {
         <Route path="/contact" element={<PublicRoute><Contact /></PublicRoute>} />
         <Route path="/login" element={<PublicRoute><Login /></PublicRoute>} />
         <Route path="/register" element={<PublicRoute><Register /></PublicRoute>} />
-        <Route path="/forgot-password" element={<PublicRoute><ForgotPassword /></PublicRoute>} />
-        <Route path="/forget-password" element={<PublicRoute><ForgotPassword /></PublicRoute>} />
-        <Route path="/reset-password/:token" element={<PublicRoute><ResetPassword /></PublicRoute>} />
-        <Route path="/user/Reset-Password/:token" element={<PublicRoute><ResetPassword /></PublicRoute>} />
-        <Route path="/verify" element={<PublicRoute><VerifyEmail /></PublicRoute>} />
+        <Route path="/forgot-password" element={<ForgotPassword />} />
+        <Route path="/forget-password" element={<ForgotPassword />} />
+        <Route path="/reset-password/:token" element={<ResetPassword />} />
+        <Route path="/reset-password" element={<ResetPassword />} />
+        <Route path="/user/Reset-Password/:token" element={<ResetPassword />} />
+        <Route path="/verify" element={<VerifyEmail />} />
         <Route path="/auth/callback" element={<AuthCallback />} />
         <Route path="/onboarding" element={<ProtectedRoute><Onboarding /></ProtectedRoute>} />
         <Route path="/auth/onboarding" element={<ProtectedRoute><Onboarding /></ProtectedRoute>} />

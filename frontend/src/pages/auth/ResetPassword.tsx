@@ -13,11 +13,16 @@ import {
   Terminal,
   Globe
 } from 'lucide-react';
-import { Link, useParams, useNavigate } from 'react-router-dom';
+import { Link, useParams, useSearchParams, useNavigate } from 'react-router-dom';
 import { useAuthStore } from '../../store/authStore';
 
 export const ResetPassword: React.FC = () => {
-  const { token } = useParams<{ token: string }>();
+  const { token: routeToken } = useParams<{ token: string }>();
+  const [searchParams] = useSearchParams();
+  const queryToken = searchParams.get('token');
+  const [manualToken, setManualToken] = useState('');
+
+  const token = (routeToken || queryToken || manualToken || '').trim();
   const navigate = useNavigate();
   const { resetPassword } = useAuthStore();
 

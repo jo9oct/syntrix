@@ -153,7 +153,7 @@ interface AuthState {
   }) => Promise<any>;
   forgotPassword: (email: string) => Promise<any>;
   resetPassword: (token: string, password: string) => Promise<any>;
-  verifyEmail: (verificationToken: string) => Promise<any>;
+  verifyEmail: (verificationToken: string, email?: string) => Promise<any>;
   resendVerification: (email?: string) => Promise<any>;
   updateProfile: (id: string, data: { name?: string; userName?: string; organization?: string }) => Promise<any>;
   changePassword: (id: string, passwords: { oldPassword?: string; newPassword?: string; password?: string }) => Promise<any>;
@@ -263,7 +263,11 @@ export const useAuthStore = create<AuthState>()(
             err.message ||
             "Login failed. Please check your credentials.";
           set({ error: msg, isLoading: false });
-          throw new Error(msg);
+          const errorObj: any = new Error(msg);
+          errorObj.response = err.response;
+          errorObj.isVerified = err.response?.data?.isVerified;
+          errorObj.email = err.response?.data?.email;
+          throw errorObj;
         }
       },
 
@@ -531,10 +535,13 @@ export const useAuthStore = create<AuthState>()(
         }
       },
 
-      verifyEmail: async (verificationToken: string) => {
+      verifyEmail: async (verificationToken: string, email?: string) => {
         set({ isLoading: true, error: null });
         try {
-          const { data } = await api.post("/auth/verify", { verificationToken });
+          const payload = email
+            ? { verificationToken, email }
+            : { verificationToken };
+          const { data } = await api.post("/auth/verify", payload);
           const token = data.token || data.data?.token;
           const user = data.user || data.data?.user;
           if (token) {
@@ -554,7 +561,11 @@ export const useAuthStore = create<AuthState>()(
             err.response?.data?.error ||
             "Invalid or expired verification code.";
           set({ error: msg, isLoading: false });
-          throw new Error(msg);
+          const errorObj: any = new Error(msg);
+          errorObj.response = err.response;
+          errorObj.codeExpired = err.response?.data?.codeExpired;
+          errorObj.remainingAttempts = err.response?.data?.remainingAttempts;
+          throw errorObj;
         }
       },
 

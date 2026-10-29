@@ -1,15 +1,14 @@
-import React, { useState } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import {
   ShieldCheck,
-  ArrowRight,
   ArrowLeft,
   CheckCircle2,
   Shield,
   AlertCircle,
-  KeyRound,
-  Terminal,
   Globe,
-  RefreshCw
+  RefreshCw,
+  RotateCw,
+  Mail
 } from 'lucide-react';
 import { Link, useNavigate, useLocation } from 'react-router-dom';
 import { useAuthStore, getRoleLandingPath } from '../../store/authStore';
@@ -22,33 +21,112 @@ export const VerifyEmail: React.FC = () => {
   const passedMessage = (location.state as any)?.message;
   const passedEmail = (location.state as any)?.email;
 
-  const [code, setCode] = useState('');
-  const [loading, setLoading] = useState(false);
+  const [digits, setDigits] = useState<string[]>(['', '', '', '', '', '']);
+  const [isVerifying, setIsVerifying] = useState(false);
   const [resending, setResending] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [codeExpired, setCodeExpired] = useState(false);
   const [successMessage, setSuccessMessage] = useState<string | null>(passedMessage || null);
   const [resendStatus, setResendStatus] = useState<string | null>(null);
 
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!code || code.trim().length < 4) {
-      setError('Please enter a valid verification code.');
-      return;
-    }
+  const inputRefs = useRef<(HTMLInputElement | null)[]>([]);
 
-    setLoading(true);
+  useEffect(() => {
+    // Focus the first input box on load
+    inputRefs.current[0]?.focus();
+  }, []);
+
+  const triggerVerification = async (codeToVerify: string) => {
+    if (isVerifying || codeToVerify.length !== 6) return;
+    setIsVerifying(true);
     setError(null);
 
     try {
-      const res = await verifyEmail(code.trim());
+      const res = await verifyEmail(codeToVerify, passedEmail);
       const role = res?.user?.role || res?.data?.user?.role || 'user';
       navigate(getRoleLandingPath(role), {
         state: { message: 'Email verified successfully! Welcome to your Sentrix console.' },
       });
     } catch (err: any) {
-      setError(err?.message || 'Verification failed. Code may be invalid or expired.');
+      const msg = err?.message || 'Verification failed. Code may be invalid or expired.';
+      setError(msg);
+      if (err?.codeExpired || msg.toLowerCase().includes('expired') || msg.toLowerCase().includes('3 failed')) {
+        setCodeExpired(true);
+      }
+      // Reset boxes on error so user can retype or resend
+      setDigits(['', '', '', '', '', '']);
+      setTimeout(() => {
+        inputRefs.current[0]?.focus();
+      }, 50);
     } finally {
-      setLoading(false);
+      setIsVerifying(false);
+    }
+  };
+
+  const handleDigitChange = (index: number, rawVal: string) => {
+    const num = rawVal.replace(/[^0-9]/g, '');
+
+    if (!num) {
+      const updated = [...digits];
+      updated[index] = '';
+      setDigits(updated);
+      return;
+    }
+
+    // If user pasted multiple characters into a single box
+    if (num.length > 1) {
+      handlePaste(num);
+      return;
+    }
+
+    const updated = [...digits];
+    updated[index] = num;
+    setDigits(updated);
+    setError(null);
+
+    // Auto-focus the next box
+    if (index < 5) {
+      inputRefs.current[index + 1]?.focus();
+    }
+
+    // If all 6 boxes are completed, automatically trigger verification
+    const fullCode = updated.join('');
+    if (fullCode.length === 6 && !updated.includes('')) {
+      triggerVerification(fullCode);
+    }
+  };
+
+  const handleKeyDown = (index: number, e: React.KeyboardEvent<HTMLInputElement>) => {
+    if (e.key === 'Backspace') {
+      if (!digits[index] && index > 0) {
+        inputRefs.current[index - 1]?.focus();
+        const updated = [...digits];
+        updated[index - 1] = '';
+        setDigits(updated);
+      }
+    } else if (e.key === 'ArrowLeft' && index > 0) {
+      inputRefs.current[index - 1]?.focus();
+    } else if (e.key === 'ArrowRight' && index < 5) {
+      inputRefs.current[index + 1]?.focus();
+    }
+  };
+
+  const handlePaste = (pastedText: string) => {
+    const cleanDigits = pastedText.replace(/[^0-9]/g, '').slice(0, 6).split('');
+    if (cleanDigits.length === 0) return;
+
+    const updated = ['', '', '', '', '', ''];
+    cleanDigits.forEach((digit, i) => {
+      updated[i] = digit;
+    });
+    setDigits(updated);
+    setError(null);
+
+    const nextIndex = Math.min(cleanDigits.length, 5);
+    inputRefs.current[nextIndex]?.focus();
+
+    if (cleanDigits.length === 6) {
+      triggerVerification(updated.join(''));
     }
   };
 
@@ -56,15 +134,20 @@ export const VerifyEmail: React.FC = () => {
     setResending(true);
     setError(null);
     setResendStatus(null);
+    setCodeExpired(false);
     try {
       await resendVerification(passedEmail);
-      setResendStatus('A fresh verification code has been dispatched to your email.');
+      setResendStatus('A fresh 6-digit verification code has been dispatched to your email.');
+      setDigits(['', '', '', '', '', '']);
+      inputRefs.current[0]?.focus();
     } catch (err: any) {
       setError(err?.message || 'Failed to resend code. Please sign in or try again later.');
     } finally {
       setResending(false);
     }
   };
+
+  const isComplete = digits.join('').length === 6 && !digits.includes('');
 
   return (
     <div className="min-h-screen bg-[#060d1a] text-white flex items-center justify-center p-4 sm:p-6 lg:p-8 relative overflow-hidden font-sans">
@@ -73,7 +156,7 @@ export const VerifyEmail: React.FC = () => {
       <div className="absolute bottom-10 -right-36 w-[550px] h-[550px] orb orb-cyan opacity-30 pointer-events-none" aria-hidden="true" />
       <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[700px] h-[700px] bg-brand-purple/5 blur-[160px] pointer-events-none" aria-hidden="true" />
 
-      {/* Main Centered Authentication Container */}
+      {/* Main Centered Container */}
       <div className="w-full max-w-5xl rounded-[2.5rem] bg-[#0b1528]/95 border border-white/10 shadow-[0_24px_70px_rgba(0,0,0,0.65)] overflow-hidden relative z-10 flex flex-col lg:flex-row backdrop-blur-2xl">
 
         {/* LEFT SECTION */}
@@ -103,14 +186,18 @@ export const VerifyEmail: React.FC = () => {
 
           {/* Header & Subtitle */}
           <div className="mb-7">
+            <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-brand-cyan/10 border border-brand-cyan/30 text-brand-cyan text-xs font-semibold mb-3">
+              <Mail size={13} />
+              <span>Email Verification</span>
+            </div>
             <h1 className="text-3xl sm:text-4xl font-extrabold text-white tracking-tight mb-2">
-              Verify Account
+              Enter 6-Digit Code
             </h1>
-            <p className="text-text-muted text-sm">
+            <p className="text-text-muted text-sm leading-relaxed">
               {passedEmail ? (
-                <>Enter the verification code sent to <span className="text-brand-cyan font-semibold">{passedEmail}</span></>
+                <>We sent a verification code to <span className="text-brand-cyan font-semibold">{passedEmail}</span>. Enter the code below to verify your account.</>
               ) : (
-                'Enter the 6-digit confirmation code sent to your registered email'
+                'Please check your email for the 6-digit confirmation code. Enter each number below.'
               )}
             </p>
           </div>
@@ -130,78 +217,114 @@ export const VerifyEmail: React.FC = () => {
             </div>
           )}
 
-          {/* Error Alert */}
+          {/* Error Alert with Remaining Attempts Warning */}
           {error && (
             <div className="mb-5 p-3.5 bg-rose-500/10 border border-rose-500/30 rounded-2xl text-rose-400 text-xs flex items-start gap-2.5 animate-shake">
               <AlertCircle size={16} className="shrink-0 mt-0.5 text-rose-400" />
-              <span className="leading-relaxed font-medium">{error}</span>
+              <div className="leading-relaxed font-medium flex-1">
+                <span>{error}</span>
+                {codeExpired && (
+                  <button
+                    type="button"
+                    onClick={handleResend}
+                    disabled={resending}
+                    className="mt-2 block font-bold text-white underline hover:text-brand-cyan cursor-pointer text-xs"
+                  >
+                    Click here to request a new verification code
+                  </button>
+                )}
+              </div>
             </div>
           )}
 
-          {/* Form */}
-          <form onSubmit={handleSubmit} className="space-y-6">
+          {/* 6-Box OTP Input Form */}
+          <div className="space-y-6">
             <div>
-              <label className="block text-xs font-mono text-text-muted uppercase tracking-wider mb-2">
-                6-Digit Verification Code
+              <label className="block text-xs font-mono text-text-muted uppercase tracking-wider mb-3">
+                Security Code (Max 3 Attempts)
               </label>
-              <div className="relative group">
-                <ShieldCheck
-                  className="absolute left-4 top-1/2 -translate-y-1/2 text-text-muted/60 group-focus-within:text-brand-cyan transition-colors"
-                  size={18}
-                />
-                <input
-                  type="text"
-                  maxLength={8}
-                  value={code}
-                  onChange={(e) => setCode(e.target.value.replace(/[^0-9a-zA-Z]/g, ''))}
-                  className="w-full bg-white/[0.03] border-b-2 border-white/10 focus:border-brand-cyan hover:border-white/20 rounded-t-xl py-3.5 pl-12 pr-4 text-white text-lg tracking-[0.25em] font-mono focus:outline-none transition-all placeholder:text-text-muted/30 placeholder:tracking-normal placeholder:text-sm font-medium"
-                  placeholder="e.g. 123456"
-                  required
-                  autoFocus
-                />
+
+              {/* 6 Digit Input Boxes */}
+              <div className="flex items-center justify-between gap-2 sm:gap-3">
+                {digits.map((digit, index) => (
+                  <input
+                    key={index}
+                    ref={(el) => {
+                      inputRefs.current[index] = el;
+                    }}
+                    type="text"
+                    inputMode="numeric"
+                    autoComplete="one-time-code"
+                    maxLength={1}
+                    value={digit}
+                    onChange={(e) => handleDigitChange(index, e.target.value)}
+                    onKeyDown={(e) => handleKeyDown(index, e)}
+                    onPaste={(e) => {
+                      e.preventDefault();
+                      handlePaste(e.clipboardData.getData('text'));
+                    }}
+                    disabled={isVerifying}
+                    className={`w-12 h-14 sm:w-14 sm:h-16 text-center text-2xl font-bold font-mono rounded-2xl border transition-all outline-none ${
+                      digit
+                        ? 'border-brand-cyan bg-brand-cyan/10 text-white shadow-lg shadow-brand-cyan/20'
+                        : 'border-white/10 bg-white/[0.03] text-white/90 hover:border-white/20 focus:border-brand-cyan focus:bg-white/[0.06]'
+                    } ${isVerifying ? 'opacity-60 cursor-wait' : ''}`}
+                  />
+                ))}
               </div>
             </div>
 
-            <div className="flex flex-col sm:flex-row sm:items-center gap-3 pt-2">
+            {/* Verification Action Bar with Rotating Refresh Icon */}
+            <div className="pt-2 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
               <button
-                type="submit"
-                disabled={loading}
-                className="w-full sm:w-auto min-w-[180px] py-3.5 px-8 rounded-full font-bold text-sm text-white bg-gradient-to-r from-brand-blue via-brand-cyan to-brand-purple hover:opacity-95 shadow-lg shadow-brand-cyan/20 hover:shadow-brand-cyan/30 active:scale-[0.98] transition-all flex items-center justify-center gap-2.5 disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer"
+                type="button"
+                onClick={() => {
+                  const fullCode = digits.join('');
+                  if (fullCode.length === 6) {
+                    triggerVerification(fullCode);
+                  }
+                }}
+                disabled={isVerifying || !isComplete}
+                className={`w-full sm:w-auto min-w-[200px] py-3.5 px-6 rounded-2xl font-bold text-xs uppercase tracking-wider flex items-center justify-center gap-2.5 transition-all cursor-pointer ${
+                  isComplete
+                    ? 'bg-gradient-to-r from-brand-blue via-brand-cyan to-brand-purple text-white shadow-lg shadow-brand-cyan/25 hover:opacity-95'
+                    : 'bg-white/5 border border-white/10 text-text-muted/60 opacity-60 cursor-not-allowed'
+                }`}
               >
-                {loading ? (
-                  <>
-                    <span className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
-                    <span>Verifying…</span>
-                  </>
-                ) : (
-                  <>
-                    <span>Verify Account</span>
-                    <ArrowRight size={16} className="transition-transform group-hover:translate-x-1" />
-                  </>
-                )}
+                <RefreshCw
+                  size={16}
+                  className={`${isVerifying ? 'animate-spin text-white' : ''} transition-transform`}
+                />
+                <span>
+                  {isVerifying
+                    ? 'Verifying Code…'
+                    : isComplete
+                    ? 'Verifying…'
+                    : 'Enter 6 Digits'}
+                </span>
               </button>
 
               <button
                 type="button"
                 onClick={handleResend}
-                disabled={resending}
-                className="w-full sm:w-auto py-3 px-5 rounded-full border border-white/10 text-text-muted hover:text-white hover:bg-white/5 transition-colors text-xs font-semibold flex items-center justify-center gap-2 cursor-pointer disabled:opacity-50"
+                disabled={resending || isVerifying}
+                className="w-full sm:w-auto py-3 px-5 rounded-2xl border border-white/10 text-text-muted hover:text-white hover:bg-white/5 transition-colors text-xs font-semibold flex items-center justify-center gap-2 cursor-pointer disabled:opacity-50"
               >
-                <RefreshCw size={13} className={resending ? 'animate-spin' : ''} />
-                <span>Resend Code</span>
+                <RotateCw size={13} className={resending ? 'animate-spin text-brand-cyan' : ''} />
+                <span>{resending ? 'Sending Code…' : 'Resend Code'}</span>
               </button>
             </div>
-          </form>
+          </div>
 
-          {/* Bottom Footer */}
+          {/* Bottom Security Badges */}
           <div className="mt-10 pt-6 border-t border-white/5 flex items-center justify-between text-xs text-text-muted/60 font-mono">
             <div className="flex items-center gap-1.5">
               <Globe size={13} className="text-brand-cyan/70" />
-              <span>ENG • Zero-Trust Auth</span>
+              <span>Zero-Trust 2FA</span>
             </div>
             <div className="flex items-center gap-1 text-[11px]">
               <Shield size={12} className="text-emerald-400" />
-              <span>SOC 2 Type II</span>
+              <span>3 Attempts Allowed</span>
             </div>
           </div>
         </div>
@@ -212,56 +335,43 @@ export const VerifyEmail: React.FC = () => {
           <div className="absolute -bottom-20 -left-10 w-72 h-72 rounded-full bg-brand-purple/20 blur-[70px] pointer-events-none" />
           <div className="absolute inset-0 bg-[radial-gradient(circle_at_70%_30%,rgba(59,130,246,0.15),transparent_60%)] pointer-events-none" />
 
-          <div className="relative z-10 space-y-6 my-auto py-4">
-            <div className="relative">
-              <div className="glass-card bg-[#142347]/85 border-white/15 rounded-3xl p-5 shadow-2xl backdrop-blur-xl relative overflow-hidden max-w-[270px]">
-                <div className="flex items-center justify-between mb-2">
-                  <span className="text-[11px] font-mono tracking-wider text-brand-cyan uppercase font-bold">
-                    Identity Verification
-                  </span>
-                  <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
-                </div>
-                <div className="text-2xl sm:text-3xl font-extrabold text-white tracking-tight mb-3">
-                  Verified
-                </div>
-                <p className="text-xs text-text-muted leading-relaxed">
-                  Sentrix validates individual tenant ownership before unlocking infrastructure telemetry.
-                </p>
-              </div>
-
-              <div className="absolute -top-3 -right-2 sm:right-2 w-11 h-11 rounded-2xl bg-gradient-to-tr from-brand-cyan/20 to-brand-blue/30 border border-brand-cyan/40 backdrop-blur-md flex items-center justify-center text-brand-cyan shadow-lg">
-                <Shield size={20} />
-              </div>
-
-              <div className="absolute top-16 -right-4 sm:right-0 w-11 h-11 rounded-2xl bg-gradient-to-tr from-brand-purple/20 to-pink-500/20 border border-brand-purple/40 backdrop-blur-md flex items-center justify-center text-brand-purple shadow-lg">
-                <Terminal size={19} />
-              </div>
-            </div>
-
-            <div className="glass-card bg-[#142347]/85 border-white/15 rounded-3xl p-5 shadow-2xl backdrop-blur-xl relative">
-              <div className="flex items-start gap-4">
-                <div className="w-11 h-11 rounded-2xl bg-amber-500/15 border border-amber-500/30 flex items-center justify-center text-amber-400 shrink-0 shadow-md">
-                  <KeyRound size={22} />
-                </div>
-                <div className="space-y-1">
-                  <h3 className="text-sm font-extrabold text-white">
-                    Zero-Trust Access
-                  </h3>
-                  <p className="text-xs text-text-muted leading-relaxed">
-                    Once verified, your workspace unlocks API vulnerability scanning and malware disassembler labs.
-                  </p>
-                </div>
-              </div>
+          {/* Badge */}
+          <div className="relative z-10 mb-8">
+            <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-white/10 backdrop-blur-md border border-white/10 text-brand-cyan text-xs font-semibold">
+              <ShieldCheck size={14} className="text-brand-cyan" />
+              <span>Identity Verification</span>
             </div>
           </div>
 
-          <div className="relative z-10 flex items-center justify-between text-xs text-text-muted/60 pt-4">
-            <span className="font-mono text-brand-cyan font-bold tracking-wider">SENTRIX DEFENSE</span>
-            <span>v2.4 Sovereign Enclave</span>
+          {/* Main Message */}
+          <div className="relative z-10 space-y-4 mb-8">
+            <h2 className="text-2xl sm:text-3xl font-extrabold text-white leading-tight">
+              Protecting Your Security Operations
+            </h2>
+            <p className="text-text-muted text-sm leading-relaxed">
+              Sentrix requires two-factor email verification for all new workspace registrations. Each verification code expires after 3 unsuccessful attempts or 24 hours.
+            </p>
+          </div>
+
+          {/* Feature List */}
+          <div className="relative z-10 space-y-3 font-mono text-xs text-text-muted/80">
+            <div className="flex items-center gap-2.5">
+              <div className="w-1.5 h-1.5 rounded-full bg-brand-cyan" />
+              <span>6-Digit Security Token Protection</span>
+            </div>
+            <div className="flex items-center gap-2.5">
+              <div className="w-1.5 h-1.5 rounded-full bg-emerald-400" />
+              <span>Strict 3-Attempt Rate Limit</span>
+            </div>
+            <div className="flex items-center gap-2.5">
+              <div className="w-1.5 h-1.5 rounded-full bg-brand-purple" />
+              <span>Instant Workspace Authorization</span>
+            </div>
           </div>
         </div>
-
       </div>
     </div>
   );
 };
+
+export default VerifyEmail;

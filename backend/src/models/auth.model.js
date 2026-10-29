@@ -37,8 +37,9 @@ const authSchema = new Schema(
     status: {
       type: String,
       enum: ["inactive", "active", "suspended", "disabled"],
-      default: "active",
+      default: "inactive",
     },
+    isVerified: { type: Boolean, default: false },
     isActive: { type: Boolean, default: true },
 
     organization: {
@@ -91,6 +92,7 @@ const authSchema = new Schema(
 
     verificationToken: String,
     verificationTokenExpiresAt: Date,
+    verificationAttempts: { type: Number, default: 0 },
   },
   { timestamps: true }
 );

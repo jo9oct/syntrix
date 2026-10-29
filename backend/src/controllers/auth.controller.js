@@ -137,9 +137,11 @@ export const AuthRegister = async (req, res) => {
       isOwner,
       organizationOnboarded: true,
       isSecurityResponsible: Boolean(sanitizedData.isSecurityResponsible),
-      status: "active",
+      status: "inactive",
+      isVerified: false,
       verificationToken,
       verificationTokenExpiresAt,
+      verificationAttempts: 0,
     });
 
     await newAuth.save();
@@ -187,7 +189,13 @@ export const AuthRegister = async (req, res) => {
 
     const Support_Email = "jops7326@gmail.com";
     const year = new Date().getFullYear();
-    const explore_link = `${process.env.FRONTEND_BASE_URL || process.env.FRONT_END_BASE_URL || "http://localhost:5174"}/verify`;
+    const frontendBase =
+      req.get("origin") ||
+      (req.get("referer") ? new URL(req.get("referer")).origin : null) ||
+      process.env.FRONTEND_BASE_URL ||
+      process.env.FRONT_END_BASE_URL ||
+      "http://localhost:5174";
+    const explore_link = `${frontendBase}/verify`;
     let emailSent = true;
     try {
       await sendVerificationEmail(
@@ -212,7 +220,7 @@ export const AuthRegister = async (req, res) => {
       success: true,
       message: emailSent
         ? "Registration successful. Verification email sent."
-        : "Registration successful. But Failed To Send Verification Email.",
+        : "Registration successful. Please check your email for the verification code.",
       token: Token,
       user: safeUser,
       data: {
@@ -227,13 +235,20 @@ export const AuthRegister = async (req, res) => {
 };
 
 export const VerifyAuth = async (req, res) => {
-  const { verificationToken } = req.body;
+  const { verificationToken, email } = req.body;
+  const cleanedCode = String(verificationToken || "").trim();
+  const cleanedEmail = email ? String(email).toLowerCase().trim() : null;
 
   try {
-    const findUser = await Auth.findOne({
-      verificationToken,
-      verificationTokenExpiresAt: { $gt: Date.now() },
-    });
+    let findUser = null;
+
+    if (cleanedEmail) {
+      findUser = await Auth.findOne({ email: cleanedEmail });
+    } else if (req.user?._id) {
+      findUser = await Auth.findById(req.user._id);
+    } else {
+      findUser = await Auth.findOne({ verificationToken: cleanedCode });
+    }
 
     if (!findUser) {
       return res.status(400).json({
@@ -242,9 +257,63 @@ export const VerifyAuth = async (req, res) => {
       });
     }
 
+    // Check if token has expired by time
+    if (
+      !findUser.verificationTokenExpiresAt ||
+      findUser.verificationTokenExpiresAt < Date.now()
+    ) {
+      return res.status(400).json({
+        success: false,
+        message: "Verification code has expired. Please request a new code.",
+        codeExpired: true,
+      });
+    }
+
+    // Check if max attempts reached (3 times)
+    if ((findUser.verificationAttempts || 0) >= 3) {
+      findUser.verificationToken = undefined;
+      findUser.verificationTokenExpiresAt = undefined;
+      findUser.verificationAttempts = 0;
+      await findUser.save();
+      return res.status(400).json({
+        success: false,
+        message: "Maximum 3 attempts exceeded. This verification code has expired. Please request a new code.",
+        codeExpired: true,
+      });
+    }
+
+    // Check code match
+    if (findUser.verificationToken !== cleanedCode) {
+      findUser.verificationAttempts = (findUser.verificationAttempts || 0) + 1;
+      const remainingAttempts = 3 - findUser.verificationAttempts;
+
+      if (findUser.verificationAttempts >= 3) {
+        findUser.verificationToken = undefined;
+        findUser.verificationTokenExpiresAt = undefined;
+        findUser.verificationAttempts = 0;
+        await findUser.save();
+        return res.status(400).json({
+          success: false,
+          message: "Incorrect code. Maximum 3 failed attempts exceeded. Code has expired. Please request a new code.",
+          codeExpired: true,
+          remainingAttempts: 0,
+        });
+      }
+
+      await findUser.save();
+      return res.status(400).json({
+        success: false,
+        message: `Incorrect code. ${remainingAttempts} attempt${remainingAttempts === 1 ? "" : "s"} remaining before expiration.`,
+        remainingAttempts,
+      });
+    }
+
+    // Verification Success!
     findUser.status = "active";
+    findUser.isVerified = true;
     findUser.verificationToken = undefined;
     findUser.verificationTokenExpiresAt = undefined;
+    findUser.verificationAttempts = 0;
 
     const Token = generateTokenAndSetCookie(res, findUser._id);
     findUser.sessionToken = Token;
@@ -259,7 +328,7 @@ export const VerifyAuth = async (req, res) => {
     try {
       await sendWelcomeEmail(
         findUser.email,
-        findUser.userName,
+        findUser.userName || findUser.name,
         logo,
         explore_link,
         support_email,
@@ -332,6 +401,21 @@ export const AuthLogin = async (req, res) => {
       return res
         .status(400)
         .json({ success: false, message: "Invalid password" });
+    }
+
+    // Strict verification check: only verified users can log in
+    const isUserVerified =
+      exitingUser.isVerified === true ||
+      (exitingUser.status === "active" && !exitingUser.verificationToken);
+
+    if (!isUserVerified) {
+      return res.status(403).json({
+        success: false,
+        isVerified: false,
+        message:
+          "Your email is not verified yet. Please enter the verification code to continue.",
+        email: exitingUser.email,
+      });
     }
 
     const Token = generateTokenAndSetCookie(res, exitingUser._id);
@@ -460,6 +544,7 @@ export const resendVerificationEmail = async (req, res) => {
     user.verificationToken = Math.floor(
       100000 + Math.random() * 900000
     ).toString();
+    user.verificationAttempts = 0;
     console.log("DEV RESEND VERIFICATION TOKEN:", user.verificationToken);
     user.verificationTokenExpiresAt = new Date(
       Date.now() + 24 * 60 * 60 * 1000
@@ -468,7 +553,13 @@ export const resendVerificationEmail = async (req, res) => {
 
     const Support_Email = "jops7326@gmail.com";
     const year = new Date().getFullYear();
-    const explore_link = `${process.env.FRONTEND_BASE_URL || process.env.FRONT_END_BASE_URL || "http://localhost:5174"}/verify`;
+    const frontendBase =
+      req.get("origin") ||
+      (req.get("referer") ? new URL(req.get("referer")).origin : null) ||
+      process.env.FRONTEND_BASE_URL ||
+      process.env.FRONT_END_BASE_URL ||
+      "http://localhost:5174";
+    const explore_link = `${frontendBase}/verify`;
     let emailSent = true;
     try {
       await sendVerificationEmail(
@@ -488,8 +579,7 @@ export const resendVerificationEmail = async (req, res) => {
       success: true,
       message: emailSent
         ? "Verification email resent successfully."
-        : "Verification code generated successfully.",
-      verificationToken: user.verificationToken,
+        : "A fresh verification code has been dispatched to your email.",
     });
   } catch (error) {
     console.error("Resend verification error:", error);
@@ -531,8 +621,15 @@ export const forgotPassword = async (req, res) => {
     const logo = "../public/My-Logo.png";
     const support_email = "yohannishailye2039@gmail.com";
     const year = new Date().getFullYear();
-    const resetLink = `${process.env.FRONTEND_BASE_URL || process.env.FRONT_END_BASE_URL || "http://localhost:5174"}/reset-password/${resetToken}`;
+    const frontendBase =
+      req.get("origin") ||
+      (req.get("referer") ? new URL(req.get("referer")).origin : null) ||
+      process.env.FRONTEND_BASE_URL ||
+      process.env.FRONT_END_BASE_URL ||
+      "http://localhost:5174";
+    const resetLink = `${frontendBase}/reset-password/${resetToken}`;
 
+    let emailSent = true;
     try {
       await sendPasswordResetEmail(
         user.email,
@@ -544,11 +641,15 @@ export const forgotPassword = async (req, res) => {
       );
     } catch (emailErr) {
       console.log("Email Send Failed: " + (emailErr.message || emailErr));
+      emailSent = false;
     }
 
-    res
-      .status(200)
-      .json({ success: true, message: "Password reset email sent." });
+    res.status(200).json({
+      success: true,
+      message: emailSent
+        ? "Password reset email sent."
+        : "Password reset request processed.",
+    });
   } catch (err) {
     console.error("Error in forgotPassword:", err);
     return res.status(500).json({

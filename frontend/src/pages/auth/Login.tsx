@@ -56,6 +56,15 @@ export const Login: React.FC = () => {
         setError('Invalid email or password.');
       }
     } catch (err: any) {
+      if (err?.isVerified === false || err?.response?.data?.isVerified === false) {
+        navigate('/verify', {
+          state: {
+            message: 'Your email is not verified yet. Please enter the 6-digit verification code sent to your email to continue.',
+            email: err?.email || err?.response?.data?.email || email.trim(),
+          },
+        });
+        return;
+      }
       setError(err?.message || 'Invalid email or password.');
     } finally {
       setLoading(false);
