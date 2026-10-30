@@ -46,7 +46,18 @@ export const UserProfileModal: React.FC<UserProfileModalProps> = ({ isOpen, onCl
   const hasNumberOrSymbol = /[0-9!@#$%^&*()_+\-=\[\]{};':"\\|,.<>\/?]/.test(newPassword);
   const hasUpperAndLower = /[a-z]/.test(newPassword) && /[A-Z]/.test(newPassword);
   const isNewPasswordValid = hasMinLength && hasNumberOrSymbol && hasUpperAndLower;
-  const isPasswordMissing = user?.hasPassword === false && user?.provider === 'google';
+
+  const provider = profileData?.provider || user?.provider || 'local';
+  const isOAuthUser = provider === 'google' || provider === 'github';
+
+  const hasExistingPassword =
+    profileData?.hasPassword !== undefined
+      ? Boolean(profileData.hasPassword)
+      : user?.hasPassword !== undefined
+      ? Boolean(user.hasPassword)
+      : !isOAuthUser;
+
+  const isPasswordMissing = !hasExistingPassword;
 
   useEffect(() => {
     if (!isOpen) return;
@@ -179,6 +190,7 @@ export const UserProfileModal: React.FC<UserProfileModalProps> = ({ isOpen, onCl
         if (user) {
           useAuthStore.setState({ user: { ...user, hasPassword: true } });
         }
+        setProfileData((prev: any) => (prev ? { ...prev, hasPassword: true } : prev));
       }
     } catch (err: any) {
       setModalFeedback({
@@ -449,9 +461,11 @@ export const UserProfileModal: React.FC<UserProfileModalProps> = ({ isOpen, onCl
                 <div className="p-3 bg-brand-cyan/10 border border-brand-cyan/25 rounded-xl text-xs text-brand-cyan flex items-start gap-2.5">
                   <Sparkles size={16} className="shrink-0 mt-0.5 text-brand-cyan" />
                   <div>
-                    <span className="font-bold block text-white">Google OAuth Account</span>
+                    <span className="font-bold block text-white capitalize">
+                      {provider === 'github' ? 'GitHub' : provider === 'google' ? 'Google' : 'OAuth'} Account
+                    </span>
                     <span className="text-text-muted text-[11px] leading-relaxed">
-                      You signed in using Google and don't have an account password yet. Set a password below to also enable direct username or email sign-in.
+                      You signed in using {provider === 'github' ? 'GitHub' : provider === 'google' ? 'Google' : 'social login'} and have not set an account password yet. Set a password below to also enable direct password sign-in.
                     </span>
                   </div>
                 </div>
@@ -511,7 +525,7 @@ export const UserProfileModal: React.FC<UserProfileModalProps> = ({ isOpen, onCl
                   ? 'Saving Password...'
                   : isPasswordMissing
                   ? 'Set Password'
-                  : 'Update Password'}
+                  : 'Change Password'}
               </button>
             </form>
           )}

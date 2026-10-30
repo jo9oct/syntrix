@@ -14,7 +14,7 @@ const authSchema = new Schema(
     password: {
       type: String,
       required: function () {
-        return !this.googleId;
+        return !this.googleId && !this.githubId;
       },
     },
     role: {
@@ -84,8 +84,11 @@ const authSchema = new Schema(
     // Google OAuth ID (optional for local users)
     googleId: { type: String, unique: true, sparse: true },
 
-    // Authentication provider: local or Google
-    provider: { type: String, enum: ["local", "google"], default: "local" },
+    // GitHub OAuth ID (optional)
+    githubId: { type: String, unique: true, sparse: true },
+
+    // Authentication provider: local, google, or github
+    provider: { type: String, enum: ["local", "google", "github"], default: "local" },
 
     resetPasswordToken: String,
     resetpasswordExpiresAt: Date,

@@ -451,12 +451,12 @@ export const AuthLogin = async (req, res) => {
 
 export const checkAuth = async (req, res) => {
   try {
-    const dbUser = await Auth.findById(req.user._id).select("+password provider googleId organizationOnboarded organization");
+    const dbUser = await Auth.findById(req.user._id).select("+password provider googleId githubId organizationOnboarded organization");
     const hasPassword = Boolean(dbUser?.password && dbUser.password.length > 0);
     const userObj = req.user.toObject ? req.user.toObject() : req.user;
     const { password, ...userWithoutPassword } = userObj;
     userWithoutPassword.hasPassword = hasPassword;
-    userWithoutPassword.provider = dbUser?.provider || (dbUser?.googleId ? "google" : "local");
+    userWithoutPassword.provider = dbUser?.provider || (dbUser?.googleId ? "google" : (dbUser?.githubId ? "github" : "local"));
     userWithoutPassword.organizationOnboarded =
       dbUser?.organizationOnboarded !== undefined
         ? Boolean(dbUser.organizationOnboarded)

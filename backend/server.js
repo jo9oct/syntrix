@@ -19,6 +19,7 @@ import passport from "passport";
 //auth
 import authRoutes from "./src/routes/auth.route.js";
 import googleAuthRoute from "./src/routes/google-auth.route.js";
+import githubAuthRoute from "./src/routes/github-auth.route.js";
 import adminRoutes from "./src/routes/admin.routes.js";
 import dashboardRoutes from "./src/routes/dashboard.routes.js";
 import serviceOrderRoutes from "./src/routes/serviceOrder.routes.js";
@@ -165,6 +166,14 @@ app.use("/api/v1/auth/google", googleAuthRoute);
 app.use("/api/auth/google", googleAuthRoute);
 app.use("/auth/google", googleAuthRoute);
 app.use("/auth", googleAuthRoute);
+
+// GitHub OAuth routes
+app.use("/api/v1/auth/github", githubAuthRoute);
+app.use("/api/auth/github", githubAuthRoute);
+app.use("/auth/github", githubAuthRoute);
+app.use("/api/v1/github", githubAuthRoute);
+app.use("/api/github", githubAuthRoute);
+app.use("/github", githubAuthRoute);
 
 // Dashboard routes (User Dashboard /dashboard/user and adaptive /dashboard)
 app.use("/api/v1/dashboard", dashboardRoutes);

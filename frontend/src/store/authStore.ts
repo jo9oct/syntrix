@@ -218,7 +218,12 @@ export const useAuthStore = create<AuthState>()(
                 isOwner: raw.isOwner ?? user?.isOwner ?? false,
                 organizationOnboarded:
                   raw.organizationOnboarded ?? user?.organizationOnboarded ?? true,
-                hasPassword: raw.hasPassword ?? user?.hasPassword ?? true,
+                hasPassword:
+                  raw.hasPassword !== undefined
+                    ? Boolean(raw.hasPassword)
+                    : user?.hasPassword !== undefined
+                    ? Boolean(user.hasPassword)
+                    : raw.provider !== "google" && raw.provider !== "github",
                 provider: raw.provider || user?.provider || "local",
                 subscriptionTier: tier,
                 subscriptionStatus: status,
@@ -310,7 +315,7 @@ export const useAuthStore = create<AuthState>()(
               hasPassword:
                 raw.hasPassword !== undefined
                   ? Boolean(raw.hasPassword)
-                  : raw.provider !== "google",
+                  : raw.provider !== "google" && raw.provider !== "github",
               provider: raw.provider || "local",
               subscriptionTier: tier,
               subscriptionStatus: status,
@@ -374,7 +379,7 @@ export const useAuthStore = create<AuthState>()(
               hasPassword:
                 raw.hasPassword !== undefined
                   ? Boolean(raw.hasPassword)
-                  : raw.provider !== "google",
+                  : raw.provider !== "google" && raw.provider !== "github",
               provider: raw.provider || "local",
               subscriptionTier: tier,
               subscriptionStatus: status,
