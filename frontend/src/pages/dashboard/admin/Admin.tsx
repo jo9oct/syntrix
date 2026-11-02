@@ -14,6 +14,11 @@ import { useSearchParams, useNavigate, Link } from 'react-router-dom';
 import { useAuthStore, type UserRole } from '../../../store/authStore';
 import api from '../../../lib/api';
 import { useClientPortalStatus, broadcastPortalStatus } from '../../../lib/useClientPortalStatus';
+import {
+  SubscriptionTierDoughnutChart,
+  SeverityDistributionChart,
+  RoleAllocationMatrix
+} from './components/AdminAnalyticsCharts';
 
 export interface ServerRootInfo {
   name: string;
@@ -942,193 +947,55 @@ export const Admin: React.FC = () => {
             </div>
           </div>
 
-          {/* Top Comparative Visual Bar Graphs */}
+          {/* Top Comparative Visualizations (Subscription Tier Doughnut & Severity Distribution) */}
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-            {/* Subscription Tier Distribution */}
-            <div className="p-5 rounded-2xl bg-white/[0.03] border border-white/10 space-y-4 shadow-xl">
-              <div className="flex items-center justify-between">
-                <div className="flex items-center gap-2">
-                  <div className="w-7 h-7 rounded-lg bg-brand-purple/15 text-brand-purple flex items-center justify-center border border-brand-purple/30">
-                    <Sparkles size={14} />
-                  </div>
-                  <h3 className="text-xs font-bold text-white uppercase tracking-wider">
-                    Subscription Tier Distribution
-                  </h3>
-                </div>
-                <span className="text-xs font-mono text-text-muted bg-white/5 px-2 py-0.5 rounded-full border border-white/5">
-                  {dashboardStats?.overview?.totalUsers ?? users.length} Total Accounts
-                </span>
-              </div>
+            {/* 1. Subscription Tier Distribution (Interactive Modern Doughnut Chart) */}
+            <SubscriptionTierDoughnutChart
+              data={{
+                enterprise: dashboardStats?.users?.bySubscriptionTier?.enterprise
+                  ?? dashboardStats?.overview?.totalEnterpriseUsers
+                  ?? users.filter((u) => u.subscriptionTier === 'enterprise').length,
+                pro: dashboardStats?.users?.bySubscriptionTier?.pro
+                  ?? dashboardStats?.overview?.totalProUsers
+                  ?? users.filter((u) => u.subscriptionTier === 'pro').length,
+                community: dashboardStats?.users?.bySubscriptionTier?.free
+                  ?? dashboardStats?.overview?.totalFreeUsers
+                  ?? users.filter((u) => !u.subscriptionTier || u.subscriptionTier === 'free').length,
+                total: dashboardStats?.overview?.totalUsers ?? users.length ?? 0
+              }}
+            />
 
-              {/* Visual Segmented Bar */}
-              <div className="w-full h-3.5 rounded-full overflow-hidden flex bg-white/10 shadow-inner p-0.5">
-                {(() => {
-                  const total = dashboardStats?.overview?.totalUsers || users.length || 1;
-                  const ent = dashboardStats?.overview?.totalEnterpriseUsers ?? 2;
-                  const pro = dashboardStats?.overview?.totalProUsers ?? 1;
-                  const free = dashboardStats?.overview?.totalFreeUsers ?? 6;
-                  const entPct = (ent / total) * 100;
-                  const proPct = (pro / total) * 100;
-                  const freePct = (free / total) * 100;
-
-                  return (
-                    <>
-                      <div style={{ width: `${entPct}%` }} className="bg-brand-purple rounded-l-full shadow-[0_0_8px_rgba(168,85,247,0.5)] transition-all" title={`Enterprise: ${ent}`} />
-                      <div style={{ width: `${proPct}%` }} className="bg-brand-cyan shadow-[0_0_8px_rgba(6,182,212,0.5)] transition-all" title={`Pro: ${pro}`} />
-                      <div style={{ width: `${freePct}%` }} className="bg-slate-500 rounded-r-full transition-all" title={`Community Free: ${free}`} />
-                    </>
-                  );
-                })()}
-              </div>
-
-              {/* Legends */}
-              <div className="grid grid-cols-3 gap-2.5 pt-2 border-t border-white/5 text-xs font-mono">
-                <div className="p-3 rounded-xl bg-brand-purple/10 border border-brand-purple/20 flex flex-col justify-between">
-                  <div className="text-[10px] text-brand-purple uppercase font-bold flex items-center gap-1.5">
-                    <span className="w-2 h-2 rounded-full bg-brand-purple" /> Enterprise
-                  </div>
-                  <div className="text-xl font-black text-white mt-1">
-                    {dashboardStats?.overview?.totalEnterpriseUsers ?? 2}
-                  </div>
-                  <div className="text-[10px] text-text-muted mt-0.5">Full Sovereign Lab</div>
-                </div>
-
-                <div className="p-3 rounded-xl bg-brand-cyan/10 border border-brand-cyan/20 flex flex-col justify-between">
-                  <div className="text-[10px] text-brand-cyan uppercase font-bold flex items-center gap-1.5">
-                    <span className="w-2 h-2 rounded-full bg-brand-cyan" /> Pro SecOps
-                  </div>
-                  <div className="text-xl font-black text-white mt-1">
-                    {dashboardStats?.overview?.totalProUsers ?? 1}
-                  </div>
-                  <div className="text-[10px] text-text-muted mt-0.5">Unlimited Retests</div>
-                </div>
-
-                <div className="p-3 rounded-xl bg-white/5 border border-white/10 flex flex-col justify-between">
-                  <div className="text-[10px] text-slate-300 uppercase font-bold flex items-center gap-1.5">
-                    <span className="w-2 h-2 rounded-full bg-slate-400" /> Community
-                  </div>
-                  <div className="text-xl font-black text-white mt-1">
-                    {dashboardStats?.overview?.totalFreeUsers ?? 6}
-                  </div>
-                  <div className="text-[10px] text-text-muted mt-0.5">Community Tier</div>
-                </div>
-              </div>
-            </div>
-
-            {/* Global Vulnerability Severity Distribution */}
-            <div className="p-5 rounded-2xl bg-white/[0.03] border border-white/10 space-y-4 shadow-xl">
-              <div className="flex items-center justify-between">
-                <div className="flex items-center gap-2">
-                  <div className="w-7 h-7 rounded-lg bg-red-500/15 text-red-400 flex items-center justify-center border border-red-500/30">
-                    <ShieldAlert size={14} />
-                  </div>
-                  <h3 className="text-xs font-bold text-white uppercase tracking-wider">
-                    Global Finding Severity Distribution
-                  </h3>
-                </div>
-                <span className="text-xs font-mono text-text-muted bg-white/5 px-2 py-0.5 rounded-full border border-white/5">
-                  {dashboardStats?.overview?.totalFindings ?? 310} Total Findings
-                </span>
-              </div>
-
-              {/* Visual Segmented Severity Bar */}
-              <div className="w-full h-3.5 rounded-full overflow-hidden flex bg-white/10 shadow-inner p-0.5">
-                {(() => {
-                  const total = dashboardStats?.overview?.totalFindings || 310;
-                  const crit = dashboardStats?.findings?.bySeverity?.critical ?? 4;
-                  const high = dashboardStats?.findings?.bySeverity?.high ?? 18;
-                  const med = dashboardStats?.findings?.bySeverity?.medium ?? 120;
-                  const low = dashboardStats?.findings?.bySeverity?.low ?? 168;
-
-                  const critPct = (crit / total) * 100;
-                  const highPct = (high / total) * 100;
-                  const medPct = (med / total) * 100;
-                  const lowPct = (low / total) * 100;
-
-                  return (
-                    <>
-                      <div style={{ width: `${critPct}%` }} className="bg-red-500 rounded-l-full shadow-[0_0_8px_rgba(239,68,68,0.5)] transition-all" title={`Critical: ${crit}`} />
-                      <div style={{ width: `${highPct}%` }} className="bg-orange-500 shadow-[0_0_8px_rgba(249,115,22,0.5)] transition-all" title={`High: ${high}`} />
-                      <div style={{ width: `${medPct}%` }} className="bg-amber-400 shadow-[0_0_8px_rgba(251,191,36,0.5)] transition-all" title={`Medium: ${med}`} />
-                      <div style={{ width: `${lowPct}%` }} className="bg-brand-cyan rounded-r-full shadow-[0_0_8px_rgba(6,182,212,0.5)] transition-all" title={`Low: ${low}`} />
-                    </>
-                  );
-                })()}
-              </div>
-
-              {/* Legends */}
-              <div className="grid grid-cols-4 gap-2 pt-2 border-t border-white/5 text-xs font-mono">
-                <div className="p-2.5 rounded-xl bg-red-500/10 border border-red-500/20 flex flex-col justify-between">
-                  <div className="text-[10px] text-red-400 font-bold uppercase">Critical</div>
-                  <div className="text-lg font-black text-white mt-0.5">
-                    {dashboardStats?.findings?.bySeverity?.critical ?? 4}
-                  </div>
-                </div>
-
-                <div className="p-2.5 rounded-xl bg-orange-500/10 border border-orange-500/20 flex flex-col justify-between">
-                  <div className="text-[10px] text-orange-400 font-bold uppercase">High</div>
-                  <div className="text-lg font-black text-white mt-0.5">
-                    {dashboardStats?.findings?.bySeverity?.high ?? 18}
-                  </div>
-                </div>
-
-                <div className="p-2.5 rounded-xl bg-amber-500/10 border border-amber-500/20 flex flex-col justify-between">
-                  <div className="text-[10px] text-amber-300 font-bold uppercase">Medium</div>
-                  <div className="text-lg font-black text-white mt-0.5">
-                    {dashboardStats?.findings?.bySeverity?.medium ?? 120}
-                  </div>
-                </div>
-
-                <div className="p-2.5 rounded-xl bg-brand-cyan/10 border border-brand-cyan/20 flex flex-col justify-between">
-                  <div className="text-[10px] text-brand-cyan font-bold uppercase">Low</div>
-                  <div className="text-lg font-black text-white mt-0.5">
-                    {dashboardStats?.findings?.bySeverity?.low ?? 168}
-                  </div>
-                </div>
-              </div>
-            </div>
+            {/* 2. Global Finding Severity Distribution (Horizontal Ranked Bar Chart) */}
+            <SeverityDistributionChart
+              data={{
+                critical: dashboardStats?.findings?.bySeverity?.critical ?? 0,
+                high: dashboardStats?.findings?.bySeverity?.high ?? 0,
+                medium: dashboardStats?.findings?.bySeverity?.medium ?? 0,
+                low: dashboardStats?.findings?.bySeverity?.low ?? 0,
+                total: dashboardStats?.findings?.total ?? dashboardStats?.overview?.totalFindings ?? 0
+              }}
+            />
           </div>
 
-          {/* User Role Allocation Matrix */}
-          <GlassCard className="p-5 border-white/10 space-y-4">
-            <div className="flex items-center justify-between">
-              <div className="flex items-center gap-2">
-                <Users size={16} className="text-brand-cyan" />
-                <h3 className="text-xs font-bold text-white uppercase tracking-wider">
-                  Platform Role Allocation Matrix
-                </h3>
-              </div>
-              <button
-                onClick={() => setActiveTab('users')}
-                className="text-xs text-brand-cyan hover:underline font-semibold"
-              >
-                Manage All Users &rarr;
-              </button>
-            </div>
-
-            <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3">
-              {[
-                { role: 'security_engineer', label: 'Security Testers', count: dashboardStats?.users?.byRole?.security_engineer ?? 2, color: 'text-brand-cyan', bg: 'bg-brand-cyan/10 border-brand-cyan/20', icon: ShieldCheck },
-                { role: 'developer', label: 'Developers', count: dashboardStats?.users?.byRole?.developer ?? 1, color: 'text-emerald-400', bg: 'bg-emerald-500/10 border-emerald-500/20', icon: Code },
-                { role: 'malware_analyst', label: 'Malware Lab', count: dashboardStats?.users?.byRole?.malware_analyst ?? 1, color: 'text-brand-purple', bg: 'bg-brand-purple/10 border-brand-purple/20', icon: Bug },
-                { role: 'client_owner', label: 'Client Owners', count: dashboardStats?.users?.byRole?.client_owner ?? 2, color: 'text-sky-300', bg: 'bg-sky-500/10 border-sky-500/20', icon: Building },
-                { role: 'client_member', label: 'Client Members', count: dashboardStats?.users?.byRole?.client_member ?? 1, color: 'text-slate-300', bg: 'bg-white/5 border-white/10', icon: Users },
-                { role: 'admin', label: 'Platform Admins', count: dashboardStats?.users?.byRole?.admin ?? 2, color: 'text-brand-magenta', bg: 'bg-brand-magenta/10 border-brand-magenta/20', icon: Shield }
-              ].map((r) => {
-                const Icon = r.icon;
-                return (
-                  <div key={r.role} className={`p-3 rounded-2xl border ${r.bg} flex flex-col justify-between`}>
-                    <div className="flex items-center justify-between text-text-muted">
-                      <span className="text-[10px] font-bold uppercase tracking-wider">{r.label}</span>
-                      <Icon size={14} className={r.color} />
-                    </div>
-                    <div className="text-xl font-black text-white mt-2">{r.count}</div>
-                    <div className="text-[9px] text-text-muted mt-0.5">Active specialists</div>
-                  </div>
-                );
-              })}
-            </div>
-          </GlassCard>
+          {/* 3. Platform Role Allocation Matrix (Interactive Multi-Role Visual Grid) */}
+          <RoleAllocationMatrix
+            data={{
+              security_engineer: dashboardStats?.users?.byRole?.security_engineer
+                ?? users.filter((u) => u.role === 'security_engineer').length,
+              developer: dashboardStats?.users?.byRole?.developer
+                ?? users.filter((u) => u.role === 'developer').length,
+              malware_analyst: dashboardStats?.users?.byRole?.malware_analyst
+                ?? users.filter((u) => u.role === 'malware_analyst').length,
+              client_owner: dashboardStats?.users?.byRole?.client_owner
+                ?? users.filter((u) => u.role === 'client_owner').length,
+              client_member: dashboardStats?.users?.byRole?.client_member
+                ?? users.filter((u) => u.role === 'client_member').length,
+              admin: dashboardStats?.users?.byRole?.admin
+                ?? users.filter((u) => u.role === 'admin').length,
+              total: dashboardStats?.overview?.totalUsers ?? users.length ?? 0
+            }}
+            onManageUsers={() => setActiveTab('users')}
+          />
 
           {/* Engine & Operational Infrastructure Telemetry Card (No user list in Overview) */}
           <GlassCard className="p-5 border-white/10 space-y-4">
