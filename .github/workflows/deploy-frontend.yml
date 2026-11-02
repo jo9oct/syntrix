@@ -7,6 +7,7 @@ on:
     branches:
       - main
       - master
+      - sentrix-core
   workflow_dispatch:
 
 concurrency:

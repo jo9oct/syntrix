@@ -7,6 +7,7 @@ on:
     branches:
       - main
       - master
+      - sentrix-core
   workflow_dispatch:
 
 concurrency:
@@ -74,7 +75,7 @@ jobs:
           ssh -i ~/.ssh/deploy_key -o StrictHostKeyChecking=accept-new "$BACKEND_USER@$BACKEND_HOST" << EOF
             set -e
             cd "$BACKEND_DEPLOY_PATH"
-            git pull origin main || git pull origin master
+            git pull origin main || git pull origin master || git pull origin sentrix-core
             docker compose -f backend/docker-compose.yml up -d --build api worker
           EOF
           echo "Remote deployment completed successfully."

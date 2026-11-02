@@ -5,10 +5,12 @@ on:
     branches:
       - main
       - master
+      - sentrix-core
   pull_request:
     branches:
       - main
       - master
+      - sentrix-core
   workflow_dispatch:
 
 concurrency:
