@@ -307,7 +307,8 @@ export const Projects: React.FC = () => {
             return (
               <GlassCard
                 key={target._id}
-                className="p-6 border-white/10 hover:border-brand-cyan/40 transition-all flex flex-col justify-between group"
+                className="p-6 border-white/10 hover:border-brand-cyan/40 transition-all flex flex-col justify-between group cursor-pointer select-none [&_*]:cursor-pointer"
+                onClick={() => navigate(`/dashboard/projects/${target._id}`)}
               >
                 <div className="space-y-4">
                   <div className="flex items-start justify-between gap-2">

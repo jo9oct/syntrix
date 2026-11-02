@@ -469,7 +469,7 @@ export const DashboardHome: React.FC = () => {
               displayedTargets.map((tgt) => (
                 <GlassCard
                   key={tgt.id || tgt._id}
-                  className="p-4 border-white/10 hover:border-brand-cyan/40 transition-all cursor-pointer group"
+                  className="p-4 border-white/10 hover:border-brand-cyan/40 transition-all cursor-pointer select-none [&_*]:cursor-pointer group"
                   onClick={() => navigate(`/dashboard/projects/${tgt.id || tgt._id}`)}
                 >
                   <div className="flex items-start justify-between">

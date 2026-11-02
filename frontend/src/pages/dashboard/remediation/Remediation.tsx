@@ -699,7 +699,7 @@ export const Remediation: React.FC = () => {
               {filteredTargets.map(target => (
                 <GlassCard
                   key={target._id}
-                  className="p-5 border-white/10 hover:border-brand-cyan/50 transition-all cursor-pointer group flex flex-col justify-between"
+                  className="p-5 border-white/10 hover:border-brand-cyan/50 transition-all cursor-pointer select-none [&_*]:cursor-pointer group flex flex-col justify-between"
                   onClick={() => setSelectedTarget(target)}
                 >
                   <div>
