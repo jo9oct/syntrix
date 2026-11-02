@@ -13,6 +13,11 @@ import type { Target, Scan, Finding, AvailableScannersResponse, Evidence } from 
 import api from '../../lib/api';
 import { EvidenceViewer } from '../../components/ui/EvidenceViewer';
 import { getTargetDisplayName } from '../../lib/targetUtils';
+import {
+  UserSeverityDistributionChart,
+  RemediationResolutionDoughnut,
+  ElevatedPostureGauge
+} from './components/UserAnalyticsCharts';
 
 interface UserDashboardData {
   user: {
@@ -128,114 +133,6 @@ interface UserDashboardData {
     canUseMalwareSandbox: boolean;
   };
 }
-
-// Circular Risk Posture Gauge with modern glow & SVG arc
-const PostureGauge: React.FC<{ score: number; level: string }> = ({ score, level }) => {
-  const radius = 34;
-  const circumference = 2 * Math.PI * radius;
-  const validScore = Math.min(100, Math.max(0, score));
-  const strokeDashoffset = circumference - (validScore / 100) * circumference;
-
-  const color =
-    validScore > 65 ? '#ef4444' : validScore > 35 ? '#f59e0b' : validScore > 0 ? '#10b981' : '#06b6d4';
-
-  return (
-    <div className="flex items-center gap-4">
-      <div className="relative w-20 h-20 shrink-0 flex items-center justify-center">
-        <svg className="w-full h-full -rotate-90" viewBox="0 0 88 88">
-          <circle
-            cx="44"
-            cy="44"
-            r={radius}
-            stroke="currentColor"
-            strokeWidth="7"
-            fill="transparent"
-            className="text-white/[0.07]"
-          />
-          <circle
-            cx="44"
-            cy="44"
-            r={radius}
-            stroke={color}
-            strokeWidth="7"
-            strokeDasharray={circumference}
-            strokeDashoffset={strokeDashoffset}
-            strokeLinecap="round"
-            fill="transparent"
-            className="transition-all duration-1000 ease-out drop-shadow-[0_0_8px_rgba(6,182,212,0.3)]"
-          />
-        </svg>
-        <div className="absolute flex flex-col items-center justify-center text-center">
-          <span className="text-xl font-black text-white leading-none">{validScore}</span>
-          <span className="text-[8px] font-mono text-text-muted mt-0.5">/ 100</span>
-        </div>
-      </div>
-      <div className="min-w-0">
-        <div className="text-[10px] font-mono uppercase tracking-wider text-text-muted">Target Posture Score</div>
-        <div className="text-xs sm:text-sm font-bold text-white mt-0.5 truncate">{level}</div>
-        <div className="flex items-center gap-1.5 mt-1.5 text-[10px] font-semibold" style={{ color }}>
-          <Shield size={12} className="shrink-0" />
-          <span>{validScore <= 35 ? 'Controlled Exposure' : validScore <= 65 ? 'Action Required' : 'Critical Exposure'}</span>
-        </div>
-      </div>
-    </div>
-  );
-};
-
-// Vulnerability Severity Breakdown Bar with interactive percentages & badges
-const SeverityBreakdownBar: React.FC<{
-  critical: number;
-  high: number;
-  medium: number;
-  low: number;
-  info: number;
-  total: number;
-}> = ({ critical, high, medium, low, info, total }) => {
-  if (total === 0) {
-    return (
-      <div className="py-4 text-center text-xs text-text-muted bg-white/[0.02] rounded-xl border border-white/5 flex items-center justify-center gap-2">
-        <CheckCircle2 size={15} className="text-emerald-400" />
-        <span>No active vulnerabilities detected across monitored targets</span>
-      </div>
-    );
-  }
-
-  const critPct = (critical / total) * 100;
-  const highPct = (high / total) * 100;
-  const medPct = (medium / total) * 100;
-  const lowPct = (low / total) * 100;
-  const infoPct = (info / total) * 100;
-
-  return (
-    <div className="space-y-3">
-      <div className="w-full h-3 rounded-full overflow-hidden flex bg-white/10 shadow-inner p-0.5">
-        {critPct > 0 && <div style={{ width: `${critPct}%` }} className="bg-red-500 rounded-l-full transition-all shadow-[0_0_8px_rgba(239,68,68,0.5)]" title={`Critical: ${critical}`} />}
-        {highPct > 0 && <div style={{ width: `${highPct}%` }} className="bg-orange-500 transition-all shadow-[0_0_8px_rgba(249,115,22,0.5)]" title={`High: ${high}`} />}
-        {medPct > 0 && <div style={{ width: `${medPct}%` }} className="bg-amber-400 transition-all shadow-[0_0_8px_rgba(251,191,36,0.5)]" title={`Medium: ${medium}`} />}
-        {lowPct > 0 && <div style={{ width: `${lowPct}%` }} className="bg-brand-cyan transition-all shadow-[0_0_8px_rgba(6,182,212,0.5)]" title={`Low: ${low}`} />}
-        {infoPct > 0 && <div style={{ width: `${infoPct}%` }} className="bg-slate-400 rounded-r-full transition-all" title={`Info: ${info}`} />}
-      </div>
-      <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 text-[11px] font-mono">
-        <div className="flex items-center justify-between p-2 rounded-xl bg-red-500/10 border border-red-500/20 text-red-300">
-          <span className="flex items-center gap-1.5"><span className="w-2 h-2 rounded-full bg-red-500" /> Critical</span>
-          <span className="font-bold">{critical}</span>
-        </div>
-        <div className="flex items-center justify-between p-2 rounded-xl bg-orange-500/10 border border-orange-500/20 text-orange-300">
-          <span className="flex items-center gap-1.5"><span className="w-2 h-2 rounded-full bg-orange-500" /> High</span>
-          <span className="font-bold">{high}</span>
-        </div>
-        <div className="flex items-center justify-between p-2 rounded-xl bg-amber-500/10 border border-amber-500/20 text-amber-300">
-          <span className="flex items-center gap-1.5"><span className="w-2 h-2 rounded-full bg-amber-400" /> Medium</span>
-          <span className="font-bold">{medium}</span>
-        </div>
-        <div className="flex items-center justify-between p-2 rounded-xl bg-brand-cyan/10 border border-brand-cyan/20 text-brand-cyan">
-          <span className="flex items-center gap-1.5"><span className="w-2 h-2 rounded-full bg-brand-cyan" /> Low</span>
-          <span className="font-bold">{low}</span>
-        </div>
-      </div>
-    </div>
-  );
-};
 
 export const DashboardHome: React.FC = () => {
   const navigate = useNavigate();
@@ -391,7 +288,7 @@ export const DashboardHome: React.FC = () => {
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
         {/* Card 1: Posture Score */}
         <div className="p-4 sm:p-5 rounded-2xl bg-white/[0.03] border border-brand-cyan/25 hover:border-brand-cyan/40 transition-all flex flex-col justify-between shadow-lg shadow-brand-cyan/[0.03]">
-          <PostureGauge
+          <ElevatedPostureGauge
             score={overview?.riskScore ?? 21}
             level={overview?.postureLevel ?? 'Controlled Exposure Level'}
           />
@@ -413,7 +310,17 @@ export const DashboardHome: React.FC = () => {
               )}
             </div>
           </div>
-          <div className="text-[11px] text-text-muted mt-3 flex items-center justify-between pt-2 border-t border-white/5">
+          <div className="mt-2">
+            <div className="w-full bg-white/5 h-1.5 rounded-full overflow-hidden">
+              <div
+                className="bg-blue-500 h-full rounded-full transition-all duration-700"
+                style={{
+                  width: `${(overview?.totalTargets ?? targets.length) > 0 ? Math.min(100, (((overview?.activeTargets ?? targets.length) / Math.max(overview?.totalTargets ?? targets.length, 1)) * 100)) : 0}%`
+                }}
+              />
+            </div>
+          </div>
+          <div className="text-[11px] text-text-muted mt-2 flex items-center justify-between pt-2 border-t border-white/5">
             <span className="text-emerald-400 font-semibold">{overview?.activeTargets ?? targets.length} Active Targets</span>
             <Link to="/dashboard/projects" className="text-brand-cyan hover:underline text-[11px] font-medium">
               Inventory &rarr;
@@ -434,7 +341,25 @@ export const DashboardHome: React.FC = () => {
               {overview?.totalScans ?? scans.length}
             </div>
           </div>
-          <div className="text-[11px] text-text-muted mt-3 flex items-center justify-between pt-2 border-t border-white/5 font-mono">
+          <div className="mt-2">
+            <div className="w-full bg-white/5 h-1.5 rounded-full overflow-hidden flex">
+              <div
+                className="bg-emerald-500 h-full transition-all duration-700"
+                style={{
+                  width: `${(overview?.totalScans ?? scans.length) > 0 ? Math.min(100, (((overview?.completedScans ?? scans.length) / Math.max(overview?.totalScans ?? scans.length, 1)) * 100)) : 0}%`
+                }}
+              />
+              {overview?.runningScans ? (
+                <div
+                  className="bg-amber-400 h-full animate-pulse transition-all duration-700"
+                  style={{
+                    width: `${Math.min(100, ((overview.runningScans / Math.max(overview?.totalScans ?? scans.length, 1)) * 100))}%`
+                  }}
+                />
+              ) : null}
+            </div>
+          </div>
+          <div className="text-[11px] text-text-muted mt-2 flex items-center justify-between pt-2 border-t border-white/5 font-mono">
             <span className="text-emerald-400 font-semibold">{overview?.completedScans ?? scans.length} Completed</span>
             {overview?.runningScans ? (
               <span className="text-amber-400 animate-pulse font-bold">{overview.runningScans} Running</span>
@@ -457,7 +382,26 @@ export const DashboardHome: React.FC = () => {
               {overview?.totalFindings ?? findings.length}
             </div>
           </div>
-          <div className="text-[11px] text-text-muted mt-3 flex items-center justify-between pt-2 border-t border-white/5 font-mono">
+          <div className="mt-2">
+            <div className="w-full bg-white/5 h-1.5 rounded-full overflow-hidden flex">
+              {(() => {
+                const total = Math.max(overview?.totalFindings ?? findings.length, 1);
+                const crit = ((overview?.criticalFindings ?? 0) / total) * 100;
+                const high = ((overview?.highFindings ?? 0) / total) * 100;
+                const med = ((overview?.mediumFindings ?? 0) / total) * 100;
+                const low = ((overview?.lowFindings ?? 0) / total) * 100;
+                return (
+                  <>
+                    <div style={{ width: `${crit}%` }} className="bg-red-500 h-full" />
+                    <div style={{ width: `${high}%` }} className="bg-orange-500 h-full" />
+                    <div style={{ width: `${med}%` }} className="bg-amber-400 h-full" />
+                    <div style={{ width: `${low}%` }} className="bg-brand-cyan h-full" />
+                  </>
+                );
+              })()}
+            </div>
+          </div>
+          <div className="text-[11px] text-text-muted mt-2 flex items-center justify-between pt-2 border-t border-white/5 font-mono">
             <span className="text-red-400 font-semibold">{overview?.criticalFindings ?? 0} Crit</span>
             <span className="text-orange-400 font-semibold">{overview?.highFindings ?? 0} High</span>
             <span className="text-amber-300 font-semibold">{overview?.mediumFindings ?? 0} Med</span>
@@ -467,61 +411,31 @@ export const DashboardHome: React.FC = () => {
       </div>
 
       {/* Dual Analytics Row: Vulnerability Exposure & Remediation Resolution */}
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
-        {/* Vulnerability Severity Stacked Progress (2 cols) */}
-        <div className="lg:col-span-2 p-5 rounded-2xl bg-white/[0.03] border border-white/10 space-y-3">
-          <div className="flex items-center justify-between">
-            <div className="flex items-center gap-2">
-              <ShieldCheck size={16} className="text-brand-cyan" />
-              <h3 className="text-xs font-bold text-white uppercase tracking-wider">
-                Vulnerability Risk Distribution across Assets
-              </h3>
-            </div>
-            <span className="text-xs font-mono text-text-muted">
-              {overview?.totalFindings ?? findings.length} Total Findings Recorded
-            </span>
-          </div>
-          <SeverityBreakdownBar
-            critical={overview?.criticalFindings ?? 0}
-            high={overview?.highFindings ?? 0}
-            medium={overview?.mediumFindings ?? 0}
-            low={overview?.lowFindings ?? 0}
-            info={overview?.infoFindings ?? 0}
-            total={overview?.totalFindings ?? findings.length}
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+        {/* Vulnerability Severity Stacked Progress & Ranked Distribution (2 cols) */}
+        <div className="lg:col-span-2">
+          <UserSeverityDistributionChart
+            data={{
+              critical: overview?.criticalFindings ?? 0,
+              high: overview?.highFindings ?? 0,
+              medium: overview?.mediumFindings ?? 0,
+              low: overview?.lowFindings ?? 0,
+              info: overview?.infoFindings ?? 0,
+              total: overview?.totalFindings ?? findings.length
+            }}
           />
         </div>
 
-        {/* Remediation & Verification Resolution Metric (1 col) */}
-        <div className="p-5 rounded-2xl bg-white/[0.03] border border-white/10 flex flex-col justify-between space-y-3">
-          <div className="flex items-center justify-between">
-            <span className="text-xs font-bold text-white uppercase tracking-wider flex items-center gap-1.5">
-              <CheckCircle2 size={15} className="text-emerald-400" /> Remediation Rate
-            </span>
-            <span className="text-xs font-mono font-bold text-emerald-400">
-              {resolutionRate}%
-            </span>
-          </div>
-
-          <div className="space-y-2">
-            <div className="w-full bg-white/10 h-2.5 rounded-full overflow-hidden">
-              <div 
-                className="bg-emerald-500 h-full rounded-full transition-all duration-1000 shadow-[0_0_8px_rgba(16,185,129,0.5)]" 
-                style={{ width: `${Math.max(5, resolutionRate)}%` }} 
-              />
-            </div>
-            <div className="flex items-center justify-between text-[11px] font-mono text-text-muted pt-1">
-              <span className="text-emerald-400 font-semibold">{resolvedCount} Resolved</span>
-              <span className="text-amber-400 font-semibold">{overview?.detectedFindings ?? 0} In Backlog</span>
-            </div>
-          </div>
-
-          <Link
-            to="/dashboard/remediation"
-            className="w-full py-1.5 px-3 rounded-xl bg-white/5 hover:bg-white/10 text-xs font-semibold text-white border border-white/10 flex items-center justify-center gap-1.5 transition-colors"
-          >
-            <span>Open Remediation Board</span>
-            <ArrowRight size={13} />
-          </Link>
+        {/* Remediation & Verification Resolution Doughnut (1 col) */}
+        <div className="lg:col-span-1">
+          <RemediationResolutionDoughnut
+            data={{
+              resolved: resolvedCount,
+              detected: overview?.detectedFindings ?? 0,
+              total: totalFindingsCount,
+              resolutionRate
+            }}
+          />
         </div>
       </div>
 
@@ -582,25 +496,53 @@ export const DashboardHome: React.FC = () => {
           </div>
 
           {/* Autonomous Scanner Capabilities */}
-          <GlassCard className="p-5 border-white/10 space-y-3">
+          <GlassCard className="p-5 border-white/10 space-y-4 shadow-xl backdrop-blur-md relative overflow-hidden">
             <div className="flex items-center justify-between">
-              <h3 className="text-xs font-bold text-brand-cyan uppercase tracking-wider flex items-center gap-1.5">
-                <Zap size={14} /> Scanner Engines
-              </h3>
-              <span className="text-[11px] font-mono text-green-400 font-bold">25 Active Probes</span>
+              <div className="flex items-center gap-2">
+                <div className="w-7 h-7 rounded-lg bg-cyan-500/15 text-cyan-400 flex items-center justify-center border border-cyan-500/30">
+                  <Zap size={14} />
+                </div>
+                <h3 className="text-xs font-bold text-white uppercase tracking-wider">
+                  Scanner Engines
+                </h3>
+              </div>
+              <span className="text-[11px] font-mono text-emerald-400 font-bold bg-emerald-500/10 px-2.5 py-0.5 rounded-full border border-emerald-500/20">
+                {scanners?.total ?? 25} Active Probes
+              </span>
             </div>
+
             <p className="text-xs text-text-muted leading-relaxed">
-              Equipped with 10 Recon probes (Subdomains, DNS, Ports, SSL/TLS) and 15 Security testing engines (SQLi, XSS, SSRF, CORS, Security Headers).
+              Equipped with {scanners?.recon ?? 10} Recon probes (Subdomains, DNS, Ports, SSL/TLS) and {scanners?.security ?? 15} Security testing engines (SQLi, XSS, SSRF, CORS, Security Headers).
             </p>
-            <div className="flex items-center justify-between text-[11px] font-mono text-slate-300 pt-2 border-t border-white/5">
-              <span>10 Recon Engines</span>
-              <span>15 Security Probes</span>
+
+            <div className="space-y-1.5 pt-1">
+              <div className="flex items-center justify-between text-[10px] font-mono text-text-muted">
+                <span>Engine Allocation</span>
+                <span className="text-cyan-400">{scanners?.recon ?? 10} Recon • {scanners?.security ?? 15} Security</span>
+              </div>
+              <div className="w-full h-2 rounded-full bg-white/5 overflow-hidden flex p-0.5">
+                <div style={{ width: `${((scanners?.recon ?? 10) / (scanners?.total ?? 25)) * 100}%` }} className="bg-brand-cyan rounded-l-full shadow-[0_0_6px_rgba(6,182,212,0.5)]" title={`${scanners?.recon ?? 10} Recon Engines`} />
+                <div style={{ width: `${((scanners?.security ?? 15) / (scanners?.total ?? 25)) * 100}%` }} className="bg-emerald-500 rounded-r-full shadow-[0_0_6px_rgba(16,185,129,0.5)]" title={`${scanners?.security ?? 15} Security Probes`} />
+              </div>
             </div>
+
+            <div className="grid grid-cols-2 gap-2 text-xs font-mono pt-1">
+              <div className="p-2.5 rounded-xl bg-cyan-500/10 border border-cyan-500/20 text-center">
+                <div className="text-[10px] text-cyan-400 font-bold uppercase">Recon Engines</div>
+                <div className="text-lg font-black text-white mt-0.5">{scanners?.recon ?? 10}</div>
+              </div>
+              <div className="p-2.5 rounded-xl bg-emerald-500/10 border border-emerald-500/20 text-center">
+                <div className="text-[10px] text-emerald-400 font-bold uppercase">Security Probes</div>
+                <div className="text-lg font-black text-white mt-0.5">{scanners?.security ?? 15}</div>
+              </div>
+            </div>
+
             <button
               onClick={() => navigate('/dashboard/assessment/new')}
-              className="w-full py-2 rounded-xl bg-white/5 hover:bg-white/10 border border-white/10 text-xs font-semibold text-white transition-colors"
+              className="w-full py-2.5 rounded-xl bg-white/5 hover:bg-white/10 border border-white/10 text-xs font-semibold text-white transition-all flex items-center justify-center gap-1.5 group"
             >
-              Launch Assessment Wizard &rarr;
+              <span>Launch Assessment Wizard</span>
+              <ArrowRight size={13} className="transition-transform group-hover:translate-x-0.5" />
             </button>
           </GlassCard>
         </div>
